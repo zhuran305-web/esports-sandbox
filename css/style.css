@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #0a0d13;
   --bg-soft: #10151f;
   --surface: #151b27;
@@ -31,6 +32,34 @@ html, body {
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* 沉浸式滚动条：默认白色轨道在深色界面里很突兀 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2b3547 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #2b3547;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a465c;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {

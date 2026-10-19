@@ -1,0 +1,25 @@
+# 依赖与本地环境
+node_modules/
+dist/
+.env
+.env.*
+*.local
+
+# 工具状态（Mimosa 扫描/会话历史）
+.mimosa/
+
+# 不公开的申请草稿（保存在开发记录目录，不要提交）
+docs/liquipedia-api-application.md
+
+# 赛事数据快照：由 GitHub Release 资产同步，不提交（见 tools/pull-data.mjs）
+data/matches.json
+data/matches.js
+
+# 本地凭据（公开仓库绝不能提交）
+Pandascore Token.txt
+*Token*.txt
+
+# 日志与系统文件
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,52 @@
+{
+  "name": "esports-sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "赛事沙盘 · 电竞赛事预测模拟盘（小黑盒小程序）+ 赛事数据采集器",
+  "scripts": {
+    "predev": "node tools/pull-data.mjs --if-missing",
+    "dev": "hb-sdk dev",
+    "dev:vite": "vite",
+    "prebuild": "node tools/pull-data.mjs --if-missing",
+    "build": "hb-sdk build",
+    "data:pull": "node tools/pull-data.mjs --force",
+    "boards:create": "hb-sdk remote cloud leaderboard create sha_board_win --order desc --rank-limit 500 && hb-sdk remote cloud leaderboard create sha_board_lose --order desc --rank-limit 500",
+    "fetch": "node tools/fetch-matches.mjs",
+    "fetch:dry": "node tools/fetch-matches.mjs --dry-run",
+    "fetch:manual": "node tools/fetch-matches.mjs --only=manual"
+  },
+  "heybox": {
+    "name": "赛事沙盘",
+    "category": "game",
+    "desc": "电竞赛事胜负预测模拟盘，沙粒为虚拟道具，仅供娱乐",
+    "platforms": [
+      "android",
+      "ios",
+      "windows",
+      "macos"
+    ],
+    "icon": "public/icon.png",
+    "coverImages": [
+      "public/cover-1.png"
+    ],
+    "permissions": {
+      "storage": {
+        "enabled": true
+      },
+      "userInfo": {
+        "enabled": true
+      },
+      "leaderboard": {
+        "enabled": true
+      }
+    }
+  },
+  "dependencies": {
+    "@heybox/hb-sdk": "^0.9.1"
+  },
+  "devDependencies": {
+    "sharp": "^0.34.5",
+    "vite": "^8.3.4"
+  }
+}

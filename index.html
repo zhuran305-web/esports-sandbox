@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0e14">
+  <title>赛事沙盘 · 电竞赛事预测模拟盘</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v3M5.6 5.6l2.1 2.1M3 12h3M18 12h3M16.3 7.7l2.1-2.1"/>
+            <circle cx="12" cy="14" r="5"/>
+            <path d="M12 12v2l1.5 1.5"/>
+          </svg>
+        </span>
+        <div class="brand-text">
+          <strong>赛事沙盘</strong>
+          <span>多项目电竞赛事 · 沙盘预测</span>
+        </div>
+      </div>
+      <div class="balance-pill" id="balancePill" title="当前沙粒">
+        <span class="coin" aria-hidden="true"></span>
+        <span id="balanceValue">--</span>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- 赛事 -->
+      <section class="view" id="view-matches">
+        <div class="sand-bar">
+          <div class="sand-main">
+            <span class="sand-label">沙粒</span>
+            <span class="sand-value" id="sandValue">--</span>
+            <span class="sand-meta">已采沙 <b id="digCount">0</b> 次</span>
+          </div>
+          <button class="dig-btn" id="digBtn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 4l6 6-3 3-6-6 3-3z"/>
+              <path d="M11 7L4 14v6h6l7-7"/>
+            </svg>
+            采沙
+          </button>
+        </div>
+
+        <div class="notice-strip">
+          <span class="dot"></span>
+          <span id="openCount">正在加载赛程…</span>
+          <button class="link-btn" id="goRulesFromMatches" type="button">玩法说明</button>
+        </div>
+
+        <div class="selectors">
+          <div class="selector">
+            <button class="game-select-btn" id="gameSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+              <span class="game-dot" id="gameSelectDot"></span>
+              <span class="select-label" id="gameSelectCurrent">全部游戏</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+
+            <div class="game-popover" id="gamePopover" role="dialog" aria-labelledby="gamePopoverTitle" hidden>
+              <div class="game-popover-head">
+                <span id="gamePopoverTitle">选择游戏</span>
+                <span class="game-popover-meta" id="gamePopoverMeta"></span>
+              </div>
+              <div class="game-grid" id="gameGrid"></div>
+            </div>
+          </div>
+
+          <div class="selector">
+            <button class="game-select-btn" id="tournamentSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+              <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/>
+                <path d="M7 6H4a3 3 0 0 0 3 3M17 6h3a3 3 0 0 1-3 3"/>
+                <path d="M12 13v4M9 20h6"/>
+              </svg>
+              <span class="select-label" id="tournamentSelectCurrent">全部赛事</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+
+          <span class="game-select-count" id="gameSelectCount"></span>
+
+          <div class="game-popover tournament-popover" id="tournamentPopover" role="dialog" aria-labelledby="tournamentPopoverTitle" hidden>
+            <div class="game-popover-head">
+              <span id="tournamentPopoverTitle">选择赛事</span>
+              <span class="game-popover-meta" id="tournamentPopoverMeta"></span>
+            </div>
+            <div class="tournament-list" id="tournamentList"></div>
+          </div>
+        </div>
+
+        <div class="status-tray" id="statusTray" role="tablist" aria-label="赛事状态筛选"></div>
+
+        <p class="window-hint">未来 14 天赛程 · 近 1 天自己猜过的赛果 · 完整赛程见设置</p>
+
+        <div id="matchList" class="match-list" aria-live="polite"></div>
+      </section>
+
+      <!-- 我的 -->
+      <section class="view" id="view-profile" hidden>
+        <div class="balance-card">
+          <div class="balance-card-head">
+            <span>沙粒</span>
+            <span class="tag-ghost">虚拟道具 · 无现实价值</span>
+          </div>
+          <div class="balance-big"><span id="profileBalance">--</span><small>沙粒</small></div>
+          <div class="balance-sub">初始 10,000 沙粒 · 不足时采沙补足</div>
+          <button class="dig-btn dig-btn-lg" id="digBtnProfile" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 4l6 6-3 3-6-6 3-3z"/>
+              <path d="M11 7L4 14v6h6l7-7"/>
+            </svg>
+            采沙 · 已采沙 <b id="profileDigCount">0</b> 次
+          </button>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-cell">
+            <span class="stat-value" id="statSettled">0</span>
+            <span class="stat-label">已结算</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-value" id="statHit">--</span>
+            <span class="stat-label">命中率</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-value" id="statStreak">0</span>
+            <span class="stat-label">当前连对</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-value" id="statBest">0</span>
+            <span class="stat-label">最高连对</span>
+          </div>
+        </div>
+
+        <div class="pnl-card" id="pnlCard">
+          <div class="pnl-head">
+            <span>总盈亏</span>
+            <span class="pnl-breakdown" id="pnlBreakdown">已结算投入 0 · 累计返还 0</span>
+          </div>
+          <strong class="pnl-value" id="statProfit">+0</strong>
+          <p class="pnl-note" id="pnlNote">正数为累计盈利，负数为累计亏损 · 理性娱乐</p>
+        </div>
+
+        <div class="record-grid">
+          <div class="record-cell win">
+            <span class="record-value" id="recWins">0</span>
+            <span class="record-label">猜对</span>
+          </div>
+          <div class="record-cell lose">
+            <span class="record-value" id="recLosses">0</span>
+            <span class="record-label">猜错</span>
+          </div>
+          <div class="record-cell">
+            <span class="record-value" id="recBestWin">--</span>
+            <span class="record-label">单场最多赢</span>
+          </div>
+          <div class="record-cell">
+            <span class="record-value" id="recWorstLoss">--</span>
+            <span class="record-label">单场最多亏</span>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <h2>竞猜记录</h2>
+          <span id="historyCount" class="section-sub">0 条</span>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+
+      <!-- 排行榜 -->
+      <section class="view" id="view-board" hidden>
+        <h1 class="page-title">排行榜</h1>
+
+        <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">
+          <button class="board-tab is-active" data-board="win" role="tab" aria-selected="true">
+            <span class="board-dot win"></span>胜榜
+          </button>
+          <button class="board-tab" data-board="lose" role="tab" aria-selected="false">
+            <span class="board-dot lose"></span>败榜
+          </button>
+        </div>
+        <p class="board-hint" id="boardHint">比谁猜对的次数多，猜对次数相同比赚的沙粒多</p>
+
+        <div class="board-me" id="boardMe">
+          <div class="board-me-rank" id="boardMyRank">--</div>
+          <div class="board-me-main">
+            <span class="board-me-label" id="boardMyLabel">我的成绩</span>
+            <strong class="board-me-score" id="boardMyScore">--</strong>
+          </div>
+          <div class="board-me-sub">
+            <span>上榜成绩 <b id="boardMyBest">--</b></span>
+          </div>
+        </div>
+
+        <div class="board-list" id="boardList"></div>
+
+        <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
+      </section>
+
+      <!-- 设置 -->
+      <section class="view" id="view-settings" hidden>
+        <h1 class="page-title">设置</h1>
+
+        <div class="settings-group">
+          <div class="settings-account">
+            <div class="account-avatar" id="accountAvatar">盒</div>
+            <div class="account-main">
+              <span class="account-name" id="accountName">本地体验</span>
+              <span class="account-id" id="accountId">ID: local</span>
+            </div>
+            <span class="account-badge" id="accountBadge">本地模式</span>
+          </div>
+          <p class="settings-hint" id="accountHint">发布后将自动读取小黑盒账号，无需注册或登录</p>
+        </div>
+
+        <div class="settings-group">
+          <button class="settings-row" id="openRulesBtn" type="button">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h11a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2V4z"/><path d="M6 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2"/><path d="M10 9h5M10 13h5"/></svg>
+            </span>
+            <span class="settings-row-label">玩法说明</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <button class="settings-row" id="openScheduleBtn" type="button">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>
+            </span>
+            <span class="settings-row-label">赛事数据</span>
+            <span class="settings-row-value" id="settingsDataInfo">--</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <div class="settings-row">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/></svg>
+            </span>
+            <span class="settings-row-label">数据更新</span>
+            <span class="settings-row-value" id="settingsUpdatedAt">--</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17.3 9.1 3.9 3.9 0 0 1 17 18H7z"/></svg>
+            </span>
+            <span class="settings-row-label">数据来源</span>
+            <span class="settings-row-value" id="settingsSource">PandaScore</span>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-row">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+            </span>
+            <span class="settings-row-label">小程序版本</span>
+            <span class="settings-row-value" id="settingsVersion">v1.0.0</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 9.2 4.5 4.5 0 0 0 7 18h10.5z"/><path d="M9 14l2 2 4-4"/></svg>
+            </span>
+            <span class="settings-row-label">云服务</span>
+            <span class="settings-row-value" id="settingsCloudMode">本地模拟</span>
+          </div>
+        </div>
+
+        <p class="settings-footer">赛事沙盘 · 沙粒为虚拟道具，无现实价值</p>
+      </section>
+
+      <!-- 玩法说明（设置子页面） -->
+      <section class="view" id="view-rules" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="rulesBackBtn" type="button" aria-label="返回设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">玩法说明</h1>
+        </div>
+
+        <div class="rule-block">
+          <h2>这是什么</h2>
+          <p>「赛事沙盘」是一个面向 CS2、瓦罗兰特、英雄联盟、Dota 2、王者荣耀、PUBG、Apex 英雄等主流电竞赛事胜负预测的<strong>娱乐模拟盘</strong>。你可以用虚拟的「沙粒」对真实比赛的胜负进行竞猜，验证自己的赛况判断力。</p>
+        </div>
+
+        <div class="rule-block">
+          <h2>沙粒规则</h2>
+          <ul>
+            <li>初始 <strong>10,000 沙粒</strong>。</li>
+            <li>每场比赛只能预测一次，开赛前 1 小时停止竞猜与修改。</li>
+            <li><strong>投入时立即从沙粒中扣除</strong>；猜对返还 2 倍投入（净赚 1 倍），猜错投入不退。</li>
+            <li>沙粒<strong>可以为负数</strong>，负债不影响继续竞猜，可以无限负债。</li>
+            <li>沙粒为正时，单场最多投入<strong>当前沙粒的 2 倍</strong>（投入后可能立即变为负债）。</li>
+            <li>沙粒归零或为负时，只能选择 <strong>10 / 100 / 1000 / 负债额</strong> 四档定额投入，不能自由填写。</li>
+            <li>连续猜对第 2 场起获得加成：+10% / +20% / +30% / +50%（封顶），加成只作用于盈利部分。</li>
+          </ul>
+        </div>
+
+        <div class="rule-block">
+          <h2>采沙</h2>
+          <ul>
+            <li>沙粒少于 10,000 时（含负债），采沙会<strong>补足到 10,000</strong>。</li>
+            <li>沙粒不少于 10,000 时无需采沙，不会额外增加。</li>
+            <li>采沙只补足、不会清空任何预测；已采沙次数会被记录。</li>
+          </ul>
+          <p class="rule-warn">沙盘里的沙粒永远可以再采，现实中没有「采沙」按钮。请理性看待赛事预测。</p>
+        </div>
+
+        <div class="rule-block">
+          <h2>结算方式</h2>
+          <p>比赛结束、赛果录入后，打开小程序会自动结算。赛果来自公开赛事信息，以官方公布为准。</p>
+        </div>
+
+        <div class="rule-block rule-safe">
+          <h2>合规声明</h2>
+          <p>沙粒为虚拟道具，无任何现实价值，<strong>不可充值、不可兑换、不可转让</strong>，不涉及真实货币。本应用仅提供赛事胜负预测的娱乐与练习功能，不提供任何形式的赌博或博彩服务。请理性看待赛事预测，享受比赛本身。</p>
+        </div>
+
+        <p class="data-note">赛事数据来自 PandaScore / Liquipedia，仅供娱乐参考，以官方公布为准。</p>
+      </section>
+
+      <!-- 赛程表（设置子页面） -->
+      <section class="view" id="view-schedule" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="scheduleBackBtn" type="button" aria-label="返回设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">赛程表</h1>
+        </div>
+
+        <p class="schedule-summary" id="scheduleSummary">过去 30 天 · 未来 30 天</p>
+
+        <div class="schedule-search">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="scheduleSearch" type="search" placeholder="搜索游戏 / 赛事 / 队伍 / 日期" autocomplete="off" enterkeyhint="search">
+          <button class="search-clear" id="scheduleSearchClear" type="button" aria-label="清空搜索" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <div class="selectors">
+          <div class="selector">
+            <button class="game-select-btn" id="schedGameBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+              <span class="game-dot" id="schedGameDot"></span>
+              <span class="select-label" id="schedGameCurrent">全部游戏</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="game-popover" id="schedGamePopover" role="dialog" aria-labelledby="schedGameTitle" hidden>
+              <div class="game-popover-head">
+                <span id="schedGameTitle">选择游戏</span>
+                <span class="game-popover-meta" id="schedGameMeta"></span>
+              </div>
+              <div class="game-grid" id="schedGameGrid"></div>
+            </div>
+          </div>
+
+          <div class="selector">
+            <button class="game-select-btn" id="schedTournamentBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+              <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/>
+                <path d="M7 6H4a3 3 0 0 0 3 3M17 6h3a3 3 0 0 1-3 3"/>
+                <path d="M12 13v4M9 20h6"/>
+              </svg>
+              <span class="select-label" id="schedTournamentCurrent">全部赛事</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+
+          <span class="game-select-count" id="schedCount"></span>
+
+          <div class="game-popover tournament-popover" id="schedTournamentPopover" role="dialog" aria-labelledby="schedTournamentTitle" hidden>
+            <div class="game-popover-head">
+              <span id="schedTournamentTitle">选择赛事</span>
+              <span class="game-popover-meta" id="schedTournamentMeta"></span>
+            </div>
+            <div class="tournament-list" id="schedTournamentList"></div>
+          </div>
+        </div>
+
+        <div id="scheduleList" class="schedule-list"></div>
+      </section>
+    </main>
+
+  <!-- 底部导航 -->
+  <nav class="tabbar" aria-label="主导航">
+    <button class="tab is-active" data-view="matches" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span>赛事</span>
+    </button>
+    <button class="tab" data-view="profile" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></svg>
+      <span>我的</span>
+    </button>
+    <button class="tab" data-view="board" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>
+      <span>排行</span>
+    </button>
+    <button class="tab" data-view="settings" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+      <span>设置</span>
+    </button>
+  </nav>
+  </div>
+
+  <!-- 竞猜面板 -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden>
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <h2 id="sheetTitle">预测胜负</h2>
+          <p id="sheetMatchMeta" class="sheet-meta"></p>
+        </div>
+        <button class="icon-btn" id="sheetClose" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="pick-grid" id="pickGrid">
+        <button class="pick-card" data-pick="A" type="button">
+          <span class="pick-avatar" id="pickAvatarA"></span>
+          <span class="pick-name" id="pickNameA"></span>
+          <span class="pick-check" aria-hidden="true"></span>
+        </button>
+        <button class="pick-card" data-pick="B" type="button">
+          <span class="pick-avatar" id="pickAvatarB"></span>
+          <span class="pick-name" id="pickNameB"></span>
+          <span class="pick-check" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div class="stake-head">
+        <label for="stakeInput" id="stakeLabel">投入沙粒</label>
+        <span class="stake-balance">当前 <b id="sheetBalance">--</b> 沙粒</span>
+      </div>
+      <div class="stake-input-row" id="stakeRow">
+        <input id="stakeInput" type="number" inputmode="numeric" min="10" step="10" value="100" aria-label="投入沙粒">
+        <span class="unit">沙粒</span>
+      </div>
+      <div class="stake-fixed" id="stakeFixed" hidden>
+        <p class="stake-fixed-tip">负债状态下只能使用定额投入</p>
+        <div class="chips chips-fixed" id="fixedChips">
+          <button type="button" data-amount="10">10</button>
+          <button type="button" data-amount="100">100</button>
+          <button type="button" data-amount="1000">1000</button>
+          <button type="button" data-amount="debt">负债额</button>
+        </div>
+      </div>
+      <div class="chips" id="stakeChips">
+        <button type="button" data-amount="100">100</button>
+        <button type="button" data-amount="500">500</button>
+        <button type="button" data-amount="1000">1000</button>
+        <button type="button" data-amount="all">全部</button>
+        <button type="button" data-amount="double">2倍</button>
+      </div>
+
+      <div class="preview" id="payoutPreview">猜对预计返还 <b>--</b> 沙粒</div>
+      <button class="primary-btn" id="confirmPrediction" type="button">确认预测</button>
+      <p class="sheet-tip">开赛前 1 小时截止 · 沙粒为虚拟道具</p>
+    </div>
+  </div>
+
+  <!-- 新手引导 -->
+  <div class="onboard-backdrop" id="onboardBackdrop" hidden>
+    <div class="onboard" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
+      <div class="onboard-steps" id="onboardSteps">
+        <div class="onboard-step is-active" data-step="1">
+          <div class="onboard-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          </div>
+          <h2 id="onboardTitle">这是什么</h2>
+          <p>「赛事沙盘」是一个电竞赛事胜负预测模拟盘：看阵容、选胜方，用沙粒验证你的赛况判断力。</p>
+          <p class="onboard-dim">覆盖 CS2、瓦罗兰特、英雄联盟、王者荣耀、Dota 2 等电竞项目，赛程来自公开赛事数据。</p>
+        </div>
+        <div class="onboard-step" data-step="2">
+          <div class="onboard-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg>
+          </div>
+          <h2>沙粒怎么玩</h2>
+          <p>初始 <b>10,000 沙粒</b>，猜对返还 2 倍投入，猜错不退。沙粒为正时最多投入余额的 2 倍；归零或负债时只能选 10 / 100 / 1000 / 负债额 四档定额。</p>
+          <p class="onboard-dim">沙粒可以负债到负数，不影响继续竞猜；不足 10,000 时可「采沙」补足。开赛前 1 小时停止竞猜。</p>
+        </div>
+        <div class="onboard-step" data-step="3">
+          <div class="onboard-icon onboard-safe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+          </div>
+          <h2>请先读这段</h2>
+          <p>沙粒是<strong>虚拟道具，没有任何现实价值</strong>——不可充值、不可兑换、不可转让，输了也不心疼。这里没有真钱，也不提供任何博彩服务。</p>
+          <p class="onboard-dim">赛事预测仅供娱乐，请理性看待胜负，享受比赛本身。点「开始」即表示你已了解并同意以上规则。</p>
+        </div>
+      </div>
+      <div class="onboard-dots" id="onboardDots">
+        <span class="is-active"></span><span></span><span></span>
+      </div>
+      <div class="onboard-actions">
+        <button class="ghost-btn" id="onboardSkip" type="button">跳过</button>
+        <button class="danger-btn" id="onboardNext" type="button">下一步</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- 分享卡片 -->
+  <div class="sheet-backdrop" id="shareBackdrop" hidden>
+    <div class="share-sheet" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+      <h2 id="shareTitle" class="share-title">分享竞猜战绩</h2>
+      <canvas id="shareCanvas" width="750" height="1000"></canvas>
+      <div class="share-actions">
+        <button class="ghost-btn" id="shareCancel" type="button">关闭</button>
+        <button class="ghost-btn" id="shareCopyText" type="button">复制文案</button>
+        <button class="danger-btn" id="shareSave" type="button">保存图片</button>
+      </div>
+      <p class="sheet-tip">保存图片 + 复制文案，即可发帖或发群 · 图片含总盈亏</p>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

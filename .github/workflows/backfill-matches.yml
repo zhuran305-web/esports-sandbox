@@ -1,0 +1,56 @@
+name: Backfill match data
+
+# 每天 UTC 03:00（北京 11:00）回填前后各 30 天赛程，供「赛程表」子页面检索。
+# 过去最多 40 页（约 2000 场）、未来 10 页；CS2 过去 30 天约 1447 场（29 页）、未来约 371 场（8 页）。
+# 与 update-matches 共用 concurrency group，避免同时读写同一份快照。
+# 数据不提交到 Git，而是覆盖 Release 资产 `data` 下的 matches.json。
+# 需要仓库 Secrets：PANDASCORE_TOKEN（必填）、LIQUIPEDIA_API_KEY / LIQUIPEDIA_CONTACT（可选）。
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-matches
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Restore previous snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view data >/dev/null 2>&1; then
+            gh release download data --pattern matches.json --dir data --clobber \
+              || echo "release 存在但还没有 matches.json 资产，从空数据开始"
+          else
+            echo "首次运行：还没有 data release，从空数据开始"
+          fi
+
+      - name: Backfill one month
+        env:
+          PANDASCORE_TOKEN: ${{ secrets.PANDASCORE_TOKEN }}
+          LIQUIPEDIA_API_KEY: ${{ secrets.LIQUIPEDIA_API_KEY }}
+          LIQUIPEDIA_CONTACT: ${{ secrets.LIQUIPEDIA_CONTACT }}
+        run: node tools/fetch-matches.mjs --days=30 --past-days=30 --past-pages=40 --upcoming-pages=10 --retention=45
+
+      - name: Publish snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view data >/dev/null 2>&1 \
+            || gh release create data --title "赛事数据" --notes "由 GitHub Actions 自动更新，请勿手动编辑。"
+          gh release upload data data/matches.json --clobber

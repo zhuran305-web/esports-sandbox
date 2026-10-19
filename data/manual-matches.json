@@ -1,0 +1,368 @@
+{
+  "matches": [
+    {
+      "id": "vct26-p1",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 胜者组第一轮",
+      "startAt": "2026-10-07T04:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "NRG",
+        "short": "NRG",
+        "region": "美洲"
+      },
+      "teamB": {
+        "name": "T1",
+        "short": "T1",
+        "region": "太平洋"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:0"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p2",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 胜者组第一轮",
+      "startAt": "2026-10-07T07:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "LOUD",
+        "short": "LOUD",
+        "region": "美洲"
+      },
+      "teamB": {
+        "name": "Paper Rex",
+        "short": "PRX",
+        "region": "太平洋"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:0"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p3",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 胜者组第一轮",
+      "startAt": "2026-10-07T10:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "G2 Esports",
+        "short": "G2",
+        "region": "EMEA"
+      },
+      "teamB": {
+        "name": "100 Thieves",
+        "short": "100T",
+        "region": "美洲"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:0"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p4",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 胜者组第一轮",
+      "startAt": "2026-10-08T04:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "Team Vitality",
+        "short": "VIT",
+        "region": "EMEA"
+      },
+      "teamB": {
+        "name": "Nongshim RedForce",
+        "short": "NSR",
+        "region": "太平洋"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:1"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p5",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 败者组第一轮",
+      "startAt": "2026-10-08T07:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "T1",
+        "short": "T1",
+        "region": "太平洋"
+      },
+      "teamB": {
+        "name": "Paper Rex",
+        "short": "PRX",
+        "region": "太平洋"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:1"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p6",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 败者组第一轮",
+      "startAt": "2026-10-09T07:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "100 Thieves",
+        "short": "100T",
+        "region": "美洲"
+      },
+      "teamB": {
+        "name": "Nongshim RedForce",
+        "short": "NSR",
+        "region": "太平洋"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:1"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p7",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 胜者组第二轮",
+      "startAt": "2026-10-09T10:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "LOUD",
+        "short": "LOUD",
+        "region": "美洲"
+      },
+      "teamB": {
+        "name": "NRG",
+        "short": "NRG",
+        "region": "美洲"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:1"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p8",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 胜者组第二轮",
+      "startAt": "2026-10-10T07:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "Team Vitality",
+        "short": "VIT",
+        "region": "EMEA"
+      },
+      "teamB": {
+        "name": "G2 Esports",
+        "short": "G2",
+        "region": "EMEA"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:0"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p9",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 败者组第二轮",
+      "startAt": "2026-10-10T10:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "G2 Esports",
+        "short": "G2",
+        "region": "EMEA"
+      },
+      "teamB": {
+        "name": "T1",
+        "short": "T1",
+        "region": "太平洋"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:1"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-p10",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "淘汰赛 · 败者组第二轮",
+      "startAt": "2026-10-11T07:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "100 Thieves",
+        "short": "100T",
+        "region": "美洲"
+      },
+      "teamB": {
+        "name": "NRG",
+        "short": "NRG",
+        "region": "美洲"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:0"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-sf",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "胜者组决赛",
+      "startAt": "2026-10-16T07:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "LOUD",
+        "short": "LOUD",
+        "region": "美洲"
+      },
+      "teamB": {
+        "name": "Team Vitality",
+        "short": "VIT",
+        "region": "EMEA"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "2:1"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-lbr",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "败者组半决赛",
+      "startAt": "2026-10-16T10:00:00.000Z",
+      "format": "BO3",
+      "tier": "",
+      "teamA": {
+        "name": "G2 Esports",
+        "short": "G2",
+        "region": "EMEA"
+      },
+      "teamB": {
+        "name": "100 Thieves",
+        "short": "100T",
+        "region": "美洲"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "B",
+        "score": "1:2"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-lbf",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "败者组决赛",
+      "startAt": "2026-10-17T07:00:00.000Z",
+      "format": "BO5",
+      "tier": "",
+      "teamA": {
+        "name": "Team Vitality",
+        "short": "VIT",
+        "region": "EMEA"
+      },
+      "teamB": {
+        "name": "100 Thieves",
+        "short": "100T",
+        "region": "美洲"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "3:1"
+      },
+      "note": "",
+      "source": "manual"
+    },
+    {
+      "id": "vct26-final",
+      "game": "valorant",
+      "tournament": "VCT 2026 全球冠军赛 · 上海",
+      "stage": "总决赛",
+      "startAt": "2026-10-18T11:00:00.000Z",
+      "format": "BO5",
+      "tier": "",
+      "teamA": {
+        "name": "LOUD",
+        "short": "LOUD",
+        "region": "美洲"
+      },
+      "teamB": {
+        "name": "Team Vitality",
+        "short": "VIT",
+        "region": "EMEA"
+      },
+      "status": "finished",
+      "result": {
+        "winner": "A",
+        "score": "3:1"
+      },
+      "note": "LOUD 夺冠，成为首支两夺全球冠军赛冠军的俱乐部",
+      "source": "manual"
+    }
+  ]
+}

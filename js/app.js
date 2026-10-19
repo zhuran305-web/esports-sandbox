@@ -1,6 +1,7 @@
 import matchesData from "../data/matches.json";
 import { Cloud, Account } from "./cloud.js";
 import { initPlatform, storageGet, storageSet } from "./platform.js";
+import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
   "use strict";
@@ -8,6 +9,7 @@ import { initPlatform, storageGet, storageSet } from "./platform.js";
   /* ============================== 配置 ============================== */
   var DATA = matchesData;
   var MATCHES = (DATA.matches || []).slice();
+  var DATA_UPDATED_AT = DATA.updatedAt || "";
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
   var APP_VERSION = "1.0.0";
@@ -1447,14 +1449,13 @@ import { initPlatform, storageGet, storageSet } from "./platform.js";
 
   /* ============================== 设置页 ============================== */
   function renderSettings() {
-    var data = matchesData;
-    var matches = data.matches || [];
+    var matches = MATCHES;
     var games = {};
     matches.forEach(function (m) { games[m.game] = 1; });
 
     $("#settingsDataInfo").textContent = matches.length + " 场 · " + Object.keys(games).length + " 个项目";
 
-    var updated = data.updatedAt ? new Date(data.updatedAt) : null;
+    var updated = DATA_UPDATED_AT ? new Date(DATA_UPDATED_AT) : null;
     $("#settingsUpdatedAt").textContent =
       updated && !isNaN(updated.getTime())
         ? (updated.getMonth() + 1) + "月" + updated.getDate() + "日 " +
@@ -1723,6 +1724,64 @@ import { initPlatform, storageGet, storageSet } from "./platform.js";
     });
   }
 
+  /* ============================== 运行时数据 ============================== */
+  function applySnapshot(matches, meta) {
+    if (!matches || !matches.length) return;
+
+    var map = {};
+    MATCHES.forEach(function (m) {
+      if (m && m.id) map[m.id] = m;
+    });
+    matches.forEach(function (m) {
+      if (m && m.id) map[m.id] = m;
+    });
+
+    MATCHES = Object.keys(map).map(function (k) { return map[k]; });
+    MATCHES.sort(function (a, b) {
+      return new Date(a.startAt) - new Date(b.startAt);
+    });
+    if (meta && meta.updatedAt) DATA_UPDATED_AT = meta.updatedAt;
+
+    var events = settlePending();
+    renderSelectors();
+    renderAll();
+    renderSettings();
+    if (!$("#view-schedule").hidden) renderSchedule();
+    if (!$("#view-board").hidden) renderBoard();
+
+    if (events.length) {
+      syncBoards();
+      var total = events.reduce(function (s, e) { return s + e.pred.profit; }, 0);
+      var wins = events.filter(function (e) { return e.pred.won; }).length;
+      toast("已结算 " + events.length + " 场 · 命中 " + wins + " 场 · " +
+        (total >= 0 ? "+" : "") + fmtNum(total) + " 沙粒");
+    }
+  }
+
+  var refreshing = false;
+
+  async function refreshData() {
+    if (refreshing || !isRuntimeEnabled()) return;
+    refreshing = true;
+    try {
+      var cached = await loadCachedSnapshot();
+      if (cached && cached.meta && cached.meta.updatedAt &&
+          cached.meta.updatedAt !== DATA_UPDATED_AT) {
+        applySnapshot(cached.matches, cached.meta);
+      }
+
+      var remote = await fetchRemoteSnapshot();
+      if (remote && remote.meta && remote.meta.updatedAt &&
+          remote.meta.updatedAt !== DATA_UPDATED_AT) {
+        applySnapshot(remote.matches, remote.meta);
+      }
+    } catch (e) {
+      /* 静默回退到内置/缓存数据 */
+    } finally {
+      refreshing = false;
+    }
+  }
+
   /* ============================== 启动 ============================== */
   async function boot() {
     await initPlatform();
@@ -1741,6 +1800,7 @@ import { initPlatform, storageGet, storageSet } from "./platform.js";
         '<div class="empty-state"><strong>赛程数据加载失败</strong>请检查网络后刷新页面，或稍后再试</div>';
       renderSettings();
       maybeShowOnboard();
+      refreshData();
       return;
     }
 
@@ -1748,6 +1808,7 @@ import { initPlatform, storageGet, storageSet } from "./platform.js";
     renderAll();
     renderSettings();
     maybeShowOnboard();
+    refreshData();
 
     if (events.length) {
       syncBoards();
@@ -1762,7 +1823,9 @@ import { initPlatform, storageGet, storageSet } from "./platform.js";
     // 每分钟刷新一次状态（到点自动截止、赛果更新后自动结算）
     setInterval(function () {
       var settledNow = settlePending();
+      renderSelectors();
       renderAll();
+      if (!$("#view-schedule").hidden) renderSchedule();
       if (settledNow.length) {
         syncBoards();
         var total = settledNow.reduce(function (s, e) { return s + e.pred.profit; }, 0);

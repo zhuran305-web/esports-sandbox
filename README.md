@@ -34,14 +34,19 @@ index.html          页面结构（赛事 / 我的 / 排行 / 设置）
 css/style.css       样式（移动端优先，深色电竞风）
 js/app.js           全部逻辑（ES module 入口：渲染、竞猜、结算、采沙、分享）
 js/cloud.js         云服务层（hb-sdk 云端排行榜 / 本地模拟回退）
-js/platform.js      hb-sdk 适配层（握手、storage、user）
+js/platform.js      hb-sdk 适配层（握手、storage、user、network）
+js/config.js        运行时数据源地址（VITE_RUNTIME_DATA_BASE）
+js/data-source.js   运行时赛程拉取、校验与缓存
 data/matches.json   赛事数据快照（Vite 直接导入；构建前由 Release 下载，不提交）
+runtime/            运行时数据产物（meta.json + matches.json，不提交）
 vite.config.js      Vite 配置（miniappManifest 插件）
 public/             小程序图标与封面（构建必需）
 package.json        小程序声明（heybox 字段）与脚本
 data/manual-matches.json  手工补充或修正的赛事（优先级最高）
 tools/fetch-matches.mjs   采集器入口
 tools/pull-data.mjs       构建前从 GitHub Release 资产同步数据快照
+tools/build-runtime-data.mjs  生成 runtime/meta.json 与 runtime/matches.json
+tools/serve-runtime.mjs       本地运行时数据服务器（联调用）
 tools/adapters/           数据源适配器（manual / liquipedia / pandascore）
 tools/lib.mjs             规范化、去重合并、校验、写出
 .github/workflows/update-matches.yml  每 5 分钟采集，仅变化时覆盖 Release 资产（不提交数据）
@@ -67,9 +72,14 @@ tools/lib.mjs             规范化、去重合并、校验、写出
 npm install
 npm run dev        # hb-sdk dev：启动 Vite + 浏览器调试台（本地 mock 宿主）
 npm run build      # hb-sdk build：产物输出到 dist/
+
+# 可选：运行时赛程联调
+npm run runtime:build   # 生成 runtime/meta.json + runtime/matches.json
+npm run runtime:serve   # 本地 5180 端口提供运行时数据
+VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/ npm run dev
 ```
 
-`npm run dev` 会在终端打印调试页地址（默认 5176/5177 端口），在调试台里可以像真实宿主一样使用 storage、用户信息和排行榜。
+`npm run dev` 会在终端打印调试页地址（默认 5176/5177 端口），在调试台里可以像真实宿主一样使用 storage、用户信息和排行榜。生产构建时用 `VITE_RUNTIME_DATA_BASE=https://<bucket 域名>/ npm run build` 指向实际静态源；不设置则关闭运行时拉取，只使用内置数据。
 
 发布：在 open.xiaoheihe.cn 小程序后台登录并绑定远程小程序后，按平台流程上传 `dist/` 产物；也可以用 `npx hb-sdk login` 缓存 CLI 登录态。
 
@@ -80,8 +90,9 @@ npm run build      # hb-sdk build：产物输出到 dist/
 - `storage`：本地键值存储（沙粒、预测记录）
 - `userInfo`：读取当前小黑盒账号昵称与头像
 - `leaderboard`：云端排行榜读写
+- `network`：运行时拉取赛程 JSON（需要平台审批，审批前只在 `hb-sdk dev` 本地生效）
 
-以上权限均为声明即用，不需要平台额外批准；`network` 权限未声明（赛事数据打包进产物，运行时不发请求）。
+`storage` / `userInfo` / `leaderboard` 声明即用；`network` 是审批制，生产环境必须先在开放平台申请域名，否则请求会返回 `PERMISSION_DENIED`，客户端会自动回退到内置/缓存数据。
 
 排行榜需要在绑定远程小程序后创建一次：
 
@@ -222,10 +233,13 @@ node tools/fetch-matches.mjs --retention=60  # 已结束比赛保留 60 天（�
 - GitHub Actions 每 5 分钟采集，先恢复 Release 快照，只有内容变化时才覆盖上传；数据不进入 Git 历史
 - 构建前 `tools/pull-data.mjs` 下载快照，Vite 直接导入 `data/matches.json`
 
-尚未接入运行时拉取：
+运行时拉取（可选，已实现）：
 
-- 赛果更新需要重新构建并上传/发布（数据在构建时打包）
-- 如果要做到不重新发布就更新，可以把 `data/matches.json` 托管到 GitHub Pages / jsDelivr（自带 CORS），运行时用 `hbSDK.network.request` 拉取并回退到内置数据。注意需要声明 `network` 权限并经平台批准，且请求不跟随重定向
+- `npm run runtime:build` 生成 `runtime/meta.json` 和 `runtime/matches.json`
+- 客户端先拉 `meta.json`，`hash` 变化时才拉 `matches.json`；成功结果缓存到 `hbSDK.storage`，失败回退到缓存或内置数据
+- 联调用 `npm run runtime:serve` + `VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/ npm run dev`
+- 生产把 `runtime/` 上传到国内静态源（bucket/Pages），配置 `VITE_RUNTIME_DATA_BASE`，并申请 `network` 权限（域名填静态源 host）
+- 运行时 URL 必须直连 HTTPS；Release 下载地址会 302，不能作为运行时源（SDK 不跟随重定向）
 
 不建议抓取 HLTV / vlr.gg 等无官方 API 的站点：结构随时变化，且多数站点条款不允许。
 

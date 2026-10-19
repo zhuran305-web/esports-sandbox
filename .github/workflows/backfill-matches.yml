@@ -47,10 +47,15 @@ jobs:
           LIQUIPEDIA_CONTACT: ${{ secrets.LIQUIPEDIA_CONTACT }}
         run: node tools/fetch-matches.mjs --days=30 --past-days=30 --past-pages=40 --upcoming-pages=10 --retention=45
 
+      - name: Build runtime data
+        run: node tools/build-runtime-data.mjs
+
       - name: Publish snapshot
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view data >/dev/null 2>&1 \
             || gh release create data --title "赛事数据" --notes "由 GitHub Actions 自动更新，请勿手动编辑。"
-          gh release upload data data/matches.json --clobber
+          cp runtime/matches.json "$RUNNER_TEMP/runtime-matches.json"
+          cp runtime/meta.json "$RUNNER_TEMP/runtime-meta.json"
+          gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber

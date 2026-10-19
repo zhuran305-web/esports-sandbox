@@ -67,6 +67,10 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build runtime data
+        if: steps.collect.outputs.changed == 'true'
+        run: node tools/build-runtime-data.mjs
+
       - name: Publish snapshot
         if: steps.collect.outputs.changed == 'true'
         env:
@@ -74,4 +78,6 @@ jobs:
         run: |
           gh release view data >/dev/null 2>&1 \
             || gh release create data --title "赛事数据" --notes "由 GitHub Actions 自动更新，请勿手动编辑。"
-          gh release upload data data/matches.json --clobber
+          cp runtime/matches.json "$RUNNER_TEMP/runtime-matches.json"
+          cp runtime/meta.json "$RUNNER_TEMP/runtime-meta.json"
+          gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber

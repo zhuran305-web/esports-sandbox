@@ -11,6 +11,8 @@
     "prebuild": "node tools/pull-data.mjs --if-missing",
     "build": "hb-sdk build",
     "data:pull": "node tools/pull-data.mjs --force",
+    "runtime:build": "node tools/build-runtime-data.mjs",
+    "runtime:serve": "node tools/serve-runtime.mjs",
     "boards:create": "hb-sdk remote cloud leaderboard create sha_board_win --order desc --rank-limit 500 && hb-sdk remote cloud leaderboard create sha_board_lose --order desc --rank-limit 500",
     "fetch": "node tools/fetch-matches.mjs",
     "fetch:dry": "node tools/fetch-matches.mjs --dry-run",
@@ -39,6 +41,10 @@
       },
       "leaderboard": {
         "enabled": true
+      },
+      "network": {
+        "enabled": true,
+        "useOfficialDomain": false
       }
     }
   },

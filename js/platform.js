@@ -84,12 +84,58 @@ export async function storageSet(key, value) {
   if (ready && sdk && sdk.storage) {
     try {
       await sdk.storage.setStorage({ key: key, data: value });
-      return;
+      return true;
     } catch (e) { /* 回退 localStorage */ }
   }
   try {
     localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-  } catch (e) { /* 忽略 */ }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function networkGetJson(url, timeoutMs) {
+  // 本地联调（http://127.0.0.1 或局域网 IP）走浏览器 fetch；
+  // 生产必须是 HTTPS，走宿主 network.request。
+  if (url.indexOf("http://") === 0) {
+    try {
+      var r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  if (ready && sdk && sdk.network) {
+    try {
+      var res = await sdk.network.request({
+        url: url,
+        method: "GET",
+        timeout: timeoutMs || 10000
+      });
+      var data = res && res.data;
+      if (typeof data === "string") {
+        try {
+          return JSON.parse(data);
+        } catch (e) {
+          return null;
+        }
+      }
+      return data || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  try {
+    var r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
 }
 
 export async function getUserProfile() {

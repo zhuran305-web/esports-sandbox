@@ -82,7 +82,7 @@ export async function fetchRemoteSnapshot(options) {
     };
   }
 
-  var meta = await networkGetJson(baseUrl() + "meta.json", 10000);
+  var meta = await networkGetJson(baseUrl() + "meta.json?t=" + Date.now(), 10000);
   if (!validMeta(meta)) return null;
 
   if (cached && cached.meta.hash === meta.hash && cached.meta.updatedAt === meta.updatedAt) {

@@ -1,0 +1,47 @@
+name: Publish runtime data to Pages
+
+# 把 data Release 里的 runtime-matches.json / runtime-meta.json 发布到 GitHub Pages。
+# 每 10 分钟一次（Pages 对发布频率有限制，约 10 次/小时；5 分钟会超）。
+# 需要仓库 Settings → Pages → Source 选择 "GitHub Actions"。
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download runtime snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site
+          gh release download data --repo "${{ github.repository }}" \
+            --pattern runtime-matches.json --pattern runtime-meta.json \
+            --dir site --clobber
+          mv site/runtime-matches.json site/matches.json
+          mv site/runtime-meta.json site/meta.json
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

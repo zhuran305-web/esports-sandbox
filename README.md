@@ -51,6 +51,7 @@ tools/adapters/           数据源适配器（manual / liquipedia / pandascore�
 tools/lib.mjs             规范化、去重合并、校验、写出
 .github/workflows/update-matches.yml  每 5 分钟采集，仅变化时覆盖 Release 资产（不提交数据）
 .github/workflows/backfill-matches.yml  每天回填前后各 30 天赛程
+.github/workflows/publish-runtime-pages.yml  每 10 分钟把 runtime 数据发布到 GitHub Pages
 ```
 
 ## 排行榜与云服务
@@ -237,8 +238,10 @@ node tools/fetch-matches.mjs --retention=60  # 已结束比赛保留 60 天（�
 
 - `npm run runtime:build` 生成 `runtime/meta.json` 和 `runtime/matches.json`
 - 客户端先拉 `meta.json`，`hash` 变化时才拉 `matches.json`；成功结果缓存到 `hbSDK.storage`，失败回退到缓存或内置数据
-- 联调用 `npm run runtime:serve` + `VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/ npm run dev`
-- 生产把 `runtime/` 上传到国内静态源（bucket/Pages），配置 `VITE_RUNTIME_DATA_BASE`，并申请 `network` 权限（域名填静态源 host）
+- 本地联调：`npm run runtime:serve` + `VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/ npm run dev`
+- GitHub Pages（当前先用的方案）：`publish-runtime-pages.yml` 每 10 分钟把 `runtime-matches.json`/`runtime-meta.json` 发布到 `https://zhuran305-web.github.io/esports-sandbox/`；构建时用 `VITE_RUNTIME_DATA_BASE=https://zhuran305-web.github.io/esports-sandbox/ npm run build`
+- 生产把 `runtime/` 上传到国内静态源（bucket）会更稳；GitHub Pages 在大陆访问不稳定，且 Pages 约 10 次/小时发布限制，数据最多滞后约 10 分钟
+- 申请 `network` 权限时域名填静态源 host（Pages 是 `zhuran305-web.github.io`）；需要先 `hb-sdk login` 并绑定远程小程序
 - 运行时 URL 必须直连 HTTPS；Release 下载地址会 302，不能作为运行时源（SDK 不跟随重定向）
 
 不建议抓取 HLTV / vlr.gg 等无官方 API 的站点：结构随时变化，且多数站点条款不允许。

@@ -44,7 +44,7 @@ tools/fetch-matches.mjs   采集器入口
 tools/pull-data.mjs       构建前从 GitHub Release 资产同步数据快照
 tools/adapters/           数据源适配器（manual / liquipedia / pandascore）
 tools/lib.mjs             规范化、去重合并、校验、写出
-.github/workflows/update-matches.yml  每小时采集并覆盖 Release 资产（不提交数据）
+.github/workflows/update-matches.yml  每 5 分钟采集，仅变化时覆盖 Release 资产（不提交数据）
 .github/workflows/backfill-matches.yml  每天回填前后各 30 天赛程
 ```
 
@@ -126,7 +126,7 @@ node tools/fetch-matches.mjs --retention=60  # 已结束比赛保留 60 天（�
 4. 自动来源的旧赛果按保留期清理，手工数据始终保留
 5. 写入前做 schema 校验，重复 id / 缺字段 / 非法时间会直接报错退出
 
-**定时采集**：`.github/workflows/update-matches.yml` 每小时跑一次，先下载 Release 资产里的上一份 `matches.json`，采集合并后再覆盖上传，**不产生数据提交**。每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次（约 33/小时，占 PandaScore 额度的 3.3%）。另有 `backfill-matches.yml` 每天 UTC 03:00（北京 11:00）回填前后各 30 天赛程（`range[begin_at]` 时间范围过滤，过去最多 40 页、未来 10 页），供赛程表使用；两个任务共用 concurrency group，不会同时读写快照。当前 Release 快照 3039 场（约 1.7 MB，随赛程变化；构建产物约 1.5 MiB）。推荐用公开仓库（Actions 不计费）；GitHub 高峰期定时任务可能延迟，公开仓库连续 60 天无仓库活动会被暂停计划任务，`keepalive.yml` 每月提交一次时间戳保活。注意 Liquipedia 可能屏蔽数据中心 IP，失败时看日志，PandaScore 不受影响。
+**定时采集**：`.github/workflows/update-matches.yml` 每 5 分钟跑一次，先下载 Release 资产里的上一份 `matches.json`，采集合并后**只有内容变化才覆盖上传**，不产生数据提交。每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次；12 轮/小时约 396 次，占 PandaScore 额度的 40%。另有 `backfill-matches.yml` 每天 UTC 03:00（北京 11:00）回填前后各 30 天赛程（`range[begin_at]` 时间范围过滤，过去最多 40 页、未来 10 页），供赛程表使用；两个任务共用 concurrency group，不会同时读写快照。当前 Release 快照 3039 场（约 1.7 MB，随赛程变化；构建产物约 1.5 MiB）。推荐用公开仓库（Actions 不计费）；GitHub 高峰期定时任务可能延迟，公开仓库连续 60 天无仓库活动会被暂停计划任务，`keepalive.yml` 每月提交一次时间戳保活。注意 Liquipedia 可能屏蔽数据中心 IP，失败时看日志，PandaScore 不受影响。
 
 首次上线步骤：
 
@@ -134,7 +134,7 @@ node tools/fetch-matches.mjs --retention=60  # 已结束比赛保留 60 天（�
 2. 仓库 Settings → Secrets and variables → Actions，添加 `PANDASCORE_TOKEN`（必填），按需添加 `LIQUIPEDIA_API_KEY`、`LIQUIPEDIA_CONTACT`
 3. 打开 Actions 页面，手动运行一次 `Update match data` 验证；首次运行会创建 `data` Release 并上传 `matches.json`
 4. 再手动运行一次 `Backfill match data`，把前后 30 天赛程补齐（之后每天自动回填）
-5. 之后每小时自动更新 Release 资产，仓库历史不会增长；`keepalive.yml` 每月写一次时间戳，避免定时任务因 60 天无活动被暂停
+5. 之后每 5 分钟检查一次，只有数据变化时才更新 Release 资产，仓库历史不会增长；`keepalive.yml` 每月写一次时间戳，避免定时任务因 60 天无活动被暂停
 6. 本地构建前运行 `npm run data:pull`；直接 `npm run build` 时，`prebuild` 会在文件缺失时自动下载
 
 ## 手工补充赛事
@@ -219,7 +219,7 @@ node tools/fetch-matches.mjs --retention=60  # 已结束比赛保留 60 天（�
 已实现：
 
 - 采集器（Liquipedia / PandaScore / 手工）→ 合并去重 → 本地 `data/matches.json`
-- GitHub Actions 每小时采集，先恢复 Release 快照再覆盖上传；数据不进入 Git 历史
+- GitHub Actions 每 5 分钟采集，先恢复 Release 快照，只有内容变化时才覆盖上传；数据不进入 Git 历史
 - 构建前 `tools/pull-data.mjs` 下载快照，Vite 直接导入 `data/matches.json`
 
 尚未接入运行时拉取：

@@ -1,9 +1,9 @@
 name: Update match data
 
-# 公开仓库 + 每小时采集一次。
-# 数据不再提交到 Git：每次先恢复 Release 资产里的上一份快照，采集合并后再覆盖上传，
-# 因此仓库历史里不会累积 1.3 MB 的赛事数据。小程序是构建时打包数据，不需要分钟级新鲜度。
-# 每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次。
+# 公开仓库 + 每 5 分钟采集一次（GitHub Actions 的最短间隔）。
+# 数据不提交到 Git：每次先恢复 Release 资产里的上一份快照，采集合并后只有内容变化才覆盖上传，
+# 因此仓库体积不会增长。小程序仍是构建时打包数据，用户端要看到新赛程需重新构建发布。
+# 每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次；12 轮/小时约 396 次，占额度 40%。
 # 需要在仓库 Secrets 配置：
 #   PANDASCORE_TOKEN（必填）、LIQUIPEDIA_API_KEY（可选）
 #   LIQUIPEDIA_CONTACT（可选，填邮箱或主页，Liquipedia 要求 UA 带联系方式）
@@ -13,7 +13,7 @@ name: Update match data
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -35,6 +35,7 @@ jobs:
           node-version: "20"
 
       - name: Restore previous snapshot
+        id: restore
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -44,15 +45,30 @@ jobs:
           else
             echo "首次运行：还没有 data release，从空数据开始"
           fi
+          if [ -f data/matches.json ]; then
+            cp data/matches.json "$RUNNER_TEMP/matches.previous.json"
+            echo "has_previous=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_previous=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Collect matches
+        id: collect
         env:
           LIQUIPEDIA_API_KEY: ${{ secrets.LIQUIPEDIA_API_KEY }}
           LIQUIPEDIA_CONTACT: ${{ secrets.LIQUIPEDIA_CONTACT }}
           PANDASCORE_TOKEN: ${{ secrets.PANDASCORE_TOKEN }}
-        run: node tools/fetch-matches.mjs --days=10 --retention=45
+        run: |
+          node tools/fetch-matches.mjs --days=10 --retention=45
+          if [ "${{ steps.restore.outputs.has_previous }}" = "true" ] && cmp -s "$RUNNER_TEMP/matches.previous.json" data/matches.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "数据无变化，跳过 Release 上传"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish snapshot
+        if: steps.collect.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

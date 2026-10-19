@@ -15,6 +15,8 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import dns from "node:dns/promises";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -63,6 +65,72 @@ async function resolveUrl() {
   return "https://github.com/" + repo + "/releases/download/data/matches.json";
 }
 
+function isPrivateIp(ip) {
+  if (net.isIPv4(ip)) {
+    var p = ip.split(".").map(Number);
+    var a = p[0], b = p[1], c = p[2];
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 192 && b === 0 && (c === 0 || c === 2)) return true;
+    if (a === 198 && (b === 18 || b === 19 || b === 51)) return true;
+    if (a === 203 && b === 0 && c === 113) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  if (net.isIPv6(ip)) {
+    var s = ip.toLowerCase();
+    if (s === "::" || s === "::1") return true;
+    if (s.indexOf("::ffff:") === 0) return isPrivateIp(s.slice(7));
+    if (/^f[cd][0-9a-f]{2}:/.test(s)) return true;
+    if (/^fe[89ab][0-9a-f]:/.test(s)) return true;
+    if (/^(2001:db8|2001:2|2001:10|64:ff9b|100):/.test(s)) return true;
+    return false;
+  }
+  return true;
+}
+
+async function assertSafeUrl(urlString) {
+  var u;
+  try {
+    u = new URL(urlString);
+  } catch (e) {
+    throw new Error("数据地址不是合法 URL");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error("数据地址只允许 http/https");
+  }
+  var host = u.hostname.toLowerCase();
+  if (!host) throw new Error("数据地址缺少 host");
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".home.arpa")
+  ) {
+    throw new Error("拒绝本地域名：" + host);
+  }
+  if (net.isIP(host)) {
+    if (isPrivateIp(host)) throw new Error("拒绝私有/环回/保留地址：" + host);
+    return;
+  }
+  var addrs;
+  try {
+    addrs = await dns.lookup(host, { all: true });
+  } catch (e) {
+    throw new Error("数据地址域名解析失败：" + host);
+  }
+  if (!addrs.length) throw new Error("数据地址域名没有解析结果：" + host);
+  addrs.forEach(function (a) {
+    if (isPrivateIp(a.address)) {
+      throw new Error("数据地址解析到私有/环回/保留地址：" + host + " -> " + a.address);
+    }
+  });
+}
+
 async function fetchToTmp(url) {
   var res = await fetch(url, {
     redirect: "follow",
@@ -85,6 +153,7 @@ function curlToTmp(url) {
 }
 
 async function download(url) {
+  await assertSafeUrl(url);
   await mkdir(path.dirname(TARGET), { recursive: true });
   try {
     await fetchToTmp(url);

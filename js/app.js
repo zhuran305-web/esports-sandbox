@@ -1,6 +1,6 @@
 import matchesData from "../data/matches.json";
 import { Cloud, Account } from "./cloud.js";
-import { initPlatform, storageGet, storageSet } from "./platform.js";
+import { initPlatform, setupViewport, storageGet, storageSet } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
@@ -12,7 +12,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var DATA_UPDATED_AT = DATA.updatedAt || "";
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
-  var APP_VERSION = "1.0.0";
+  var APP_VERSION = "1.0.4";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -201,6 +201,41 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
     var pair = PALETTE[h % PALETTE.length];
     return "background:linear-gradient(145deg," + pair[0] + "," + pair[1] + ")";
+  }
+
+  // 徽标最多 4 个字符：数据源给的缩写可能很长（如 PHTM.Ac、Nemiga）
+  function avatarText(team) {
+    var raw = String((team && (team.short || team.name)) || "").trim();
+    if (!raw) return "?";
+    var cleaned = raw.replace(/[^\p{L}\p{N}]+/gu, "");
+    var first = raw.split(/[.\s_-]+/)[0].replace(/[^\p{L}\p{N}]+/gu, "");
+    if (first.length >= 3 && first.length <= 4) return first.toUpperCase();
+    if (cleaned.length <= 4) return cleaned.toUpperCase();
+    return cleaned.slice(0, 4).toUpperCase();
+  }
+
+  // 已截止比赛显示绝对日期，并提示距离开赛还有多久
+  function fmtLockedTime(m) {
+    var d = new Date(m.startAt);
+    var hh = String(d.getHours()).padStart(2, "0");
+    var mm = String(d.getMinutes()).padStart(2, "0");
+    return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + hh + ":" + mm;
+  }
+
+  function startHint(m) {
+    var diff = new Date(m.startAt).getTime() - Date.now();
+    if (diff <= 0) return "";
+    var mins = Math.max(1, Math.round(diff / 60000));
+    return mins + " 分钟后开赛";
+  }
+
+  function matchTimeHTML(m, st) {
+    if (st === "locked") {
+      var hint = startHint(m);
+      return '<span class="match-time live"><em>' + esc(fmtLockedTime(m)) + "</em>" +
+        (hint ? "<small>" + esc(hint) + "</small>" : "") + "</span>";
+    }
+    return '<span class="match-time">' + esc(fmtTime(m.startAt)) + "</span>";
   }
 
   function toast(msg) {
@@ -766,7 +801,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     html += groupHTML("正在进行", groups.live);
     html += groupHTML("可竞猜", groups.open);
-    html += groupHTML("已截止 · 待赛果", groups.locked.concat(groups.awaiting));
+    html += groupHTML("已截止", groups.locked);
+    html += groupHTML("待赛果", groups.awaiting);
     html += groupHTML("刚刚结束", groups.finished);
 
     if (!html) {
@@ -806,7 +842,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       }
 
       var inner =
-        '<span class="avatar" style="' + avatarStyle(team.name) + '">' + esc(team.short) + "</span>" +
+        '<span class="avatar" style="' + avatarStyle(team.name) + '">' + esc(avatarText(team)) + "</span>" +
         '<span class="team-main"><span class="team-name">' + esc(team.name) + '</span><span class="team-sub">' + sub + "</span></span>" +
         right;
 
@@ -843,7 +879,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         '<div class="card-top">' +
           '<span class="game-chip" style="background:linear-gradient(135deg,' + gm.c1 + "," + gm.c2 + ");color:" + (gm.dark ? "#1a0e04" : "#0b1220") + '">' + esc(gm.chip) + "</span>" +
           '<span class="tournament">' + esc(m.tournament) + "</span>" +
-          '<span class="match-time' + (st === "locked" ? " live" : "") + '">' + esc(fmtTime(m.startAt)) + "</span>" +
+          matchTimeHTML(m, st) +
         "</div>" +
         '<div class="team-rows">' + rows + "</div>" +
         '<div class="card-bottom">' + bottom + "</div>" +
@@ -954,6 +990,54 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     renderBalance();
     renderMatches();
     renderProfile();
+    updateScrollRail();
+  }
+
+  /* ============================== 滚动指示 ============================== */
+  var scrollRailTimer = 0;
+  var scrollRailRaf = 0;
+
+  function scrollMetrics() {
+    var scroller = document.scrollingElement || document.documentElement;
+    return {
+      top: scroller.scrollTop,
+      max: Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+      view: scroller.clientHeight
+    };
+  }
+
+  function updateScrollRail() {
+    var rail = $("#scrollRail");
+    var thumb = $("#scrollThumb");
+    if (!rail || !thumb) return;
+    var m = scrollMetrics();
+    var railH = rail.clientHeight;
+    if (m.max <= 4 || railH <= 0) {
+      rail.classList.remove("is-visible");
+      return;
+    }
+    var h = Math.max(30, Math.round(railH * (m.view / (m.max + m.view))));
+    var y = Math.round((m.top / m.max) * Math.max(0, railH - h));
+    thumb.style.height = h + "px";
+    thumb.style.transform = "translateY(" + y + "px)";
+  }
+
+  function showScrollRail() {
+    var rail = $("#scrollRail");
+    if (!rail || scrollRailRaf) return;
+    scrollRailRaf = requestAnimationFrame(function () {
+      scrollRailRaf = 0;
+      updateScrollRail();
+      rail.classList.add("is-visible");
+      clearTimeout(scrollRailTimer);
+      scrollRailTimer = setTimeout(function () { rail.classList.remove("is-visible"); }, 900);
+    });
+  }
+
+  function initScrollRail() {
+    window.addEventListener("scroll", showScrollRail, { passive: true });
+    window.addEventListener("resize", updateScrollRail, { passive: true });
+    updateScrollRail();
   }
 
   /* ============================== 竞猜面板 ============================== */
@@ -987,8 +1071,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       m.tournament + " · " + m.stage + " · " + m.format + " · " + fmtTime(m.startAt);
     $("#pickNameA").textContent = m.teamA.name;
     $("#pickNameB").textContent = m.teamB.name;
-    $("#pickAvatarA").textContent = m.teamA.short;
-    $("#pickAvatarB").textContent = m.teamB.short;
+    $("#pickAvatarA").textContent = avatarText(m.teamA);
+    $("#pickAvatarB").textContent = avatarText(m.teamB);
     $("#pickAvatarA").setAttribute("style", avatarStyle(m.teamA.name));
     $("#pickAvatarB").setAttribute("style", avatarStyle(m.teamB.name));
 
@@ -1785,12 +1869,18 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /* ============================== 启动 ============================== */
   async function boot() {
     await initPlatform();
+    // 安全区测量最多等 800ms，避免旧宿主阻塞启动
+    await Promise.race([
+      setupViewport().catch(function () { return null; }),
+      new Promise(function (resolve) { setTimeout(resolve, 800); })
+    ]);
     state = await loadState();
     validateLoadedState();
     saveState(); // 把修正后的状态写回，防止脏数据长期残留
     var events = settlePending();
     bindEvents();
     bindOnboard();
+    initScrollRail();
 
     // 数据文件加载失败：给出明确提示，避免白屏
     if (!MATCHES.length) {

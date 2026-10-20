@@ -18,6 +18,9 @@
   --radius: 16px;
   --radius-sm: 10px;
   --shadow: 0 18px 40px rgba(0, 0, 0, .45);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
@@ -62,6 +65,17 @@ html, body {
   background: transparent;
 }
 
+/* 根滚动条改为自绘指示条（见 .scroll-rail），避免系统滚动条顶到屏幕两端 */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 body {
   min-height: 100vh;
   background:
@@ -100,12 +114,15 @@ input { font-family: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px 12px;
-  background: linear-gradient(180deg, rgba(10, 13, 19, .96) 60%, rgba(10, 13, 19, .72));
+  padding: calc(var(--safe-top) + 10px) 18px 12px;
+  background: linear-gradient(180deg, rgba(28, 36, 51, .96) 0%, rgba(10, 13, 19, .9) 100%);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border-soft);
 }
+
+/* 宿主右上角有「更多 / 退出」胶囊（实测宽约 107px + 右边距 15px），标题区让出右侧空间 */
+.in-host .topbar { padding-right: calc(var(--safe-right) + 130px); }
 
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
@@ -126,15 +143,16 @@ input { font-family: inherit; }
 .brand-text strong { font-size: 16px; letter-spacing: .5px; }
 .brand-text span { font-size: 11px; color: var(--text-faint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* 余额胶囊：放在宿主「更多/退出」胶囊左侧（顶栏已留出右侧空间） */
 .balance-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 13px 8px 10px;
+  gap: 6px;
+  padding: 6px 11px 6px 9px;
   border-radius: 999px;
   border: 1px solid rgba(255, 138, 61, .32);
   background: rgba(255, 138, 61, .09);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: #ffcf9f;
@@ -148,11 +166,22 @@ input { font-family: inherit; }
 }
 
 .coin {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 30%, #ffe1b8, #ff9a3d 55%, #c95900);
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .22);
+}
+
+/* 窄屏下副标题让位、余额胶囊收紧，保证标题和胶囊都有空间。
+   必须放在基础规则之后：同特异性下后写者胜，提前写会被 .balance-pill/.coin 基础规则覆盖。 */
+@media (max-width: 399px) {
+  .brand-text span { display: none; }
+}
+@media (max-width: 374px) {
+  .balance-pill { padding: 5px 9px; font-size: 12px; gap: 5px; }
+  .coin { display: none; }
 }
 
 /* ---------- 内容 ---------- */
@@ -521,11 +550,18 @@ input { font-family: inherit; }
 
 .match-time {
   margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   font-size: 11.5px;
   color: var(--text-faint);
   white-space: nowrap;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
+.match-time em { font-style: normal; }
+.match-time small { font-size: 10px; color: var(--accent); opacity: .9; }
 .match-time.live { color: var(--accent); font-weight: 700; }
 
 .team-rows { padding: 6px 8px; }
@@ -559,9 +595,13 @@ input { font-family: inherit; }
   border-radius: 11px;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  padding: 0 2px;
+  overflow: hidden;
+  font-size: 10.5px;
   font-weight: 800;
-  letter-spacing: .3px;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
 }
@@ -1345,6 +1385,30 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
 
 .data-note { font-size: 11.5px; color: var(--text-faint); text-align: center; margin: 18px 0 8px; }
 
+/* ---------- 自绘滚动指示（上下留白） ---------- */
+.scroll-rail {
+  position: fixed;
+  top: calc(var(--safe-top) + 72px);
+  bottom: calc(var(--safe-bottom) + 72px);
+  right: max(3px, calc((100vw - 560px) / 2 + 3px));
+  width: 3px;
+  z-index: 25;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.scroll-rail.is-visible { opacity: 1; }
+.scroll-rail span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 30px;
+  border-radius: 999px;
+  background: rgba(154, 166, 186, .55);
+  will-change: transform, height;
+}
+
 /* ---------- 底部导航 ---------- */
 .tabbar {
   position: fixed;
@@ -1468,8 +1532,13 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   border-radius: 13px;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  padding: 0 3px;
+  overflow: hidden;
+  font-size: 11.5px;
   font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
 }
@@ -1712,5 +1781,5 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
 
 @media (min-width: 600px) {
   .content { padding: 18px 22px 8px; }
-  .topbar { padding: 16px 22px 14px; }
+  .topbar { padding: calc(var(--safe-top) + 12px) 22px 14px; }
 }

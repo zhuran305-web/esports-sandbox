@@ -62,6 +62,49 @@ export function isMiniProgram() {
   return ready;
 }
 
+/**
+ * 适配宿主顶部胶囊与手机状态栏：
+ * 1. 标记 in-host，让顶栏为宿主「更多 / 退出」按钮让出右侧空间；
+ * 2. 把安全区写入 CSS 变量，顶栏不再压住状态栏；
+ * 3. 深色页面使用浅色导航栏前景。
+ */
+export async function setupViewport() {
+  if (!ready || !sdk) return null;
+  document.documentElement.classList.add("in-host");
+
+  var root = document.documentElement;
+  function apply(info) {
+    if (!info) return;
+    var safe = info.safeArea;
+    if (safe && typeof safe.top === "number") {
+      root.style.setProperty("--safe-top", Math.round(Math.max(0, safe.top)) + "px");
+      root.style.setProperty("--safe-left", Math.round(Math.max(0, safe.left || 0)) + "px");
+      root.style.setProperty("--safe-right", Math.round(Math.max(0, (info.windowWidth || 0) - safe.right)) + "px");
+      root.style.setProperty("--safe-bottom", Math.round(Math.max(0, (info.windowHeight || 0) - safe.bottom)) + "px");
+    } else if (typeof info.statusBarHeight === "number") {
+      root.style.setProperty("--safe-top", Math.round(Math.max(0, info.statusBarHeight)) + "px");
+    }
+  }
+
+  if (sdk.viewport) {
+    try {
+      await sdk.viewport.setNavigationBarStyle({ foregroundStyle: "light" });
+    } catch (e) { /* 旧宿主可能不支持 */ }
+
+    try {
+      apply(await sdk.viewport.getWindowInfo());
+    } catch (e) { /* 忽略测量失败，退回 env() */ }
+
+    try {
+      if (typeof sdk.on === "function") {
+        sdk.on("viewport_change", function (info) { apply(info); });
+      }
+    } catch (e) { /* 忽略事件订阅失败 */ }
+  }
+
+  return true;
+}
+
 export function getSDK() {
   return sdk;
 }

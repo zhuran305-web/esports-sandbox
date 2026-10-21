@@ -13,7 +13,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
   var THEME_KEY = "esports_sandbox_theme";
-  var APP_VERSION = "1.0.13";
+  var APP_VERSION = "1.0.14";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -1912,6 +1912,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var isSubPage = isSubView(name);
     // 先归零滚动，再收缩页面：长页缩成短页时不会因滚动位置越界闪空白
     window.scrollTo(0, 0);
+    if (name === "schedule" && prev !== "schedule") {
+      // 清掉上次的 3000+ 行再显示，避免整树重排造成数秒卡顿；随后由 renderSchedule 分帧重建
+      schedRender = null;
+      var schedList = $("#scheduleList");
+      if (schedList) schedList.innerHTML = "";
+    }
     ["matches", "profile", "board", "settings", "rules", "schedule"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });

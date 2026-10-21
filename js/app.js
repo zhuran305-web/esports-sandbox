@@ -1,6 +1,6 @@
 import matchesData from "../data/matches.json";
 import { Cloud, Account } from "./cloud.js";
-import { initPlatform, setupViewport, storageGet, storageSet } from "./platform.js";
+import { initPlatform, setupViewport, setNavigationBarStyle, storageGet, storageSet } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
@@ -12,7 +12,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var DATA_UPDATED_AT = DATA.updatedAt || "";
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
-  var APP_VERSION = "1.0.4";
+  var THEME_KEY = "esports_sandbox_theme";
+  var APP_VERSION = "1.0.11";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -76,6 +77,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var TIER_RANK = { s: 0, a: 1, b: 2, c: 3, d: 4 };
   var sheetMatchId = null;
   var sheetPick = "A";
+  var sheetMode = "place"; // place | add | withdraw
   var toastTimer = null;
 
   /* ============================== 工具 ============================== */
@@ -91,6 +93,93 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   function fmtNum(n) {
     return Number(n || 0).toLocaleString("zh-CN");
+  }
+
+  /* ============================== 主题 ============================== */
+  var themePref = "system";
+  var themeMedia = null;
+
+  function systemPrefersLight() {
+    try { return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches); } catch (e) { return false; }
+  }
+
+  function resolvedTheme(pref) {
+    if (pref === "light" || pref === "dark") return pref;
+    return systemPrefersLight() ? "light" : "dark";
+  }
+
+  function applyTheme(pref) {
+    themePref = pref;
+    var theme = resolvedTheme(pref);
+    document.documentElement.setAttribute("data-theme", theme);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", theme === "light" ? "#f2f5fa" : "#0b0e14");
+    var value = $("#themeValue");
+    if (value) value.textContent = pref === "system" ? "跟随系统" : pref === "light" ? "浅色" : "深色";
+    document.querySelectorAll("#themeOptions button").forEach(function (b) {
+      b.classList.toggle("is-active", b.dataset.themeOpt === pref);
+    });
+    setNavigationBarStyle(theme);
+  }
+
+  async function initTheme() {
+    var stored = null;
+    try { stored = await storageGet(THEME_KEY); } catch (e) { /* ignore */ }
+    if (stored === null || stored === undefined) {
+      try { stored = localStorage.getItem(THEME_KEY); } catch (e) { /* ignore */ }
+    }
+    if (stored !== "light" && stored !== "dark" && stored !== "system") stored = "system";
+    applyTheme(stored);
+
+    try {
+      themeMedia = window.matchMedia("(prefers-color-scheme: light)");
+      var onChange = function () { if (themePref === "system") applyTheme("system"); };
+      if (themeMedia.addEventListener) themeMedia.addEventListener("change", onChange);
+      else if (themeMedia.addListener) themeMedia.addListener(onChange);
+    } catch (e) { /* ignore */ }
+
+    var options = $("#themeOptions");
+    if (options) {
+      options.addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-theme-opt]");
+        if (!btn) return;
+        var pref = btn.dataset.themeOpt;
+        applyTheme(pref);
+        try { localStorage.setItem(THEME_KEY, pref); } catch (e) { /* ignore */ }
+        storageSet(THEME_KEY, pref);
+      });
+    }
+  }
+
+  /* ============================== 页面生命周期 ============================== */
+  var OVERLAY_SELECTORS = [
+    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop",
+    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover"
+  ];
+
+  function closeAllOverlays() {
+    OVERLAY_SELECTORS.forEach(function (sel) {
+      var el = $(sel);
+      if (el) el.hidden = true;
+    });
+    document.body.style.overflow = "";
+  }
+
+  function initPageLifecycle() {
+    window.addEventListener("pagehide", closeAllOverlays);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden") closeAllOverlays();
+    });
+    window.addEventListener("pageshow", function (e) {
+      if (!e.persisted) return;
+      closeAllOverlays();
+      // 从宿主返回时若页面是空的（白屏），强制重新加载
+      if (!document.body.innerText.trim()) {
+        location.reload();
+        return;
+      }
+      renderAll();
+    });
   }
 
   async function loadState() {
@@ -1051,12 +1140,105 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var list = STAKE_FIXED.slice();
     if (debt > 0 && list.indexOf(debt) === -1) list.push(debt);
     list.sort(function (a, b) { return a - b; });
-    return { stakes: list, debt: debt };
+    return { stakes: list, debt: debt, reason: "debt" };
   }
 
-  // 正数时最大投入 = 余额 × 2（杠杆）
+  // 正数时最大总投入 = 余额 × 2（杠杆）
   function maxStake(bankroll) {
     return Math.max(0, Math.floor(bankroll * LEVERAGE));
+  }
+
+  // 当前操作模式的投入限制；fixed 非空表示只能选定额档位
+  function stakeLimits(mode, existing) {
+    var bankroll = state.bankroll;
+    if (mode === "withdraw") {
+      return { min: 1, max: existing ? existing.stake : 0, fixed: null };
+    }
+    if (isDebt(bankroll)) {
+      return { min: MIN_STAKE, max: Infinity, fixed: fixedStakes(bankroll) };
+    }
+    if (mode === "add") {
+      var maxAdd = Math.max(0, maxStake(bankroll) - (existing ? existing.stake : 0));
+      if (maxAdd >= MIN_STAKE) {
+        return { min: MIN_STAKE, max: maxAdd, fixed: null };
+      }
+      // 自由加注额度用完：仍保留定额加注，保证任何余额下都能加注
+      return { min: MIN_STAKE, max: Infinity, fixed: { stakes: STAKE_FIXED.slice(), debt: 0, reason: "cap" } };
+    }
+    return { min: MIN_STAKE, max: maxStake(bankroll), fixed: null };
+  }
+
+  function renderStakeMode() {
+    document.querySelectorAll("#stakeMode button").forEach(function (b) {
+      b.classList.toggle("is-active", b.dataset.mode === sheetMode);
+    });
+  }
+
+  function renderStakeChips(mode) {
+    var box = $("#stakeChips");
+    if (mode === "withdraw") {
+      box.innerHTML =
+        [100, 500, 1000].map(function (v) {
+          return '<button type="button" data-amount="' + v + '">' + fmtNum(v) + "</button>";
+        }).join("") +
+        '<button type="button" data-amount="withdrawAll">全部撤回</button>';
+      return;
+    }
+    if (mode === "add") {
+      box.innerHTML =
+        [100, 500, 1000].map(function (v) {
+          return '<button type="button" data-amount="' + v + '">' + fmtNum(v) + "</button>";
+        }).join("") +
+        '<button type="button" data-amount="max">加满</button>';
+      return;
+    }
+    box.innerHTML =
+      '<button type="button" data-amount="100">100</button>' +
+      '<button type="button" data-amount="500">500</button>' +
+      '<button type="button" data-amount="1000">1000</button>' +
+      '<button type="button" data-amount="all">全部</button>' +
+      '<button type="button" data-amount="double">2倍</button>';
+  }
+
+  function renderStakeUI(existing) {
+    var limits = stakeLimits(sheetMode, existing);
+    var input = $("#stakeInput");
+    var fixedBox = $("#stakeFixed");
+    var chips = $("#stakeChips");
+    var confirm = $("#confirmPrediction");
+    var labelText = sheetMode === "withdraw" ? "撤回沙粒" : sheetMode === "add" ? "加注沙粒" : "投入沙粒";
+
+    $("#stakeLabel").textContent = labelText;
+    input.setAttribute("aria-label", labelText);
+    confirm.textContent = sheetMode === "withdraw" ? "确认撤回" : sheetMode === "add" ? "确认加注" : "确认预测";
+    confirm.disabled = false;
+
+    fixedBox.hidden = !limits.fixed;
+    chips.style.display = limits.fixed ? "none" : "";
+    $("#stakeRow").classList.toggle("is-readonly", !!limits.fixed);
+    input.readOnly = !!limits.fixed;
+    input.min = String(limits.min);
+
+    if (limits.fixed) {
+      $("#stakeFixedTip").textContent = sheetMode === "add"
+        ? (limits.fixed.reason === "cap"
+          ? "自由加注额度已用完（总投入已达当前沙粒的 2 倍），可用定额加注"
+          : "负债/归零时只能使用定额加注")
+        : "负债状态下只能使用定额投入";
+      $("#fixedChips").innerHTML = limits.fixed.stakes.map(function (v) {
+        var label = v === limits.fixed.debt && limits.fixed.debt > 0 ? "负债额" : fmtNum(v);
+        return '<button type="button" data-amount="' + v + '">' + label + "</button>";
+      }).join("");
+      input.value = limits.fixed.stakes[0] || MIN_STAKE;
+      updateFixedSelection();
+      return;
+    }
+
+    renderStakeChips(sheetMode);
+    var minAllowed = Math.min(limits.min, limits.max);
+    var def = Math.min(100, limits.max);
+    if (def < minAllowed) def = minAllowed;
+    input.value = def;
   }
 
   function openSheet(matchId, pick) {
@@ -1066,6 +1248,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     sheetMatchId = matchId;
     var existing = predictionFor(matchId);
     sheetPick = pick || (existing ? existing.pick : "A");
+    sheetMode = existing ? "add" : "place";
 
     $("#sheetMatchMeta").textContent =
       m.tournament + " · " + m.stage + " · " + m.format + " · " + fmtTime(m.startAt);
@@ -1079,37 +1262,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#sheetBalance").textContent = fmtNum(state.bankroll);
     if (state.bankroll < 0) $("#sheetBalance").textContent = "-" + fmtNum(Math.abs(state.bankroll));
 
-    var input = $("#stakeInput");
-    var fixedBox = $("#stakeFixed");
-    var chips = $("#stakeChips");
+    $("#stakeExisting").hidden = !existing;
+    if (existing) $("#existingStake").textContent = fmtNum(existing.stake);
+    $("#stakeMode").hidden = !existing;
+    renderStakeMode();
+    renderStakeUI(existing);
 
-    if (isDebt(state.bankroll)) {
-      // 负债：定额投入
-      fixedBox.hidden = false;
-      chips.style.display = "none";
-      $("#stakeRow").classList.add("is-readonly");
-      input.readOnly = true;
-      var fixed = fixedStakes(state.bankroll);
-      $("#fixedChips").innerHTML = fixed.stakes.map(function (v) {
-        var label = v === fixed.debt && fixed.debt > 0 ? "负债额" : fmtNum(v);
-        return '<button type="button" data-amount="' + v + '">' + label + "</button>";
-      }).join("");
-      input.value = existing ? existing.stake : (fixed.stakes[0] || 10);
-      updateFixedSelection();
-    } else {
-      // 正数：自由输入，上限为余额 2 倍
-      fixedBox.hidden = true;
-      chips.style.display = "";
-      $("#stakeRow").classList.remove("is-readonly");
-      input.readOnly = false;
-      var available = state.bankroll + (existing ? existing.stake : 0);
-      var cap = maxStake(available);
-      var def = Math.min(100, cap);
-      if (def < MIN_STAKE) def = Math.max(cap, 0);
-      input.value = existing ? existing.stake : def;
-    }
-
-    $("#confirmPrediction").textContent = existing ? "确认修改" : "确认预测";
     updatePickUI();
     updatePreview();
 
@@ -1137,17 +1295,38 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   function updatePreview() {
-    var stake = parseInt($("#stakeInput").value, 10);
-    if (!isFinite(stake) || stake <= 0) {
-      $("#payoutPreview").innerHTML = "猜对预计返还 <b>--</b> 沙粒";
+    var existing = predictionFor(sheetMatchId);
+    var limits = stakeLimits(sheetMode, existing);
+    var amount = parseInt($("#stakeInput").value, 10);
+
+    if (!isFinite(amount) || amount <= 0) {
+      $("#payoutPreview").innerHTML = "请输入有效沙粒";
       return;
     }
+
     var bonus = bonusRateForNextWin();
-    var payout = Math.round(stake * (2 + bonus));
+    if (sheetMode === "withdraw") {
+      if (!existing) {
+        $("#payoutPreview").textContent = "当前没有可撤回的投入";
+        return;
+      }
+      var withdraw = Math.min(amount, existing.stake);
+      var remaining = existing.stake - withdraw;
+      $("#payoutPreview").innerHTML = (remaining > 0
+        ? "撤回后剩余投入 <b>" + fmtNum(remaining) + "</b> 沙粒"
+        : "全部撤回") + " · 可退回 <b>" + fmtNum(withdraw) + "</b> 沙粒";
+      return;
+    }
+
+    var total = sheetMode === "add" && existing ? existing.stake + amount : amount;
+    var payout = Math.round(total * (2 + bonus));
     var bonusText = bonus > 0
       ? ' <span class="bonus">（含连对加成 +' + Math.round(bonus * 100) + "%）</span>"
       : "";
-    $("#payoutPreview").innerHTML = "猜对预计返还 <b>" + fmtNum(payout) + "</b> 沙粒" + bonusText;
+    var prefix = sheetMode === "add" && existing
+      ? "加注后总投入 <b>" + fmtNum(total) + "</b> 沙粒 · "
+      : "";
+    $("#payoutPreview").innerHTML = prefix + "猜对预计返还 <b>" + fmtNum(payout) + "</b> 沙粒" + bonusText;
   }
 
   function placePrediction() {
@@ -1160,53 +1339,72 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       return;
     }
 
-    var stake = parseInt($("#stakeInput").value, 10);
-    if (!isFinite(stake) || stake <= 0) {
-      toast("请输入有效的投入沙粒");
+    var amount = parseInt($("#stakeInput").value, 10);
+    var existing = predictionFor(m.id);
+    var limits = stakeLimits(sheetMode, existing);
+
+    if (sheetMode === "withdraw") {
+      if (!existing) { toast("当前没有可撤回的投入"); return; }
+      if (!isFinite(amount) || amount < 1) { toast("请输入有效的撤回沙粒"); return; }
+      var refund = Math.min(amount, existing.stake);
+      state.bankroll += refund;
+      existing.stake -= refund;
+      if (existing.stake <= 0) {
+        state.predictions = state.predictions.filter(function (p) { return p.matchId !== m.id; });
+        toast("已撤回全部投入 · 退回 " + fmtNum(refund) + " 沙粒");
+      } else {
+        existing.pick = sheetPick;
+        existing.updatedAt = Date.now();
+        toast("已撤回 " + fmtNum(refund) + " 沙粒 · 剩余投入 " + fmtNum(existing.stake) + " 沙粒");
+      }
+      saveState();
+      closeSheet();
+      renderAll();
       return;
     }
 
-    var existing = predictionFor(m.id);
-    var available = state.bankroll + (existing ? existing.stake : 0);
-
-    if (isDebt(state.bankroll)) {
-      // 负债/归零：只允许定额档位
-      var fixed = fixedStakes(state.bankroll);
-      if (fixed.stakes.indexOf(stake) === -1) {
-        toast("负债状态下只能使用定额投入");
+    if (sheetMode === "add") {
+      if (!existing) { toast("当前没有可加注的预测"); return; }
+      if (!isFinite(amount) || amount < MIN_STAKE) { toast("请输入有效的加注沙粒"); return; }
+      if (limits.fixed) {
+        if (limits.fixed.stakes.indexOf(amount) === -1) { toast("负债/归零时只能使用定额加注"); return; }
+      } else if (amount > limits.max) {
+        toast("最多可加注 " + fmtNum(limits.max) + " 沙粒（总投入不超过当前沙粒 2 倍）");
         return;
       }
-    } else {
-      // 正数：上限为可用沙粒的 2 倍
-      var max = maxStake(available);
-      if (stake > max) {
-        toast("最多可投入 " + fmtNum(max) + " 沙粒（当前沙粒 2 倍）");
-        return;
-      }
-      var minAllowed = Math.min(MIN_STAKE, max);
-      if (stake < minAllowed) {
-        toast("最低投入 " + fmtNum(minAllowed) + " 沙粒");
-        return;
-      }
+      state.bankroll -= amount;
+      existing.stake += amount;
+      existing.pick = sheetPick;
+      existing.updatedAt = Date.now();
+      saveState();
+      closeSheet();
+      renderAll();
+      toast("已加注 " + fmtNum(amount) + " 沙粒 · 总投入 " + fmtNum(existing.stake) + " 沙粒");
+      return;
     }
 
-    // 修改预测：先退还旧投入，再扣除新投入；投入时立即扣款，允许变为负债
-    if (existing) state.bankroll += existing.stake;
-    state.bankroll -= stake;
-    state.predictions = state.predictions.filter(function (p) { return p.matchId !== m.id; });
-
+    // 投入：本场还没有预测
+    if (existing) { toast("本场已有预测，请使用加注或撤回"); return; }
+    if (!isFinite(amount) || amount <= 0) { toast("请输入有效的投入沙粒"); return; }
+    if (limits.fixed) {
+      if (limits.fixed.stakes.indexOf(amount) === -1) { toast("负债状态下只能使用定额投入"); return; }
+    } else {
+      var minAllowed = Math.min(limits.min, limits.max);
+      if (amount > limits.max) { toast("最多可投入 " + fmtNum(limits.max) + " 沙粒（当前沙粒 2 倍）"); return; }
+      if (amount < minAllowed) { toast("最低投入 " + fmtNum(minAllowed) + " 沙粒"); return; }
+    }
+    state.bankroll -= amount;
     state.predictions.push({
       matchId: m.id,
       pick: sheetPick,
-      stake: stake,
+      stake: amount,
       placedAt: Date.now(),
       settled: false
     });
-
     saveState();
     closeSheet();
     renderAll();
-    toast((existing ? "预测已修改" : "预测成功") + " · 投入 " + fmtNum(stake) + " 沙粒");
+    toast("预测成功 · 投入 " + fmtNum(amount) + " 沙粒");
   }
 
   /* ============================== 排行榜 ============================== */
@@ -1572,8 +1770,89 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   /* ============================== 导航 ============================== */
-  function switchView(name) {
-    var isSubPage = name === "rules" || name === "schedule";
+  /* 视图历史：让宿主返回键回到上一级，而不是直接退出。
+     深度用内存栈维护，不依赖 history.state（部分宿主会读到旧值）。 */
+  var currentView = "matches";
+  var viewStack = ["matches"];
+  var historyReady = false;
+  var resettingToHome = false;
+  var resetTimer = 0;
+
+  function isSubView(name) {
+    return name === "rules" || name === "schedule";
+  }
+
+  function initHistory() {
+    if (typeof history === "undefined" || typeof history.pushState !== "function") return;
+    try {
+      history.replaceState({ sandbox: 1 }, "");
+      historyReady = true;
+    } catch (e) {
+      historyReady = false;
+    }
+    window.addEventListener("popstate", function () {
+      if (resettingToHome) {
+        resettingToHome = false;
+        clearTimeout(resetTimer);
+        viewStack = ["matches"];
+        switchView("matches", { fromHistory: true });
+        return;
+      }
+      if (viewStack.length > 1) viewStack.pop();
+      switchView(viewStack[viewStack.length - 1], { fromHistory: true });
+    });
+  }
+
+  function syncHistory(prev, name) {
+    if (!historyReady || name === prev) return;
+    try {
+      if (isSubView(name)) {
+        // 二级页压一条，返回时回到来路（设置或首页）
+        viewStack.push(name);
+        history.pushState({ sandbox: 1 }, "");
+        return;
+      }
+      if (name === "matches") {
+        // 回首页时退掉临时记录，保证首页再按返回才退出
+        var extra = viewStack.length - 1;
+        viewStack = ["matches"];
+        if (extra > 0) {
+          resettingToHome = true;
+          clearTimeout(resetTimer);
+          // 宿主若吞掉 go() 不触发 popstate，兜底复位标记
+          resetTimer = setTimeout(function () { resettingToHome = false; }, 800);
+          history.go(-extra);
+        } else {
+          history.replaceState({ sandbox: 1 }, "");
+        }
+        return;
+      }
+      if (viewStack.length === 1) {
+        // 首页 → 一级页：压一条，返回回首页
+        viewStack.push(name);
+        history.pushState({ sandbox: 1 }, "");
+      } else {
+        // 一级页之间切换：替换，返回仍回首页
+        viewStack[viewStack.length - 1] = name;
+        history.replaceState({ sandbox: 1 }, "");
+      }
+    } catch (e) {
+      /* 历史记录不可用时退回宿主默认行为 */
+    }
+  }
+
+  function goBack(fallback) {
+    if (historyReady && viewStack.length > 1) {
+      history.back();
+      return;
+    }
+    switchView(fallback);
+  }
+
+  function switchView(name, options) {
+    var opts = options || {};
+    var prev = currentView;
+    var isSubPage = isSubView(name);
     ["matches", "profile", "board", "settings", "rules", "schedule"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
@@ -1586,6 +1865,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     window.scrollTo({ top: 0, behavior: "smooth" });
+    currentView = name;
+    if (!opts.fromHistory) syncHistory(prev, name);
   }
 
   /* ============================== 事件绑定 ============================== */
@@ -1710,10 +1991,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#goRulesFromMatches").addEventListener("click", function () { switchView("rules"); });
 
     $("#openRulesBtn").addEventListener("click", function () { switchView("rules"); });
-    $("#rulesBackBtn").addEventListener("click", function () { switchView("settings"); });
+    $("#rulesBackBtn").addEventListener("click", function () { goBack("settings"); });
 
     $("#openScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
-    $("#scheduleBackBtn").addEventListener("click", function () { switchView("settings"); });
+    $("#scheduleBackBtn").addEventListener("click", function () { goBack("settings"); });
 
     $("#schedGameBtn").addEventListener("click", function () {
       if ($("#schedGamePopover").hidden) openSchedGame();
@@ -1754,17 +2035,38 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#stakeInput").addEventListener("input", updatePreview);
 
     $("#stakeInput").addEventListener("change", function () {
-      // 正数时超过 2 倍杠杆自动钳制
-      if (isDebt(state.bankroll)) { updatePreview(); return; }
       var input = this;
       var existing = predictionFor(sheetMatchId);
-      var available = state.bankroll + (existing ? existing.stake : 0);
-      var max = maxStake(available);
+      var limits = stakeLimits(sheetMode, existing);
+      if (limits.fixed) { updatePreview(); return; }
       var val = parseInt(input.value, 10);
-      if (isFinite(val) && val > max) {
-        input.value = max;
-        toast("已按上限 " + fmtNum(max) + " 沙粒投入（当前沙粒 2 倍）");
+      if (!isFinite(val)) { updatePreview(); return; }
+
+      if (sheetMode === "withdraw") {
+        var maxWithdraw = existing ? existing.stake : 0;
+        if (val < 1) val = 1;
+        if (val > maxWithdraw) {
+          val = maxWithdraw;
+          toast("最多可撤回 " + fmtNum(maxWithdraw) + " 沙粒");
+        }
+      } else {
+        var minAllowed = Math.min(limits.min, limits.max);
+        if (val > limits.max) {
+          val = limits.max;
+          toast("已按上限 " + fmtNum(limits.max) + " 沙粒" + (sheetMode === "add" ? "（总投入不超过当前沙粒 2 倍）" : "（当前沙粒 2 倍）"));
+        }
+        if (val < minAllowed) val = minAllowed;
       }
+      input.value = val;
+      updatePreview();
+    });
+
+    $("#stakeMode").addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-mode]");
+      if (!btn) return;
+      sheetMode = btn.dataset.mode;
+      renderStakeMode();
+      renderStakeUI(predictionFor(sheetMatchId));
       updatePreview();
     });
 
@@ -1779,17 +2081,26 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#stakeChips").addEventListener("click", function (e) {
       var btn = e.target.closest("button[data-amount]");
       if (!btn) return;
-      var amount = btn.dataset.amount;
       var existing = predictionFor(sheetMatchId);
-      var available = state.bankroll + (existing ? existing.stake : 0);
-      var max = Math.floor(maxStake(available));
+      var limits = stakeLimits(sheetMode, existing);
+      var amount = btn.dataset.amount;
       var value;
-      if (amount === "all") value = Math.floor(available);
-      else if (amount === "double") value = max;
-      else value = parseInt(amount, 10);
-      if (value > max) value = max;
-      var minAllowed = Math.min(MIN_STAKE, max);
-      if (value < minAllowed) value = minAllowed;
+
+      if (sheetMode === "withdraw") {
+        if (!existing) return;
+        value = amount === "withdrawAll" ? existing.stake : parseInt(amount, 10);
+        value = Math.min(Math.max(1, value), existing.stake);
+      } else if (sheetMode === "add") {
+        value = amount === "max" ? limits.max : parseInt(amount, 10);
+        if (limits.max !== Infinity) value = Math.min(value, limits.max);
+        value = Math.max(Math.min(limits.min, limits.max), value);
+      } else {
+        if (amount === "all") value = Math.floor(Math.max(0, state.bankroll));
+        else if (amount === "double") value = limits.max;
+        else value = parseInt(amount, 10);
+        if (limits.max !== Infinity) value = Math.min(value, limits.max);
+        value = Math.max(Math.min(limits.min, limits.max), value);
+      }
       $("#stakeInput").value = value;
       updatePreview();
     });
@@ -1869,6 +2180,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /* ============================== 启动 ============================== */
   async function boot() {
     await initPlatform();
+    await initTheme();
     // 安全区测量最多等 800ms，避免旧宿主阻塞启动
     await Promise.race([
       setupViewport().catch(function () { return null; }),
@@ -1880,7 +2192,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var events = settlePending();
     bindEvents();
     bindOnboard();
+    initHistory();
     initScrollRail();
+    initPageLifecycle();
 
     // 数据文件加载失败：给出明确提示，避免白屏
     if (!MATCHES.length) {

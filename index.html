@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b0e14">
   <title>赛事沙盘 · 电竞赛事预测模拟盘</title>
+  <script src="/theme-boot.js"></script>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -216,6 +217,21 @@
             <span class="account-badge" id="accountBadge">本地模式</span>
           </div>
           <p class="settings-hint" id="accountHint">发布后将自动读取小黑盒账号，无需注册或登录</p>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-row">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            </span>
+            <span class="settings-row-label">外观</span>
+            <span class="settings-row-value" id="themeValue">跟随系统</span>
+          </div>
+          <div class="theme-options" id="themeOptions">
+            <button type="button" data-theme-opt="system" class="is-active">跟随系统</button>
+            <button type="button" data-theme-opt="light">浅色</button>
+            <button type="button" data-theme-opt="dark">深色</button>
+          </div>
         </div>
 
         <div class="settings-group">
@@ -434,12 +450,17 @@
         <label for="stakeInput" id="stakeLabel">投入沙粒</label>
         <span class="stake-balance">当前 <b id="sheetBalance">--</b> 沙粒</span>
       </div>
+      <p class="stake-existing" id="stakeExisting" hidden>本场已投入 <b id="existingStake">0</b> 沙粒</p>
+      <div class="stake-mode" id="stakeMode" hidden>
+        <button type="button" data-mode="add" class="is-active">加注</button>
+        <button type="button" data-mode="withdraw">撤回</button>
+      </div>
       <div class="stake-input-row" id="stakeRow">
         <input id="stakeInput" type="number" inputmode="numeric" min="10" step="10" value="100" aria-label="投入沙粒">
         <span class="unit">沙粒</span>
       </div>
       <div class="stake-fixed" id="stakeFixed" hidden>
-        <p class="stake-fixed-tip">负债状态下只能使用定额投入</p>
+        <p class="stake-fixed-tip" id="stakeFixedTip">负债状态下只能使用定额投入</p>
         <div class="chips chips-fixed" id="fixedChips">
           <button type="button" data-amount="10">10</button>
           <button type="button" data-amount="100">100</button>

@@ -62,6 +62,14 @@ export function isMiniProgram() {
   return ready;
 }
 
+/** 按主题切换宿主导航栏前景：浅色页面用深色前景，深色页面用浅色前景。 */
+export async function setNavigationBarStyle(theme) {
+  if (!ready || !sdk || !sdk.viewport) return;
+  try {
+    await sdk.viewport.setNavigationBarStyle({ foregroundStyle: theme === "light" ? "dark" : "light" });
+  } catch (e) { /* 旧宿主可能不支持 */ }
+}
+
 /**
  * 适配宿主顶部胶囊与手机状态栏：
  * 1. 标记 in-host，让顶栏为宿主「更多 / 退出」按钮让出右侧空间；
@@ -88,7 +96,7 @@ export async function setupViewport() {
 
   if (sdk.viewport) {
     try {
-      await sdk.viewport.setNavigationBarStyle({ foregroundStyle: "light" });
+      await setNavigationBarStyle(document.documentElement.getAttribute("data-theme") || "dark");
     } catch (e) { /* 旧宿主可能不支持 */ }
 
     try {

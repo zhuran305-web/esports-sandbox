@@ -7,6 +7,9 @@ name: Update match data
 # 需要在仓库 Secrets 配置：
 #   PANDASCORE_TOKEN（必填）、LIQUIPEDIA_API_KEY（可选）
 #   LIQUIPEDIA_CONTACT（可选，填邮箱或主页，Liquipedia 要求 UA 带联系方式）
+#   OSS_BUCKET / OSS_REGION / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET（可选）
+#     —— 配齐后每次数据变化会同步 runtime 数据到 OSS，供小程序运行时拉取；
+#        未配置时该步骤自动跳过，行为与以前一致。OSS_PREFIX 可选（对象前缀）。
 # 注意：GitHub 的定时任务在高峰期可能延迟；公开仓库连续 60 天无仓库活动会被暂停计划任务，
 # 由 keepalive.yml 每月提交一次时间戳保活。
 # Liquipedia 可能屏蔽数据中心 IP，失败时看日志，PandaScore 不受影响。
@@ -27,6 +30,12 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+      OSS_REGION: ${{ secrets.OSS_REGION }}
+      OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+      OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+      OSS_PREFIX: ${{ secrets.OSS_PREFIX }}
     steps:
       - uses: actions/checkout@v4
 
@@ -81,3 +90,7 @@ jobs:
           cp runtime/matches.json "$RUNNER_TEMP/runtime-matches.json"
           cp runtime/meta.json "$RUNNER_TEMP/runtime-meta.json"
           gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber
+
+      - name: Publish runtime data to OSS
+        if: steps.collect.outputs.changed == 'true' && env.OSS_ACCESS_KEY_ID != ''
+        run: node tools/publish-runtime-oss.mjs --upload --check

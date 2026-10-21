@@ -1,6 +1,6 @@
 {
   "name": "esports-sandbox",
-  "version": "1.0.4",
+  "version": "1.0.11",
   "private": true,
   "type": "module",
   "description": "赛事沙盘 · 电竞赛事预测模拟盘（小黑盒小程序）+ 赛事数据采集器",
@@ -13,6 +13,7 @@
     "data:pull": "node tools/pull-data.mjs --force",
     "runtime:build": "node tools/build-runtime-data.mjs",
     "runtime:serve": "node tools/serve-runtime.mjs",
+    "runtime:publish": "node tools/publish-runtime-oss.mjs",
     "boards:create": "hb-sdk remote cloud leaderboard create sha_board_win --order desc --rank-limit 500 && hb-sdk remote cloud leaderboard create sha_board_lose --order desc --rank-limit 500",
     "fetch": "node tools/fetch-matches.mjs",
     "fetch:dry": "node tools/fetch-matches.mjs --dry-run",

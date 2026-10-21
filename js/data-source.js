@@ -94,15 +94,20 @@ export async function fetchRemoteSnapshot(options) {
     };
   }
 
+  // 整包约 1.2 MiB，弱网下 10s 容易超时；meta 很小，仍用 10s
   var raw = await networkGetJson(
     baseUrl() + "matches.json?v=" + encodeURIComponent(meta.hash),
-    10000
+    30000
   );
   var matches = normalizeMatches(raw);
   if (!matches) return null;
 
   var checkedAt = Date.now();
-  await saveCache(meta, matches, checkedAt);
+  var cachedOk = await saveCache(meta, matches, checkedAt);
+  if (!cachedOk) {
+    // 整包约 1.2 MiB，宿主可能对单值设 UTF-8 字节配额；失败只影响下次启动需重下
+    console.warn("[data] 快照缓存写入失败，下次启动会重新下载整包");
+  }
   return {
     meta: meta,
     matches: matches,

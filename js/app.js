@@ -13,7 +13,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
   var THEME_KEY = "esports_sandbox_theme";
-  var APP_VERSION = "1.0.11";
+  var APP_VERSION = "1.0.12";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -673,17 +673,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#schedGameDot").style.setProperty("--dot", meta.c2);
     $("#schedGameMeta").textContent = base.length + " 场 · " + games.length + " 个项目";
 
-    var now = Date.now();
-    var from = now - SCHEDULE_WINDOW_DAYS * 86400000;
-    var to = now + SCHEDULE_WINDOW_DAYS * 86400000;
+    // 一次遍历统计各游戏场次，避免 23 次全量 filter + 重复日期解析
+    var gameCounts = {};
+    base.forEach(function (m) {
+      gameCounts[m.game] = (gameCounts[m.game] || 0) + 1;
+    });
     var html = schedGameTileHTML("all", "全部游戏", base.length, null);
     games.forEach(function (id) {
       var g = gameMeta(id);
-      var count = MATCHES.filter(function (m) {
-        var t = new Date(m.startAt).getTime();
-        return m.game === id && t >= from && t <= to;
-      }).length;
-      html += schedGameTileHTML(id, g.label, count, g);
+      html += schedGameTileHTML(id, g.label, gameCounts[id] || 0, g);
     });
     $("#schedGameGrid").innerHTML = html;
 
@@ -733,37 +731,78 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "</div>";
   }
 
+  var schedRenderKey = "";
+  var schedRenderDone = false;
+  var schedRenderToken = 0;
+
   function renderSchedule() {
+    var q = schedQuery.trim();
+    // 同样的筛选/数据直接复用已渲染结果，重复进入不再重建
+    var key = DATA_UPDATED_AT + "|" + schedGame + "|" + schedTournament + "|" + q;
+    if (key === schedRenderKey && schedRenderDone) return;
+
     renderScheduleSelectors();
     var list = scheduleMatches().slice().sort(function (a, b) {
       return new Date(a.startAt) - new Date(b.startAt);
     });
     $("#schedCount").textContent = list.length + " 场";
-    var q = schedQuery.trim();
     $("#scheduleSummary").textContent = q
       ? "搜索「" + q + "」· 匹配 " + list.length + " 场"
       : "过去 " + SCHEDULE_WINDOW_DAYS + " 天 · 未来 " + SCHEDULE_WINDOW_DAYS + " 天 · 共 " + list.length + " 场";
 
     if (!list.length) {
+      schedRenderKey = "";
+      schedRenderDone = false;
+      schedRenderToken += 1;
       $("#scheduleList").innerHTML = q
         ? '<div class="empty-state"><strong>没有匹配的赛程</strong>换个关键词，或清空搜索试试</div>'
         : '<div class="empty-state"><strong>这个筛选下没有赛程</strong>换个游戏或赛事试试</div>';
       return;
     }
 
-    var html = "";
+    schedRenderKey = key;
+    schedRenderDone = false;
+    var token = ++schedRenderToken;
+    $("#scheduleList").innerHTML = "";
+
+    // 按日期分组、分帧追加：首帧只渲染约 120 行，避免一次生成 3000+ 行阻塞主线程
+    var index = 0;
     var currentKey = "";
-    list.forEach(function (m) {
-      var key = new Date(m.startAt).toDateString();
-      if (key !== currentKey) {
-        if (currentKey) html += "</div>";
-        html += '<div class="schedule-date">' + esc(fmtDateLabel(m.startAt)) + '</div><div class="schedule-table">';
-        currentKey = key;
+    var currentLabel = "";
+    var rows = [];
+
+    function flushGroup() {
+      if (!rows.length) return;
+      $("#scheduleList").insertAdjacentHTML(
+        "beforeend",
+        '<div class="schedule-date">' + esc(currentLabel) +
+          '</div><div class="schedule-table">' + rows.join("") + "</div>"
+      );
+      rows = [];
+    }
+
+    function appendBatch() {
+      if (token !== schedRenderToken) return;
+      var end = Math.min(index + 120, list.length);
+      for (; index < end; index += 1) {
+        var m = list[index];
+        var dayKey = new Date(m.startAt).toDateString();
+        if (dayKey !== currentKey) {
+          flushGroup();
+          currentKey = dayKey;
+          currentLabel = fmtDateLabel(m.startAt);
+        }
+        rows.push(scheduleRowHTML(m));
       }
-      html += scheduleRowHTML(m);
-    });
-    if (currentKey) html += "</div>";
-    $("#scheduleList").innerHTML = html;
+      if (index >= list.length) {
+        flushGroup();
+        schedRenderDone = true;
+        return;
+      }
+      requestAnimationFrame(appendBatch);
+    }
+
+    appendBatch();
   }
 
   function openSchedGame() {
@@ -1864,7 +1903,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "board") { syncBoards(); renderBoard(); }
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // 切页用瞬时滚动：长页面缩成短页面时平滑滚动会闪出空白帧
+    window.scrollTo(0, 0);
     currentView = name;
     if (!opts.fromHistory) syncHistory(prev, name);
   }

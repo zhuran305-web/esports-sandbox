@@ -1286,6 +1286,10 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   align-items: center;
   padding: 11px 14px;
   border-bottom: 1px solid var(--border-soft);
+  /* 3000+ 行时跳过视口外的布局与绘制，避免进入/返回卡顿 */
+  content-visibility: auto;
+  /* 内容盒高度约 36px（整行 59px = 36 + 上下 padding 22 + 边框 1） */
+  contain-intrinsic-size: auto 36px;
 }
 .schedule-row:last-child { border-bottom: none; }
 

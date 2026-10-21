@@ -9,6 +9,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /* ============================== 配置 ============================== */
   var DATA = matchesData;
   var MATCHES = (DATA.matches || []).slice();
+  var matchIndex = new Map();
+  rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
@@ -203,11 +205,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     storageSet(STORAGE_KEY, state);
   }
 
+  function rebuildMatchIndex() {
+    matchIndex = new Map();
+    MATCHES.forEach(function (m) {
+      if (m && m.id) matchIndex.set(m.id, m);
+    });
+  }
+
   function matchById(id) {
-    for (var i = 0; i < MATCHES.length; i++) {
-      if (MATCHES[i].id === id) return MATCHES[i];
-    }
-    return null;
+    return matchIndex.get(id) || null;
   }
 
   function matchStart(id) {
@@ -408,7 +414,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     return t >= now - HOME_PAST_DAYS * 86400000 && t <= now + HOME_FUTURE_DAYS * 86400000;
   }
 
-  function matchesFiltered() {
+  function matchesFiltered(statusMap) {
     var dayAgo = Date.now() - 86400000;
     return MATCHES.filter(function (m) {
       if (!inHomeWindow(m)) return false;
@@ -421,6 +427,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         }
       }
       var st = statusOf(m);
+      if (statusMap) statusMap.set(m, st);
       if (st === "finished" && (!predictionFor(m.id) || new Date(m.startAt).getTime() < dayAgo)) {
         return false;
       }
@@ -900,12 +907,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (pill) pill.classList.toggle("in-debt", state.bankroll < 0);
   }
 
+  var matchesDirty = false;
+
   function renderMatches() {
     var listEl = $("#matchList");
-    var filtered = matchesFiltered();
+    var statusMap = new Map();
+    var filtered = matchesFiltered(statusMap);
 
     var groups = { open: [], locked: [], live: [], awaiting: [], finished: [] };
-    filtered.forEach(function (m) { groups[statusOf(m)].push(m); });
+    filtered.forEach(function (m) { groups[statusMap.get(m)].push(m); });
 
     function byTime(a, b) { return new Date(a.startAt) - new Date(b.startAt); }
     function majorThenTime(a, b) {
@@ -942,7 +952,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var html = "";
     function groupHTML(label, list) {
       if (!list.length) return "";
-      return '<div class="group-label">' + label + "</div>" + list.map(matchCardHTML).join("");
+      return '<div class="group-label">' + label + "</div>" +
+        list.map(function (m) { return matchCardHTML(m, statusMap.get(m)); }).join("");
     }
 
     html += groupHTML("正在进行", groups.live);
@@ -956,10 +967,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     }
 
     listEl.innerHTML = html;
+    matchesDirty = false;
   }
 
-  function matchCardHTML(m) {
-    var st = statusOf(m);
+  function matchCardHTML(m, st) {
     var pred = predictionFor(m.id);
     var gm = gameMeta(m.game);
 
@@ -1070,22 +1081,40 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /* ============================== 渲染：我的 ============================== */
   function renderProfile() {
     var settled = settledInOrder();
-    var wins = settled.filter(function (p) { return p.won; }).length;
+    var wins = 0, profit = 0, staked = 0, payout = 0;
+    var bestWin = null, worstLoss = null;
+    var run = 0, best = 0;
+    for (var i = 0; i < settled.length; i++) {
+      var p = settled[i];
+      profit += p.profit || 0;
+      staked += p.stake;
+      payout += p.payout || 0;
+      if (p.won) {
+        wins += 1;
+        if (!bestWin || p.profit > bestWin.profit) bestWin = p;
+        run += 1;
+        if (run > best) best = run;
+      } else {
+        if (!worstLoss || p.profit < worstLoss.profit) worstLoss = p;
+        run = 0;
+      }
+    }
+    var streak = 0;
+    for (var j = settled.length - 1; j >= 0; j--) {
+      if (settled[j].won) streak += 1;
+      else break;
+    }
     var hitRate = settled.length ? Math.round((wins / settled.length) * 100) + "%" : "--";
-    var profit = settled.reduce(function (sum, p) { return sum + (p.profit || 0); }, 0);
-    var staked = settled.reduce(function (sum, p) { return sum + p.stake; }, 0);
-    var payout = settled.reduce(function (sum, p) { return sum + (p.payout || 0); }, 0);
-    var stats = recordStats();
 
     $("#statSettled").textContent = settled.length;
     $("#statHit").textContent = hitRate;
-    $("#statStreak").textContent = currentStreak();
-    $("#statBest").textContent = bestStreak();
+    $("#statStreak").textContent = streak;
+    $("#statBest").textContent = best;
 
-    $("#recWins").textContent = stats.wins;
-    $("#recLosses").textContent = stats.losses;
-    $("#recBestWin").textContent = stats.bestWin ? "+" + fmtNum(stats.bestWin.profit) : "--";
-    $("#recWorstLoss").textContent = stats.worstLoss ? "-" + fmtNum(Math.abs(stats.worstLoss.profit)) : "--";
+    $("#recWins").textContent = wins;
+    $("#recLosses").textContent = settled.length - wins;
+    $("#recBestWin").textContent = bestWin ? "+" + fmtNum(bestWin.profit) : "--";
+    $("#recWorstLoss").textContent = worstLoss ? "-" + fmtNum(Math.abs(worstLoss.profit)) : "--";
 
     $("#pnlBreakdown").textContent = "已结算投入 " + fmtNum(staked) + " · 累计返还 " + fmtNum(payout);
 
@@ -1134,8 +1163,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   function renderAll() {
     renderBalance();
-    renderMatches();
-    renderProfile();
+    // 只重建当前可见的视图；切回赛事/我的时由 switchView 补渲染
+    if (!$("#view-matches").hidden) renderMatches();
+    else matchesDirty = true;
+    if (!$("#view-profile").hidden) renderProfile();
     updateScrollRail();
   }
 
@@ -1925,6 +1956,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     document.querySelectorAll(".tab").forEach(function (t) {
       t.classList.toggle("is-active", t.dataset.view === tabName);
     });
+    if (name === "matches" && matchesDirty) renderMatches();
     if (name === "profile") renderProfile();
     if (name === "board") { syncBoards(); renderBoard(); }
     if (name === "settings" || isSubPage) renderSettings();
@@ -2199,6 +2231,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     MATCHES.sort(function (a, b) {
       return new Date(a.startAt) - new Date(b.startAt);
     });
+    rebuildMatchIndex();
     if (meta && meta.updatedAt) DATA_UPDATED_AT = meta.updatedAt;
 
     var events = settlePending();

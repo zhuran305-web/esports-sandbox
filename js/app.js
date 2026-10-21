@@ -13,7 +13,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
   var THEME_KEY = "esports_sandbox_theme";
-  var APP_VERSION = "1.0.12";
+  var APP_VERSION = "1.0.13";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -731,15 +731,65 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "</div>";
   }
 
-  var schedRenderKey = "";
-  var schedRenderDone = false;
-  var schedRenderToken = 0;
+  var schedRender = null;
+
+  function schedFlushGroup(st) {
+    if (!st.rows.length) return;
+    $("#scheduleList").insertAdjacentHTML(
+      "beforeend",
+      '<div class="schedule-date">' + esc(st.currentLabel) +
+        '</div><div class="schedule-table">' + st.rows.join("") + "</div>"
+    );
+    st.rows = [];
+  }
+
+  function schedSchedule(st) {
+    if (!st || st !== schedRender || st.done || st.scheduled) return;
+    st.scheduled = true;
+    var fired = false;
+    function run() {
+      if (fired) return;
+      fired = true;
+      schedAppendBatch(st);
+    }
+    // rAF 在后台/宿主切页时可能被暂停，定时器兜底保证循环能继续
+    st.frame = requestAnimationFrame(run);
+    st.timer = setTimeout(run, 16);
+  }
+
+  function schedAppendBatch(st) {
+    if (!st || st !== schedRender || st.done) return;
+    if (st.frame) { cancelAnimationFrame(st.frame); st.frame = 0; }
+    if (st.timer) { clearTimeout(st.timer); st.timer = 0; }
+    st.scheduled = false;
+    var end = Math.min(st.index + 120, st.list.length);
+    for (; st.index < end; st.index += 1) {
+      var m = st.list[st.index];
+      var dayKey = new Date(m.startAt).toDateString();
+      if (dayKey !== st.currentKey) {
+        schedFlushGroup(st);
+        st.currentKey = dayKey;
+        st.currentLabel = fmtDateLabel(m.startAt);
+      }
+      st.rows.push(scheduleRowHTML(m));
+    }
+    if (st.index >= st.list.length) {
+      schedFlushGroup(st);
+      st.done = true;
+      return;
+    }
+    schedSchedule(st);
+  }
 
   function renderSchedule() {
     var q = schedQuery.trim();
-    // 同样的筛选/数据直接复用已渲染结果，重复进入不再重建
     var key = DATA_UPDATED_AT + "|" + schedGame + "|" + schedTournament + "|" + q;
-    if (key === schedRenderKey && schedRenderDone) return;
+
+    // 同一筛选：已完成直接复用；未完成同步补一批再继续，避免停在半截
+    if (schedRender && schedRender.key === key) {
+      if (!schedRender.done) schedAppendBatch(schedRender);
+      return;
+    }
 
     renderScheduleSelectors();
     var list = scheduleMatches().slice().sort(function (a, b) {
@@ -751,58 +801,26 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       : "过去 " + SCHEDULE_WINDOW_DAYS + " 天 · 未来 " + SCHEDULE_WINDOW_DAYS + " 天 · 共 " + list.length + " 场";
 
     if (!list.length) {
-      schedRenderKey = "";
-      schedRenderDone = false;
-      schedRenderToken += 1;
+      schedRender = null;
       $("#scheduleList").innerHTML = q
         ? '<div class="empty-state"><strong>没有匹配的赛程</strong>换个关键词，或清空搜索试试</div>'
         : '<div class="empty-state"><strong>这个筛选下没有赛程</strong>换个游戏或赛事试试</div>';
       return;
     }
 
-    schedRenderKey = key;
-    schedRenderDone = false;
-    var token = ++schedRenderToken;
+    schedRender = {
+      key: key,
+      list: list,
+      index: 0,
+      currentKey: "",
+      currentLabel: "",
+      rows: [],
+      done: false,
+      scheduled: false
+    };
     $("#scheduleList").innerHTML = "";
-
-    // 按日期分组、分帧追加：首帧只渲染约 120 行，避免一次生成 3000+ 行阻塞主线程
-    var index = 0;
-    var currentKey = "";
-    var currentLabel = "";
-    var rows = [];
-
-    function flushGroup() {
-      if (!rows.length) return;
-      $("#scheduleList").insertAdjacentHTML(
-        "beforeend",
-        '<div class="schedule-date">' + esc(currentLabel) +
-          '</div><div class="schedule-table">' + rows.join("") + "</div>"
-      );
-      rows = [];
-    }
-
-    function appendBatch() {
-      if (token !== schedRenderToken) return;
-      var end = Math.min(index + 120, list.length);
-      for (; index < end; index += 1) {
-        var m = list[index];
-        var dayKey = new Date(m.startAt).toDateString();
-        if (dayKey !== currentKey) {
-          flushGroup();
-          currentKey = dayKey;
-          currentLabel = fmtDateLabel(m.startAt);
-        }
-        rows.push(scheduleRowHTML(m));
-      }
-      if (index >= list.length) {
-        flushGroup();
-        schedRenderDone = true;
-        return;
-      }
-      requestAnimationFrame(appendBatch);
-    }
-
-    appendBatch();
+    // 首批同步渲染，切换后立刻有内容；其余分帧追加
+    schedAppendBatch(schedRender);
   }
 
   function openSchedGame() {
@@ -1892,6 +1910,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var opts = options || {};
     var prev = currentView;
     var isSubPage = isSubView(name);
+    // 先归零滚动，再收缩页面：长页缩成短页时不会因滚动位置越界闪空白
+    window.scrollTo(0, 0);
     ["matches", "profile", "board", "settings", "rules", "schedule"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
@@ -1903,8 +1923,6 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "board") { syncBoards(); renderBoard(); }
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
-    // 切页用瞬时滚动：长页面缩成短页面时平滑滚动会闪出空白帧
-    window.scrollTo(0, 0);
     currentView = name;
     if (!opts.fromHistory) syncHistory(prev, name);
   }

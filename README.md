@@ -91,7 +91,7 @@ VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/ npm run dev
 - `storage`：本地键值存储（沙粒、预测记录）
 - `userInfo`：读取当前小黑盒账号昵称与头像
 - `leaderboard`：云端排行榜读写
-- `network`：运行时拉取赛程 JSON（需要平台审批，审批前只在 `hb-sdk dev` 本地生效）
+- `network`：运行时拉取赛程 JSON（平台审批制；本项目已于 2026-10-22 获批，域名 `esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com`，1.1.0 起线上快照 `enabled`）
 
 `storage` / `userInfo` / `leaderboard` 声明即用；`network` 是审批制，生产环境必须先在开放平台申请域名，否则请求会返回 `PERMISSION_DENIED`，客户端会自动回退到内置/缓存数据。
 
@@ -209,7 +209,7 @@ node tools/fetch-matches.mjs --retention=60  # 已结束比赛保留 60 天（�
 
 - **基础玩法不需要服务器**：赛事数据打包进产物，沙粒与预测记录存在宿主本地，无账号、无密钥、无后端成本。
 - **项目已按官方方式打包**：`@heybox/hb-sdk` + Vite（`vite.config.js` 使用 `miniappManifest()`），产物在 `dist/`，不能作为普通网页直接运行。
-- **网络请求**：本项目未使用 `network` 权限；赛事数据在构建前从 GitHub Release 同步并打包进产物，运行时不需要请求外部接口。
+- **网络请求**：`network` 已获平台批准，只用于请求自有静态源 `esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com` 上的两个公开只读 JSON（赛程与元信息），不访问任何第三方接口、不上传用户数据；请求失败自动回退缓存/内置数据。
 - **本地存储**：通过 `js/platform.js` 使用 `hbSDK.storage`（异步、按小程序隔离、最多 1000 个 key）；浏览器开发环境自动回退到 `localStorage`。
 - **发布流程**：实名认证 → 在 <https://open.xiaoheihe.cn/zh_cn/user_miniprogram/list?scope=all> 上传 `dist/` → 审核 → 发布；查看需小黑盒 1.3.390+。
 
@@ -234,14 +234,16 @@ node tools/fetch-matches.mjs --retention=60  # 已结束比赛保留 60 天（�
 - GitHub Actions 每 5 分钟采集，先恢复 Release 快照，只有内容变化时才覆盖上传；数据不进入 Git 历史
 - 构建前 `tools/pull-data.mjs` 下载快照，Vite 直接导入 `data/matches.json`
 
-运行时拉取（可选，已实现）：
+运行时拉取（1.1.0 起生产启用）：
 
 - `npm run runtime:build` 生成 `runtime/meta.json` 和 `runtime/matches.json`
 - 客户端先拉 `meta.json`，`hash` 变化时才拉 `matches.json`；成功结果缓存到 `hbSDK.storage`，失败回退到缓存或内置数据
 - 本地联调：`npm run runtime:serve` + `VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/ npm run dev`
 - **GitHub Pages 只能自测，不能作为小程序运行时源**：平台对 `network` 申请域名做 ICP 备案自动校验，`zhuran305-web.github.io` 无法备案，申请已被自动驳回（2026-10-21）。`publish-runtime-pages.yml` 保留作开发期镜像
-- **当前方案（探针中）**：阿里云 OSS 默认端点 + `tools/publish-runtime-oss.mjs`（零依赖，建桶/设 CORS/上传/匿名校验一条命令），详细步骤见 [docs/runtime-oss.md](docs/runtime-oss.md)
-- `update-matches.yml` 已接入 OSS 发布：配置 `OSS_BUCKET` / `OSS_REGION` / `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` 后自动同步，未配置时跳过
+- **生产方案（已生效）**：阿里云 OSS `esports-sandbox-data`（杭州、公共读），公共基址 `https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/`；发布脚本 `tools/publish-runtime-oss.mjs`（零依赖，建桶/设 CORS/上传/匿名校验一条命令），详细步骤见 [docs/runtime-oss.md](docs/runtime-oss.md)
+- 发版构建必须带基址：`VITE_RUNTIME_DATA_BASE=https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/ npm run build`（`remote deploy` 也会自己重建，所以 deploy 命令同样要带这个变量）
+- `update-matches.yml` 已接入 OSS 发布：仓库 Secrets 配好 `OSS_BUCKET` / `OSS_REGION` / `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`，数据变化时自动同步，未配置时跳过
+- **审核中的预览版本**启动会弹宿主原生 `SERVER_API_REQUIRED`（effective network 未生效），发布后才消失
 - 申请 `network` 权限时域名只填主机名（如 `<bucket>.oss-cn-hangzhou.aliyuncs.com`），1–20 个，不带协议/端口/路径/通配符；不支持申请小黑盒官方域名
 - 运行时 URL 必须直连 HTTPS；Release 下载地址会 302，不能作为运行时源（SDK 不跟随重定向）
 

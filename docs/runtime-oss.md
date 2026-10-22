@@ -1,4 +1,9 @@
-# 运行时数据托管到阿里云 OSS（network 权限探针）
+# 运行时数据托管到阿里云 OSS（已上线）
+
+> **状态（2026-10-22）**：已完成。network 申请 `15efcd80-c5ec-4908-8cb5-20c1b5e4c1d1`
+> 获批（意见「飞书群审批通过网络权限」），bucket `esports-sandbox-data`（杭州、公共读），
+> 公共基址 `https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/`；`1.1.0` 已发布，
+> `remote info` 显示 `network: 线上快照=enabled`。下文保留为完整操作记录与排障参考。
 
 ## 为什么走这条路
 
@@ -7,7 +12,7 @@
 （`<bucket>.oss-cn-<region>.aliyuncs.com`）父域已备案，是成本最低的探针：
 
 - 不需要买域名，不需要走 1–3 周的备案流程；
-- 存储与流量费用可忽略（数据 1.16 MiB，按用户数计流量）；
+- 存储与流量费用可忽略（数据 1.24 MiB，按用户数计流量）；
 - 如果平台认父域备案，几十分钟就能拿到权限；不认再走自有域名备案，损失很小。
 
 ## 你需要手动做的三件事
@@ -63,24 +68,33 @@ npx hb-sdk remote permission list
 - 待审期间改域名不生效；如果被拒，换域名重新提交即可；
 - 批准后仍需 `package.json#heybox.permissions.network` 保持声明（现在已经声明）。
 
-## 批准后发版
+## 发版（批准后每次都要带基址）
 
 ```bash
-# 1. 拉最新数据并生成 runtime（可选，构建本身会内嵌 data/matches.json）
-npm run data:pull
+# 1. 拉最新数据并同步 OSS（npm run data:pull 在 github.com 被墙时会失败，改用 gh）
+gh release download data --repo zhuran305-web/esports-sandbox --pattern matches.json --dir data --clobber
 npm run runtime:build
+npm run runtime:publish -- --upload --check     # 期望「匿名读取 OK · N 场」
 
-# 2. 用远端基址构建（两处版本号同步升）
-VITE_RUNTIME_DATA_BASE=https://<bucket>.oss-cn-hangzhou.aliyuncs.com/ npm run build
+# 2. 两处版本号同步升（package.json + js/app.js 的 APP_VERSION）
 
-# 3. 确认产物真的带上了基址
-grep -o "oss-cn-hangzhou.aliyuncs.com" dist/assets/*.js | head -1
+# 3. 用远端基址构建
+VITE_RUNTIME_DATA_BASE=https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/ npm run build
 
-# 4. 提审 / 发布（流程同以前）
-npx hb-sdk remote deploy --release-note "运行时赛程拉取"
+# 4. 确认产物真的带上了基址
+grep -o "esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com" dist/assets/*.js | head -1
+
+# 5. 提审 —— deploy 会自己重新构建，所以命令同样要带变量；过审后发布
+VITE_RUNTIME_DATA_BASE=https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/ \
+  npx hb-sdk remote deploy --release-note "..."
+npx hb-sdk remote release <version> --yes
 ```
 
-验收：设置页「数据更新」时间应变成 OSS 上 `meta.json` 的 `updatedAt`；断网时应回退缓存/内置数据，不白屏。
+**第 5 步最容易漏**：`remote deploy` 内部先 `npm run build` 再上传，环境变量不跟着命令走就会打出不带基址的包。
+
+验收：`remote info` 的 `network` 行显示 `线上快照=enabled`；设置页「数据更新」时间变成 OSS 上 `meta.json` 的 `updatedAt`；断网时回退缓存/内置数据，不白屏。
+
+**审核期间**用 `remote preview` 打开新版本会弹宿主原生 `SERVER_API_REQUIRED`（effective network 未生效），发布后消失——不是代码问题。
 
 ## 让数据自动更新（可选，但推荐）
 
@@ -102,7 +116,9 @@ npx hb-sdk remote deploy --release-note "运行时赛程拉取"
 > 约等于 1600 次整包下载；如果日活上来，优先做 gzip 或裁剪 runtime 窗口（只保留近 7 天 + 未来 21 天），
 > 再考虑加定时轮询。
 
-## 如果探针被拒
+## 如果以后需要换域名（探针曾被拒时的备选）
+
+当前方案没有用到这条分支，保留备查：如果对象存储默认端点被拒，再买域名 + ICP 备案 + 自定义域名。
 
 平台若只认「与开发者主体一致的自有域名」，对象存储默认端点会被拒。此时：
 
@@ -113,3 +129,11 @@ npx hb-sdk remote deploy --release-note "运行时赛程拉取"
 
 在拿到权限之前，**不要**把 `VITE_RUNTIME_DATA_BASE` 写进发版构建——未获批时请求必然
 `PERMISSION_DENIED`，只会白白多发一个版本。
+
+## 已上线记录（2026-10-22）
+
+- network 申请 `15efcd80-c5ec-4908-8cb5-20c1b5e4c1d1` → `approved`（「飞书群审批通过网络权限」）
+- `1.1.0` 发布，线上 `https://activity.xiaoheihe.cn/u/w3at1r/w6zGbZ9OQW/index.html`，
+  `remote info`：`network: 本地声明=是 线上版本声明=是 平台批准=已批准 线上快照=enabled`
+- 线上 `assets/index-*.js` 已确认含 `esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com`
+- OSS 数据：`meta.json` + `matches.json`（3375 场 / 1.24 MiB）；`update-matches.yml` 在数据变化时自动同步

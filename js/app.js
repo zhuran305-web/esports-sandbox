@@ -15,7 +15,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
   var THEME_KEY = "esports_sandbox_theme";
-  var APP_VERSION = "1.0.14";
+  var APP_VERSION = "1.1.0";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];

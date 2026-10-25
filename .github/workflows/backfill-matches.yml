@@ -59,3 +59,15 @@ jobs:
           cp runtime/matches.json "$RUNNER_TEMP/runtime-matches.json"
           cp runtime/meta.json "$RUNNER_TEMP/runtime-meta.json"
           gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber
+
+      # 2026-10-25 事故修复：backfill 曾只上传 Release 不更新 OSS，导致 OSS 与 Release
+      # 脱节后，update-matches 以 Release 为基准的变化检测永远「无变化」，OSS 长时间停更。
+      - name: Publish runtime data to OSS
+        if: env.OSS_ACCESS_KEY_ID != ''
+        env:
+          OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          OSS_REGION: ${{ secrets.OSS_REGION }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_PREFIX: ${{ secrets.OSS_PREFIX }}
+        run: node tools/publish-runtime-oss.mjs --upload --check

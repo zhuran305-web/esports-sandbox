@@ -1,8 +1,9 @@
 /*
  * 平台适配层：优先使用小黑盒 hb-sdk，浏览器开发环境自动回退到 localStorage。
  * SDK 采用动态导入，避免在普通浏览器里加载宿主专用代码。
- * 身份架构（1.1.15 起）：不使用 user.getInfo / auth.login——账号一律基于
- * 榜单通道的隔离身份（app_user_id，见 cloud.js#realMy/registerIdentity）+ 自选展示昵称。
+ * 身份架构（1.1.15 起）：不使用 user.getInfo 静默读取（鸿蒙宿主缺陷）；auth.login
+ *   仅用于「同步黑盒资料」手势换票。账号一律基于榜单通道的隔离身份
+ *   （app_user_id，见 cloud.js#realMy/registerIdentity）+ 自选/黑盒昵称。
  */
 let sdk = null;
 let ready = false;

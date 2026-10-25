@@ -2,9 +2,10 @@
  * 云服务层：排行榜与账号信息。
  * 在小黑盒宿主内（hb-sdk 就绪）使用平台云端排行榜；
  * 普通浏览器开发环境自动回退到本地模拟数据。
- * 身份架构（1.1.15 起）：不使用 user.getInfo / auth.login——
- * 账号一律基于榜单通道的隔离身份（getCurrentUserEntry 的 appUserId，
- * boot 时 registerIdentity 保证条目存在）+ 用户自选展示昵称（随榜单 extra 提交）。
+ * 身份架构（1.1.15 起）：不使用 user.getInfo 静默读取（鸿蒙宿主缺陷，工单 2323841）；
+ * auth.login 保留、仅用于设置页/引导页「同步黑盒资料」按钮的手势换票（见 app.js#syncHbProfile）。
+ * 账号 = 榜单通道的隔离身份（getCurrentUserEntry 的 appUserId，
+ * boot 时 registerIdentity 保证条目存在）+ 自选/黑盒昵称（随榜单 extra 提交）。
  */
 import { isMiniProgram, getSDK } from "./platform.js";
 
@@ -96,9 +97,9 @@ var myUid = null;
 
 /* ============================== 账号 ============================== */
 /*
- * 1.1.6 曾短暂走过「榜单条目回退读账号」的双通道，已按用户决定撤回：
- * 账号一律直接 user.getInfo（宿主注入当前登录用户）。在 user.getInfo 被拦的
- * 鸿蒙客户端上，点设置会弹宿主原生错误、账号显示「未登录」——不再有本地体验概念。
+ * 演变：1.1.6 曾走「榜单条目回退读昵称」的双通道，因新用户无条目拿不到昵称被否撤销；
+ * 1.1.15 起移除 user.getInfo 静默读取（鸿蒙生产态被拦），账号一律走榜单通道隔离身份；
+ * 1.1.17+ 真实昵称头像由授权换票获得（app.js#syncHbProfile，须用户手势）。
  */
 
 async function realSubmit(board, first, second, displayNick) {

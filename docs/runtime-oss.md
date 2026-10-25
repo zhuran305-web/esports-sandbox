@@ -108,9 +108,10 @@ npx hb-sdk remote release <version> --yes
 | `OSS_ACCESS_KEY_SECRET` | RAM 子账号 SK |
 | `OSS_PREFIX` | 可选，对象前缀；不用就留空 |
 
-`update-matches.yml` 已加好步骤：数据变化时自动上传并做匿名校验；没配密钥时自动跳过，
-不影响原有采集与 Release 发布。配好后采集器每 5 分钟更新一次 OSS；小程序端**目前在每次启动时**
-检查 meta（`js/app.js#refreshData` 只在 boot 调用，没有定时轮询），所以用户重新进入小程序就能看到新赛程与赛果。
+`update-matches.yml` 已加好步骤：数据变化时自动上传并做匿名校验；**每轮还无条件比对线上
+meta.json 的 hash，不一致即同步**（2026-10-25 停更事故的自愈机制——变化检测以 Release 为基准，
+OSS 一旦脱节会被「无变化」卡死，只能靠无条件比对拉回）。配好后采集器每 5 分钟更新一次 OSS；
+小程序端每 5 分钟轮询 meta（hash 变才拉整包）、回前台即刷新（1.1.16 起）。
 
 > 注意：`runtime/matches.json` 约 1.19 MiB，每次 hash 变化客户端会整包下载。OSS 试用包的 2 GB 下行流量
 > 约等于 1600 次整包下载；如果日活上来，优先做 gzip 或裁剪 runtime 窗口（只保留近 7 天 + 未来 21 天），

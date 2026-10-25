@@ -77,7 +77,6 @@ jobs:
           fi
 
       - name: Build runtime data
-        if: steps.collect.outputs.changed == 'true'
         run: node tools/build-runtime-data.mjs
 
       - name: Publish snapshot
@@ -91,6 +90,17 @@ jobs:
           cp runtime/meta.json "$RUNNER_TEMP/runtime-meta.json"
           gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber
 
+      # 防漂移（2026-10-25 事故）：变化检测以 Release 为基准，OSS 若因故脱节会被
+      # 「无变化」永久卡住。这里无条件比对 OSS 线上 meta hash，不一致即同步。
       - name: Publish runtime data to OSS
-        if: steps.collect.outputs.changed == 'true' && env.OSS_ACCESS_KEY_ID != ''
-        run: node tools/publish-runtime-oss.mjs --upload --check
+        if: env.OSS_ACCESS_KEY_ID != ''
+        run: |
+          REMOTE_HASH="$(curl -fsSL "https://${OSS_BUCKET}.oss-${OSS_REGION}.aliyuncs.com/${OSS_PREFIX}meta.json" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(String(JSON.parse(d).hash||''))}catch(e){console.log('')}})" || echo '')"
+          LOCAL_HASH="$(node -e "console.log(String(JSON.parse(require('fs').readFileSync('runtime/meta.json','utf8')).hash||''))")"
+          echo "local=$LOCAL_HASH remote=$REMOTE_HASH"
+          if [ "$REMOTE_HASH" != "$LOCAL_HASH" ]; then
+            echo "OSS 与本地不一致，执行同步"
+            node tools/publish-runtime-oss.mjs --upload --check
+          else
+            echo "OSS 与本地一致，跳过上传"
+          fi

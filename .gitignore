@@ -15,6 +15,8 @@ docs/liquipedia-api-application.md
 # 赛事数据快照：由 GitHub Release 资产同步，不提交（见 tools/pull-data.mjs）
 data/matches.json
 data/matches.js
+# 内置窗口快照：由 tools/trim-embedded.mjs 生成，不提交
+data/matches-embedded.json
 
 # 运行时数据产物（见 tools/build-runtime-data.mjs）
 runtime/

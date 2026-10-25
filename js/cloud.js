@@ -1,9 +1,12 @@
 /*
  * 云服务层：排行榜与账号信息。
- * 在小黑盒宿主内（hb-sdk 就绪）使用平台云端排行榜与用户资料；
+ * 在小黑盒宿主内（hb-sdk 就绪）使用平台云端排行榜；
  * 普通浏览器开发环境自动回退到本地模拟数据。
+ * 身份架构（1.1.15 起）：不使用 user.getInfo / auth.login——
+ * 账号一律基于榜单通道的隔离身份（getCurrentUserEntry 的 appUserId，
+ * boot 时 registerIdentity 保证条目存在）+ 用户自选展示昵称（随榜单 extra 提交）。
  */
-import { isMiniProgram, getSDK, getUserProfile } from "./platform.js";
+import { isMiniProgram, getSDK } from "./platform.js";
 
 var BOARD_KEYS = {
   win: "sha_board_win",
@@ -63,7 +66,8 @@ function mockEnsure() {
 function mockUpsert(board, entry) {
   var data = mockEnsure();
   var prev = data[board][entry.uid];
-  if (!prev || entry.score > prev.score) {
+  // 昵称变化也覆盖（对齐真实榜单的 second+1 刷新语义）
+  if (!prev || entry.score > prev.score || (entry.nick && entry.nick !== prev.nick)) {
     data[board][entry.uid] = entry;
     mockWrite(data);
   }
@@ -90,18 +94,44 @@ function mockMy(board) {
 
 var myUid = null;
 
-async function realSubmit(board, first, second) {
+/* ============================== 账号 ============================== */
+/*
+ * 1.1.6 曾短暂走过「榜单条目回退读账号」的双通道，已按用户决定撤回：
+ * 账号一律直接 user.getInfo（宿主注入当前登录用户）。在 user.getInfo 被拦的
+ * 鸿蒙客户端上，点设置会弹宿主原生错误、账号显示「未登录」——不再有本地体验概念。
+ */
+
+async function realSubmit(board, first, second, displayNick) {
   var sdk = getSDK();
   if (!sdk || !sdk.cloud) return;
   var extra = { first: first, second: second };
-  var profile = await getUserProfile();
-  if (profile && profile.nick) extra.nick = profile.nick;
-  if (profile && profile.uid) myUid = profile.uid;
+  if (displayNick) extra.nick = displayNick; // 自选/黑盒昵称（跨设备经 extra.nick 读回）
   await sdk.cloud.leaderboard.submit({
     key: BOARD_KEYS[board],
     score: encode(first, second),
     extra: extra
   });
+}
+
+/**
+ * 提交一个榜：分数更优才落库（榜单语义）。
+ * 昵称变化但分数未变优时，用「当前榜上 second+1」触发一次 extra 更新——
+ * 否则昵称（如同步黑盒资料后）要等下一次赢球才刷得上榜。
+ * 本地 0 胜 0 负（新用户/清除本地数据后榜上还有旧条目）同样要能刷昵称；
+ * 榜上无条目且无分数时不新建（win 榜条目由 registerIdentity 保证，败榜输过才出现）。
+ */
+async function submitBoardWithNick(board, first, second, displayNick) {
+  var cur = await realMy(board).catch(function () { return null; });
+  var curFirst = cur ? cur.first : 0;
+  var curSecond = cur ? cur.second : 0;
+  var curNick = (cur && cur.extra && cur.extra.nick) || "";
+  if (first > curFirst || (first === curFirst && second > curSecond)) {
+    await realSubmit(board, first, second, displayNick);
+    return;
+  }
+  if (cur && displayNick && displayNick !== curNick) {
+    await realSubmit(board, curFirst, curSecond + 1, displayNick); // 仅刷昵称，1 沙粒触发 only-if-better
+  }
 }
 
 async function realList(board, limit) {
@@ -130,11 +160,15 @@ async function realMy(board) {
   if (!sdk || !sdk.cloud) return null;
   var e = await sdk.cloud.leaderboard.getCurrentUserEntry({ key: BOARD_KEYS[board] });
   if (!e) return null;
+  // 榜单通道返回的隔离身份与 user.getInfo 的 app_user_id 同源：
+  // 静默读取被拒的客户端（鸿蒙）上这是唯一的 myUid 来源，供榜单 isMe 高亮
+  myUid = e.appUserId;
   var d = decode(e.score);
   var extra = e.extra || {};
   return {
     uid: e.appUserId,
     nick: extra.nick || "我",
+    extra: extra,
     first: d.first,
     second: d.second,
     rank: e.rank,
@@ -151,15 +185,16 @@ export var Cloud = {
     return !isMiniProgram();
   },
 
-  submitStats: async function (stats) {
-    if (stats.wins > 0) {
-      if (isMiniProgram()) await realSubmit("win", stats.wins, Math.max(0, stats.winProfit));
-      else mockUpsert("win", { uid: "me", nick: "我", score: encode(stats.wins, Math.max(0, stats.winProfit)), extra: { first: stats.wins, second: Math.max(0, stats.winProfit) } });
+  submitStats: async function (stats, displayNick) {
+    if (!isMiniProgram()) {
+      var mockNick = displayNick || "我";
+      if (stats.wins > 0 || displayNick) mockUpsert("win", { uid: "me", nick: mockNick, score: encode(stats.wins, Math.max(0, stats.winProfit)), extra: { first: stats.wins, second: Math.max(0, stats.winProfit) } });
+      if (stats.losses > 0) mockUpsert("lose", { uid: "me", nick: mockNick, score: encode(stats.losses, Math.max(0, stats.loseAmount)), extra: { first: stats.losses, second: Math.max(0, stats.loseAmount) } });
+      return;
     }
-    if (stats.losses > 0) {
-      if (isMiniProgram()) await realSubmit("lose", stats.losses, Math.max(0, stats.loseAmount));
-      else mockUpsert("lose", { uid: "me", nick: "我", score: encode(stats.losses, Math.max(0, stats.loseAmount)), extra: { first: stats.losses, second: Math.max(0, stats.loseAmount) } });
-    }
+    // 0 胜/0 负也带昵称提交：新用户与「清除本地数据」后的用户，榜上旧条目才刷得出昵称
+    if (stats.wins > 0 || displayNick) await submitBoardWithNick("win", stats.wins, Math.max(0, stats.winProfit), displayNick);
+    if (stats.losses > 0 || displayNick) await submitBoardWithNick("lose", stats.losses, Math.max(0, stats.loseAmount), displayNick);
   },
 
   getBoard: async function (board, limit) {
@@ -172,25 +207,154 @@ export var Cloud = {
     return mockMy(board);
   },
 
-  decodeScore: decode
+  /**
+   * 确保当前用户在胜榜有条目（身份注册）：无条目时提交一条 0 分记录，
+   * 让隔离身份（appUserId）在不依赖 user.getInfo 的客户端上也可读。
+   * 返回 true = 身份可读（已有条目或注册成功）；false = 未登录/宿主不支持。
+   */
+  registerIdentity: async function (displayNick) {
+    if (!isMiniProgram()) return true; // 本地模拟无需注册
+    try {
+      var e = await realMy("win");
+      if (e) return true;
+      await realSubmit("win", 0, 0, displayNick);
+      return true;
+    } catch (e2) {
+      return false;
+    }
+  },
+
+  decodeScore: decode,
+
+  /** 账号切换/登录态变化时清掉缓存的当前用户标识，榜单 isMe 下次渲染重新判定 */
+  resetIdentity: function () {
+    myUid = null;
+  },
+
+  /** 当前隔离身份（realMy 取到后缓存）；app.js 渲染榜单时回填 isMe 用。
+   *  myUid 是模块私有变量，app.js 不能裸引用（曾致 renderBoard 全崩、榜单页空白）。 */
+  getMyUid: function () {
+    return myUid;
+  }
 };
 
-export var Account = {
-  getProfile: async function () {
-    var profile = await getUserProfile();
-    if (profile) {
-      return {
-        nick: profile.nick || "盒友",
-        uid: profile.uid || "--",
-        avatarText: (profile.nick || "盒").slice(0, 1),
-        mode: "heybox"
-      };
+/* ============================== 战绩云同步 ============================== */
+/*
+ * 用 cloud.storage（每个登录用户私有、单值上限 16KB）跨设备同步沙粒与预测记录。
+ * 策略：最后写入者胜（LWW）——saveState 防抖推送，启动时云端较新则拉回覆盖本地。
+ * 体积保护：超过 15KB 时先丢最旧的已结算预测，未结算记录永不丢；仍装不下则放弃本次推送。
+ * 调试宿主（Browser Fake）与鸿蒙 local 模式会报 METHOD_FORBIDDEN / SERVER_API_REQUIRED，
+ * 捕获后本会话停用并回退纯本地，不影响任何功能。
+ */
+var STATE_KEY = "state_v1";
+var STATE_MAX_BYTES = 15 * 1024;
+var syncDisabled = false;
+
+function cloudStorageModule() {
+  var sdk = getSDK();
+  return sdk && sdk.cloud && sdk.cloud.storage ? sdk.cloud.storage : null;
+}
+
+function syncErrorKind(e) {
+  var code = (e && (e.code || e.errorCode)) || "";
+  if (code === "UNAUTHORIZED") return "nologin";
+  if (code === "METHOD_FORBIDDEN" || code === "SERVER_API_REQUIRED" ||
+      code === "PERMISSION_NOT_IN_SNAPSHOT" || code === "PERMISSION_DENIED") return "unsupported";
+  return "error";
+}
+
+export var Sync = {
+  lastKind: "idle", // idle | ok | nologin | unsupported | error
+
+  statusText: function () {
+    if (this.lastKind === "ok") return "已开启";
+    if (this.lastKind === "nologin") return "未登录";
+    if (this.lastKind === "unsupported") return "当前客户端暂不支持";
+    if (this.lastKind === "error") return "暂不可用";
+    return "—";
+  },
+
+  canWrite: function () {
+    return !syncDisabled && !!cloudStorageModule();
+  },
+
+  /** 打包同步记录；超限时按结算时间丢最旧的已结算预测，装不下返回 null（不丢未结算） */
+  pack: function (state, updatedAt) {
+    var predictions = Array.isArray(state.predictions) ? state.predictions.slice() : [];
+    function tryPack(list) {
+      return JSON.stringify({
+        v: 1,
+        updatedAt: updatedAt || 0,
+        state: { bankroll: state.bankroll, digs: state.digs, predictions: list }
+      });
     }
-    return {
-      nick: "本地体验",
-      uid: "local-0000",
-      avatarText: "盒",
-      mode: "local"
-    };
+    var body = tryPack(predictions);
+    if (body.length <= STATE_MAX_BYTES) return body;
+    var settled = predictions
+      .filter(function (p) { return p && p.settled; })
+      .sort(function (a, b) { return (a.settledAt || a.placedAt || 0) - (b.settledAt || b.placedAt || 0); });
+    for (var i = 0; i < settled.length; i++) {
+      var idx = predictions.indexOf(settled[i]);
+      if (idx >= 0) predictions.splice(idx, 1);
+      body = tryPack(predictions);
+      if (body.length <= STATE_MAX_BYTES) return body;
+    }
+    return null;
+  },
+
+  /**
+   * 推送战绩。返回 true（已推送）/ false（未推送）/
+   * { conflict: true, cloud: 记录 }（云端已被其他设备更新且比本地新，调用方应拉回）。
+   * 官方契约：写入失败（含 VERSION_CONFLICT）会清掉该 key 的版本凭证缓存，
+   * 之后必须先成功 get 一次才能再 set——所以冲突后先读云端再决定重写或拉回。
+   */
+  write: async function (state, updatedAt) {
+    var cs = cloudStorageModule();
+    if (!cs) return false;
+    var body = this.pack(state, updatedAt);
+    if (body === null) {
+      console.warn("[sync] 战绩超过云端 16KB 上限，跳过推送");
+      return false;
+    }
+    try {
+      await cs.setStorage(STATE_KEY, body);
+      this.lastKind = "ok";
+      return true;
+    } catch (e) {
+      this.lastKind = syncErrorKind(e);
+      if (this.lastKind !== "error") syncDisabled = true;
+      console.warn("[sync] 推送战绩失败：" + this.lastKind + "（" + ((e && (e.code || e.message)) || "") + "）");
+      if (this.lastKind !== "error") return false; // 未登录/不支持：无恢复动作
+      var cloud = await this.read();               // 读一次恢复凭证缓存；云端较新则让位
+      if (cloud && cloud.updatedAt > (updatedAt || 0)) {
+        return { conflict: true, cloud: cloud };
+      }
+      try {
+        await cs.setStorage(STATE_KEY, body);      // 本地仍是最新：重写一次
+        this.lastKind = "ok";
+        return true;
+      } catch (e2) {
+        console.warn("[sync] 冲突后重写仍失败：" + ((e2 && (e2.code || e2.message)) || ""));
+        return false;
+      }
+    }
+  },
+
+  read: async function () {
+    var cs = cloudStorageModule();
+    if (!cs) return null;
+    try {
+      var raw = await cs.getStorage(STATE_KEY);
+      this.lastKind = "ok";
+      if (!raw) return null;
+      var rec = JSON.parse(raw);
+      if (!rec || rec.v !== 1 || !rec.state || typeof rec.updatedAt !== "number") return null;
+      return rec;
+    } catch (e) {
+      this.lastKind = syncErrorKind(e);
+      if (this.lastKind !== "error") syncDisabled = true;
+      console.warn("[sync] 读取战绩失败：" + this.lastKind + "（" + ((e && (e.code || e.message)) || "") + "）");
+      return null;
+    }
   }
 };

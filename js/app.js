@@ -1,6 +1,7 @@
-import matchesData from "../data/matches.json";
-import { Cloud, Account } from "./cloud.js";
-import { initPlatform, setupViewport, setNavigationBarStyle, storageGet, storageSet } from "./platform.js";
+import matchesData from "../data/matches-embedded.json";
+import { Cloud, Sync } from "./cloud.js";
+import { IDENTITY_EXCHANGE_URL } from "./config.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
@@ -15,7 +16,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
   var THEME_KEY = "esports_sandbox_theme";
-  var APP_VERSION = "1.1.0";
+  /* 清除本地数据会重置的键（storage 空串=读取端回退默认：引导重现/昵称清空/缓存重建） */
+  var CLEAR_KEYS = [
+    STORAGE_KEY, ONBOARD_KEY, THEME_KEY,
+    "esports_sandbox_nick",
+    "esports_sandbox_hbprofile",
+    "esports_sandbox_remote_v1",
+    "esports_sandbox_net_block",
+    "esports_sandbox_mock_cloud_v2"
+  ];
+  var APP_VERSION = "1.1.25";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -175,9 +185,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     window.addEventListener("pageshow", function (e) {
       if (!e.persisted) return;
       closeAllOverlays();
-      // 从宿主返回时若页面是空的（白屏），强制重新加载
+      // 从宿主返回时若页面是空的（白屏），强制重新加载（优先宿主 reload 原语）
       if (!document.body.innerText.trim()) {
-        location.reload();
+        reloadPage();
         return;
       }
       renderAll();
@@ -185,7 +195,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0 };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0 };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -194,15 +204,72 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       return {
         bankroll: typeof parsed.bankroll === "number" && isFinite(parsed.bankroll) ? parsed.bankroll : START_BALANCE,
         predictions: Array.isArray(parsed.predictions) ? parsed.predictions : [],
-        digs: typeof parsed.digs === "number" ? parsed.digs : 0
+        digs: typeof parsed.digs === "number" ? parsed.digs : 0,
+        updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
       return base;
     }
   }
 
+  /* 战绩内容快照：只在内容真正变化时写存储/推云端，避免启动时把本地时间戳刷成最新 */
+  var persistedSnapshot = "";
+
+  function stateSnapshot() {
+    return JSON.stringify([state.bankroll, state.digs, state.predictions]);
+  }
+
   function saveState() {
+    var snap = stateSnapshot();
+    if (snap === persistedSnapshot) return;
+    persistedSnapshot = snap;
+    state.updatedAt = Date.now();
     storageSet(STORAGE_KEY, state);
+    scheduleCloudSync();
+  }
+
+  /* ============================== 战绩云同步 ============================== */
+  /* LWW：本地变化防抖推送；启动时云端较新则拉回。详见 js/cloud.js 的 Sync。 */
+  var cloudSyncTimer = 0;
+
+  function scheduleCloudSync() {
+    if (!Sync.canWrite()) return;
+    if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
+    cloudSyncTimer = setTimeout(function () {
+      cloudSyncTimer = 0;
+      Sync.write(state, state.updatedAt || 0).then(function (res) {
+        // 写入冲突且云端较新：让位并拉回（write 内部已按官方契约先读云端恢复凭证）
+        if (res && res.conflict && res.cloud) applyCloudRecord(res.cloud);
+      });
+    }, 2500);
+  }
+
+  /** 应用一条云端记录：仅在比本地新时覆盖并重渲染。 */
+  function applyCloudRecord(rec) {
+    if (!rec || !(rec.updatedAt > (state.updatedAt || 0))) return;
+    var s = rec.state;
+    state = {
+      bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
+      predictions: Array.isArray(s.predictions) ? s.predictions : [],
+      digs: typeof s.digs === "number" && isFinite(s.digs) ? s.digs : 0,
+      updatedAt: rec.updatedAt
+    };
+    validateLoadedState();
+    persistedSnapshot = stateSnapshot();
+    storageSet(STORAGE_KEY, state);
+    var events = settlePending();
+    renderBalance();
+    renderAll();
+    if (!$("#view-profile").hidden) renderProfile();
+    if (!$("#view-board").hidden) renderBoard();
+    toast("已从云端同步战绩");
+    if (events.length) syncBoards();
+  }
+
+  function maybeRestoreFromCloud() {
+    Sync.read().then(function (rec) {
+      applyCloudRecord(rec);
+    }).catch(function (e) { /* 读取失败保持本地 */ });
   }
 
   function rebuildMatchIndex() {
@@ -728,7 +795,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
             ? '<span class="status-chip awaiting">待赛果</span>'
             : '<span class="status-chip open">未开始</span>';
 
-    return '<div class="schedule-row">' +
+    return '<div class="schedule-row" data-match="' + esc(m.id) + '">' +
       '<span class="schedule-time"><b>' + esc(fmtMonthDay(m.startAt)) + "</b>" + esc(fmtClock(m.startAt)) + "</span>" +
       '<span class="schedule-main">' +
         '<span class="schedule-teams">' + teamSpan("A") + '<span class="vs">vs</span>' + teamSpan("B") + "</span>" +
@@ -1066,15 +1133,22 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     return stats;
   }
 
-  async function syncBoards() {
+  async function syncBoards(overrideNick) {
     var s = recordStats();
     try {
+      // 昵称链：调用方显式指定（如刚同步的黑盒昵称）→ 黑盒资料缓存 → 自选展示昵称
+      var nick = overrideNick;
+      if (!nick) {
+        var hb = await loadHbProfile().catch(function () { return null; });
+        nick = (hb && hb.nick) || "";
+      }
+      if (!nick) nick = await loadNick();
       await Cloud.submitStats({
         wins: s.wins,
         winProfit: s.winProfit,
         losses: s.losses,
         loseAmount: s.loseAmount
-      });
+      }, nick);
     } catch (e) { /* 未登录或网络异常时静默失败 */ }
   }
 
@@ -1468,6 +1542,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       closeSheet();
       renderAll();
       toast("已加注 " + fmtNum(amount) + " 沙粒 · 总投入 " + fmtNum(existing.stake) + " 沙粒");
+      vibrate("light");
       return;
     }
 
@@ -1493,6 +1568,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     closeSheet();
     renderAll();
     toast("预测成功 · 投入 " + fmtNum(amount) + " 沙粒");
+    vibrate("light");
   }
 
   /* ============================== 排行榜 ============================== */
@@ -1525,9 +1601,17 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       // 未登录或网络异常时展示空榜
     }
     var entries = board.entries;
+    // realMy 取到隔离身份后回填 isMe（首次 getList 时身份可能尚未就绪，鸿蒙上依赖榜单通道）
+    var uidNow = Cloud.getMyUid();
+    if (uidNow) {
+      entries.forEach(function (e) { e.isMe = e.uid === uidNow; });
+    }
+    // 0 分注册条目（registerIdentity 为保证身份可读而建）不上榜展示；
+    // 按分排序 0 分必沉底，过滤后可见名次仍从 1 开始连续
+    entries = entries.filter(function (e) { return e.first > 0; });
 
     // 我的成绩卡
-    if (my) {
+    if (my && my.first > 0) {
       $("#boardMyRank").textContent = "#" + my.rank;
       $("#boardMyLabel").textContent = currentBoard === "win" ? "猜对次数排名" : "猜错次数排名";
       $("#boardMyScore").textContent = my.first + " 场";
@@ -1546,10 +1630,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     var isWin = currentBoard === "win";
     listEl.innerHTML = entries.map(function (e) {
+      // 无自选昵称的条目用「盒友·ID后四位」区分（榜单条目按隔离身份唯一）
+      var nick = e.nick && e.nick !== "盒友" ? e.nick : "盒友·" + String(e.uid || "").slice(-4);
       return (
         '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
           '<span class="board-rank">' + (e.rank <= 3 ? ["🥇", "🥈", "🥉"][e.rank - 1] : e.rank) + "</span>" +
-          '<span class="board-nick">' + esc(e.nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+          '<span class="board-nick">' + esc(nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
           '<span class="board-detail">' +
             '<span class="board-first ' + (isWin ? "won" : "lost") + '">' + e.first + " 场</span>" +
             '<span class="board-second">' + (isWin ? "赚 " : "亏 ") + fmtNum(e.second) + " 沙粒</span>" +
@@ -1682,13 +1768,23 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     ctx.fillText("赛事沙盘 · 沙粒为虚拟道具，仅娱乐预测", W / 2, H - 90);
   }
 
+  var sharePred = null;
+
   function openShare(pred) {
     drawShareCard(pred);
+    sharePred = pred;
     $("#shareBackdrop").hidden = false;
   }
 
   function closeShare() {
     $("#shareBackdrop").hidden = true;
+    sharePred = null;
+  }
+
+  /** 社区发帖预置话题：比赛所属项目名；未知项目退回通用话题。生产端会过滤无效项，写错也无害。 */
+  function shareTopicFor(m) {
+    var g = m && GAMES[m.game];
+    return (g && g.label) || "电竞赛事";
   }
 
   function fallbackCopy(text) {
@@ -1719,7 +1815,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (p.pick !== "A" && p.pick !== "B") return false;
       if (typeof p.placedAt !== "number") p.placedAt = Date.now();
       if (typeof p.settled !== "boolean") p.settled = !!p.settled;
-      return !!matchById(p.matchId); // 赛事已不存在的记录剔除
+      // 不按「比赛是否在当前数据里」剔除：内置数据是窗口快照，
+      // 运行时全量数据到之前老预测仍需保留（结算/渲染都会跳过找不到的比赛）
+      return true;
     });
   }
 
@@ -1740,7 +1838,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       d.classList.toggle("is-active", i === onboardStep - 1);
     });
     $("#onboardSkip").textContent = onboardStep === 3 ? "不同意" : "跳过";
-    $("#onboardNext").textContent = onboardStep === 3 ? "开始使用" : "下一步";
+    $("#onboardNext").textContent = onboardStep === 3 ? "同步黑盒资料" : "下一步";
   }
 
   function closeOnboard(accepted) {
@@ -1760,7 +1858,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         onboardStep++;
         updateOnboard();
       } else {
+        // 最后一步主按钮=同意规则并开始：同时发起黑盒资料同步（授权页由宿主弹出，
+        // 同步不阻塞进入；失败/取消不影响使用，设置页可随时重试）
         closeOnboard(true);
+        syncHbProfile();
       }
     });
     $("#onboardSkip").addEventListener("click", function () {
@@ -1774,9 +1875,130 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   function maybeShowOnboard() {
-    storageGet(ONBOARD_KEY).then(function (seen) {
-      if (String(seen) !== "1") showOnboard();
+    return storageGet(ONBOARD_KEY).then(function (seen) {
+      if (String(seen) !== "1") {
+        showOnboard();
+        return true;
+      }
+      return false;
     });
+  }
+
+  /* ============================== 鸿蒙硬阻断（1.1.5 起停用） ============================== */
+  /*
+   * 1.1.3/1.1.4 曾用这套阻断让鸿蒙进入即退出。1.1.5 为了验证「握手晚到降级」（1.1.4 修复的
+   * 第一层问题）是否就是鸿蒙表现为本地模式的全部原因，暂时改回进入门 + 重试的流程；
+   * 若鸿蒙真机仍报 SERVER_API_REQUIRED（第二层：客户端 effective network 判 local），
+   * 再把 showHarmonyBlock 的调用恢复回来即可。
+   */
+  var harmonyBlocked = false;
+  var harmonyExiting = false;
+  var harmonyCountdown = null;
+
+  function setHarmonyHint(text) {
+    var hint = $("#harmonyBlockHint");
+    if (hint) hint.textContent = text;
+  }
+
+  async function exitHarmonyBlock() {
+    if (harmonyExiting) return;
+    harmonyExiting = true;
+    if (harmonyCountdown) {
+      clearInterval(harmonyCountdown);
+      harmonyCountdown = null;
+    }
+    setHarmonyHint("正在退出小程序…");
+    // 只做本地握手，拿到 navigation.close；握手本身不涉及服务端 API
+    await initPlatform();
+    var closed = await closeMiniProgram();
+    if (!closed) {
+      harmonyExiting = false;
+      setHarmonyHint("自动退出失败，请点右上角「…」关闭小程序，或点下方按钮重试。");
+    }
+  }
+
+  function startHarmonyCountdown() {
+    if (harmonyExiting || harmonyCountdown) return;
+    var left = 5;
+    setHarmonyHint(left + " 秒后自动退出小程序。");
+    harmonyCountdown = setInterval(function () {
+      left -= 1;
+      if (left <= 0) {
+        exitHarmonyBlock();
+        return;
+      }
+      setHarmonyHint(left + " 秒后自动退出小程序。");
+    }, 1000);
+  }
+
+  function showHarmonyBlock() {
+    if (harmonyBlocked) return;
+    harmonyBlocked = true;
+    var backdrop = $("#harmonyBlockBackdrop");
+    if (backdrop) backdrop.hidden = false;
+    document.body.style.overflow = "hidden";
+    var exitBtn = $("#harmonyBlockExit");
+    if (exitBtn) exitBtn.addEventListener("click", exitHarmonyBlock);
+
+    // 握手完成前页面可能还没被宿主显示，倒计时从握手结束才开始，保证提示能被看到
+    setHarmonyHint("正在准备退出小程序…");
+    initPlatform().then(function () {
+      if (!harmonyBlocked || harmonyExiting) return;
+      startHarmonyCountdown();
+    });
+  }
+
+  /* 鸿蒙进入门：强制更新一次；失败则阻断整个小程序 */
+  var gateRetrying = false;
+
+  function showNetGate(mode) {
+    var backdrop = $("#netGateBackdrop");
+    if (!backdrop) return;
+    $("#netGateTitle").textContent = mode === "error" ? "小程序无法使用" : "正在更新赛程";
+    $("#netGateText").textContent = mode === "error"
+      ? "赛程数据更新失败，请检查网络后重试。"
+      : "进入前需要获取最新赛程与赛果，请稍候。";
+    $("#netGateActions").hidden = mode !== "error";
+    backdrop.hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+
+  function hideNetGate() {
+    var backdrop = $("#netGateBackdrop");
+    if (backdrop) backdrop.hidden = true;
+    document.body.style.overflow = "";
+  }
+
+  async function runHarmonyGate() {
+    if (gateRetrying) return false;
+    if (!isRuntimeEnabled() || getRuntimeMode() === "preview") {
+      hideNetGate();
+      maybeShowOnboard();
+      return true;
+    }
+    gateRetrying = true;
+    showNetGate("loading");
+    // 宿主网络可能在握手完成后才就绪：失败后间隔重试，不要把第一次失败当成永久失败
+    var ok = false;
+    for (var attempt = 0; attempt < 3 && !ok; attempt++) {
+      if (attempt > 0) {
+        await new Promise(function (resolve) { setTimeout(resolve, 2500); });
+      }
+      ok = await refreshData(true);
+    }
+    gateRetrying = false;
+    if (ok) {
+      hideNetGate();
+      maybeShowOnboard();
+    } else {
+      showNetGate("error");
+    }
+    return ok;
+  }
+
+  function bindNetGate() {
+    var retry = $("#netGateRetry");
+    if (retry) retry.addEventListener("click", function () { runHarmonyGate(); });
   }
 
   function buildPostText() {
@@ -1818,6 +2040,74 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   /* ============================== 设置页 ============================== */
+  var NICK_KEY = "esports_sandbox_nick"; // 用户自选展示昵称：本地保存 + 随榜单 extra 提交（跨设备经 getCurrentUserEntry 读回）
+  var HB_PROFILE_KEY = "esports_sandbox_hbprofile"; // 黑盒授权资料缓存（换票结果）：{appUserId,nick,avatar,at}
+
+  function loadNick() {
+    return storageGet(NICK_KEY).then(function (v) {
+      return String(v == null ? "" : v).trim();
+    }).catch(function () { return ""; });
+  }
+
+  function loadHbProfile() {
+    return storageGet(HB_PROFILE_KEY).then(function (v) {
+      if (!v) return null;
+      var p = typeof v === "string" ? JSON.parse(v) : v;
+      return p && p.appUserId ? p : null;
+    }).catch(function () { return null; });
+  }
+
+  function saveHbProfile(p) {
+    return storageSet(HB_PROFILE_KEY, p);
+  }
+
+  /** 同步黑盒资料：授权（用户手势）→ 一次性 code → 换票端点 → 缓存昵称头像。 */
+  function syncHbProfile() {
+    authLogin().then(function (login) {
+      if (!login || login.error || !login.code) {
+        if (login && login.error === "AUTHORIZATION_CANCELLED") toast("已取消授权");
+        else if (login && login.error === "USER_GESTURE_REQUIRED") toast("请直接点击按钮触发授权");
+        else toast("授权未完成：" + ((login && login.error) || "UNKNOWN"));
+        return;
+      }
+      // code 放路径（/api/exchange/<code>）：OSS 回源缓存键按路径，一次性 code 进路径
+      // 保证每个码独立回源，绝无缓存串号（响应即便落桶也只是该码自己的结果）
+      var url = IDENTITY_EXCHANGE_URL + "/" + encodeURIComponent(login.code);
+      networkGetJson(url, 10000).then(function (data) {
+        if (data && data.appUserId) {
+          saveHbProfile({
+            appUserId: data.appUserId,
+            nick: data.nickname || "",
+            avatar: data.avatar || "",
+            at: Date.now()
+          }).then(function () {
+            toast(data.nickname ? "已同步黑盒资料：" + data.nickname : "已同步身份（该账号未设置昵称）");
+            syncBoards(data.nickname || undefined); // 黑盒昵称优先随榜单 extra 提交
+            renderSettings();
+          });
+        } else if (data && data.error === "invalid_grant") {
+          toast("授权码已失效，请再点一次重新授权");
+        } else if (data && (data.error === "HTTP_403" || data.error === "HTTP_404")) {
+          toast("换票通道未就绪（回源规则待配置），稍后再试");
+        } else {
+          toast("换票失败：" + ((data && data.error) || "UNKNOWN"));
+        }
+      }).catch(function (e) {
+        toast("换票失败：" + ((e && e.code) || "网络异常"));
+      });
+    });
+  }
+
+  /** 确保榜单条目存在（0 分注册），隔离身份在静默读取被拒的客户端上也可读。 */
+  function registerIdentity() {
+    if (Cloud.isMock()) return;
+    loadNick().then(function (nick) {
+      return Cloud.registerIdentity(nick);
+    }).then(function (ok) {
+      if (ok && !$("#view-settings").hidden) renderSettings();
+    }).catch(function () { /* 静默：未登录/宿主不支持时账号卡显示游客 */ });
+  }
+
   function renderSettings() {
     var matches = MATCHES;
     var games = {};
@@ -1834,6 +2124,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     $("#settingsVersion").textContent = "v" + APP_VERSION;
     $("#settingsCloudMode").textContent = Cloud.isMock() ? "本地模拟" : "小黑盒云端";
+    $("#settingsCloudSync").textContent = Sync.statusText();
 
     var sourceNames = { pandascore: "PandaScore", liquipedia: "Liquipedia", manual: "官方/手工" };
     var sources = {};
@@ -1842,19 +2133,34 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       return sourceNames[s] || s;
     }).join(" / ") || "—";
 
-    Account.getProfile()
-        .then(function (p) {
-          $("#accountName").textContent = p.nick || "盒友";
-          $("#accountId").textContent = "ID: " + (p.uid || "--");
-          $("#accountAvatar").textContent = p.avatarText || "盒";
-          $("#accountBadge").textContent = p.mode === "local" ? "本地模式" : "已登录";
-          $("#accountHint").textContent = p.mode === "local"
-            ? "本地体验账号 · 发布后将自动读取小黑盒账号，无需注册或登录"
-            : "已通过小黑盒账号登录";
-        })
-        .catch(function () {
-          $("#accountBadge").textContent = "未登录";
-        });
+    Promise.all([
+      loadNick(),
+      loadHbProfile(),
+      // 榜单通道返回隔离身份（app_user_id）与自选昵称，所有宿主行为一致（不使用 user.getInfo）
+      Cloud.getMyEntry("win").catch(function () { return null; })
+    ]).then(function (r) {
+      var localNick = r[0], hb = r[1], entry = r[2];
+      var entryNick = entry && entry.extra && entry.extra.nick ? entry.extra.nick : "";
+      // 昵称显示链：黑盒昵称（换票缓存）→ 自选昵称 → 榜单 extra → 盒友
+      var displayName = (hb && hb.nick) || localNick || entryNick || "盒友";
+      $("#accountName").textContent = displayName;
+      $("#accountId").textContent = "ID: " + ((hb && hb.appUserId) || (entry && entry.uid) || "--");
+      $("#accountAvatar").textContent = displayName.slice(0, 1) || "盒";
+      $("#accountBadge").textContent = (hb && hb.nick) ? "已同步黑盒资料" : (entry ? "已绑定身份" : "游客");
+      $("#accountHint").textContent = (hb && hb.nick)
+        ? "昵称头像来自小黑盒授权资料 · 需更新时可再点「同步黑盒资料」"
+        : (entry
+          ? "已绑定小黑盒隔离身份 · 点「同步黑盒资料」可显示黑盒昵称头像，或设置展示昵称"
+          : "打开小程序后自动绑定隔离身份；可先设置展示昵称用于榜单");
+      $("#nickInput").value = localNick;
+      // 同步黑盒资料按钮：已同步过仍保留（授权资料可能变更）
+      $("#hbSyncBtn").hidden = false;
+      // 诊断行：宿主环境快照（版本/模式/系统），用于各端排障
+      $("#settingsDiag").textContent = getDiagnostics() +
+        (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") : "");
+    }).catch(function () {
+      $("#accountBadge").textContent = "游客";
+    });
   }
 
   /* ============================== 导航 ============================== */
@@ -1867,7 +2173,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule";
+    return name === "rules" || name === "schedule" || name === "about";
   }
 
   function initHistory() {
@@ -1949,7 +2255,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var schedList = $("#scheduleList");
       if (schedList) schedList.innerHTML = "";
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
     var tabName = isSubPage ? "settings" : name;
@@ -1967,6 +2273,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   /* ============================== 事件绑定 ============================== */
   function bindEvents() {
+    var refreshBtn = $("#refreshDataBtn");
+    if (refreshBtn) refreshBtn.addEventListener("click", function () {
+      // 宿主全局 Loading：无权限、无手势要求；旧宿主静默降级（按钮原有文案反馈仍在）
+      uiShowLoading();
+      Promise.resolve(refreshData(true)).then(
+        function () { uiHideLoading(); },
+        function () { uiHideLoading(); }
+      );
+    });
+
     $("#matchList").addEventListener("click", function (e) {
       var row = e.target.closest(".team-row[data-match]");
       if (!row) return;
@@ -1999,12 +2315,89 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#shareCopyText").addEventListener("click", function () {
       var text = buildPostText();
       function done() { toast("文案已复制，去发帖页粘贴即可"); }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
-      } else {
-        fallbackCopy(text);
-        done();
+      // 宿主内优先走原生剪贴板（不依赖浏览器 Clipboard 的手势/安全域规则），失败回退浏览器路径
+      setClipboard(text).then(function (ok) {
+        if (ok) return done();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+        } else {
+          fallbackCopy(text);
+          done();
+        }
+      });
+    });
+
+    $("#shareForward").addEventListener("click", function () {
+      var pred = sharePred;
+      var m = pred && matchById(pred.matchId);
+      if (!pred || !m) return;
+      var won = !!pred.won;
+      showShareMenu({
+        title: (won ? "我猜中了 " : "我猜错了 ") + m.teamA.short + " vs " + m.teamB.short,
+        desc: "「赛事沙盘」电竞竞猜 · " + (won ? "盈利 " : "亏损 ") + fmtNum(Math.abs(pred.profit)) + " 沙粒",
+        post: { topics: [shareTopicFor(m)] }
+      }).then(function (err) {
+        if (!err) return; // 面板已打开；是否发布由用户决定，返回值不透明不能判断
+        if (err === "METHOD_FORBIDDEN" || err === "UNSUPPORTED" || err === "METHOD_NOT_FOUND") {
+          toast("当前端不支持转发，可用复制文案或复制链接");
+        } else {
+          toast("转发未完成，可用复制文案或复制链接");
+        }
+      });
+    });
+
+    $("#shareCopyLink").addEventListener("click", function () {
+      var pred = sharePred;
+      if (!pred) return;
+      // extra 随通用分享链接携带：{v:1, m: 比赛id}，接收方启动时 getLaunchExtra 还原后直达该场
+      copyShareLink({ v: 1, m: String(pred.matchId || "") }).then(function (err) {
+        if (!err) { toast("链接已复制，发给好友可直达这场比赛"); return; }
+        if (err === "UNSUPPORTED" || err === "METHOD_FORBIDDEN" || err === "METHOD_NOT_FOUND") {
+          toast("当前端不支持复制链接，可用复制文案");
+        } else {
+          toast("复制链接失败，可用复制文案");
+        }
+      });
+    });
+
+    $("#hbSyncBtn").addEventListener("click", function () { syncHbProfile(); });
+
+    // 清除本地数据：两段式确认（第一次点变确认态，3s 未续点还原）
+    var clearArmed = false, clearTimer = 0;
+    $("#clearDataBtn").addEventListener("click", function () {
+      if (!clearArmed) {
+        clearArmed = true;
+        $("#clearDataHint").textContent = "再点一次确认";
+        toast("将清除本机全部数据（战绩/昵称/缓存/引导），云同步不受影响");
+        clearTimeout(clearTimer);
+        clearTimer = setTimeout(function () {
+          clearArmed = false;
+          var el = $("#clearDataHint");
+          if (el) el.textContent = "重置全部";
+        }, 3000);
+        return;
       }
+      clearTimeout(clearTimer);
+      clearArmed = false;
+      Promise.all(CLEAR_KEYS.map(function (k) { return storageSet(k, ""); }))
+        .then(function () {
+          // 浏览器/localStorage 分支同步清理；SDK storage 已被空串覆盖（读取端对空值一律回退默认）
+          CLEAR_KEYS.forEach(function (k) {
+            try { localStorage.removeItem(k); } catch (e) { /* 忽略 */ }
+          });
+          toast("已清除，正在重新启动…");
+          setTimeout(reloadPage, 600);
+        });
+    });
+
+    $("#nickSave").addEventListener("click", function () {
+      var nick = String($("#nickInput").value || "").trim();
+      if (nick.length > 12) { toast("昵称最多 12 个字"); return; }
+      storageSet(NICK_KEY, nick).then(function () {
+        toast(nick ? "展示昵称已保存：" + nick : "展示昵称已清除");
+        syncBoards(); // 立即随榜单 extra 提交，其他设备/榜单页可见
+        renderSettings();
+      });
     });
 
     $("#boardTabs").addEventListener("click", function (e) {
@@ -2088,6 +2481,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     $("#openRulesBtn").addEventListener("click", function () { switchView("rules"); });
     $("#rulesBackBtn").addEventListener("click", function () { goBack("settings"); });
+    $("#aboutBackBtn").addEventListener("click", function () { goBack("settings"); });
+    $("#openAboutBtn").addEventListener("click", function () { switchView("about"); });
+    $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
 
     $("#openScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
     $("#scheduleBackBtn").addEventListener("click", function () { goBack("settings"); });
@@ -2233,6 +2629,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
     rebuildMatchIndex();
     if (meta && meta.updatedAt) DATA_UPDATED_AT = meta.updatedAt;
+    runtimeRefreshed = true;
 
     var events = settlePending();
     renderSelectors();
@@ -2240,6 +2637,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     renderSettings();
     if (!$("#view-schedule").hidden) renderSchedule();
     if (!$("#view-board").hidden) renderBoard();
+    resolveDeepLink();
 
     if (events.length) {
       syncBoards();
@@ -2250,11 +2648,25 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     }
   }
 
+  var NET_BLOCK_KEY = "esports_sandbox_net_block";
+  var NET_BLOCK_TTL = 24 * 60 * 60 * 1000;
+  var POLL_INTERVAL = 5 * 60 * 1000;      // 轮询节奏：与采集器 5 分钟更新对齐
+  var POLL_MAX_AGE = 3 * 60 * 1000;       // 轮询/回前台节流：3 分钟内查过就只走本地缓存
+  var POLL_BACKOFF = 15 * 60 * 1000;      // 限流退避：RATE_LIMITED 后暂停自动轮询
+  var pollBackoffUntil = 0;
   var refreshing = false;
 
-  async function refreshData() {
-    if (refreshing || !isRuntimeEnabled()) return;
+  async function refreshData(manual) {
+    if (refreshing) {
+      if (manual) toast("正在检查更新…");
+      return false;
+    }
+    if (!isRuntimeEnabled()) {
+      if (manual) toast("当前版本未启用在线更新");
+      return false;
+    }
     refreshing = true;
+    if (manual) toast("正在检查赛程更新…");
     try {
       var cached = await loadCachedSnapshot();
       if (cached && cached.meta && cached.meta.updatedAt &&
@@ -2262,36 +2674,189 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         applySnapshot(cached.matches, cached.meta);
       }
 
-      var remote = await fetchRemoteSnapshot();
-      if (remote && remote.meta && remote.meta.updatedAt &&
-          remote.meta.updatedAt !== DATA_UPDATED_AT) {
-        applySnapshot(remote.matches, remote.meta);
+      // 宿主明确拒绝服务端 API 时，24 小时内不再自动重试，避免每次启动弹原生错误框
+      var blocked = await storageGet(NET_BLOCK_KEY);
+      if (typeof blocked === "string") {
+        try { blocked = JSON.parse(blocked); } catch (e) { blocked = null; }
       }
+      if (!manual && blocked && blocked.version === APP_VERSION && blocked.at &&
+          Date.now() - blocked.at < NET_BLOCK_TTL) {
+        return false;
+      }
+
+      var remote = await fetchRemoteSnapshot({
+        force: manual === true,
+        maxAgeMs: manual ? 0 : POLL_MAX_AGE
+      });
+
+      if (remote && remote.meta) {
+        pollBackoffUntil = 0;
+        await storageSet(NET_BLOCK_KEY, { at: 0, version: APP_VERSION });
+        if (remote.meta.updatedAt && remote.meta.updatedAt !== DATA_UPDATED_AT) {
+          applySnapshot(remote.matches, remote.meta);
+          if (manual) toast("赛程已更新");
+        } else if (manual) {
+          toast("赛程已是最新");
+        }
+        syncBoards(); // 全平台统一：数据刷新后同步榜单（submit 只在新分数更优时落库）
+        if (!$("#view-board").hidden) renderBoard();
+        return true;
+      }
+
+      if (remote && (remote.error === "RATE_LIMITED" || remote.error === "RATE_LIMITED_BY_RUNTIME")) {
+        // Runtime 本地熔断/上游限流：暂停自动轮询一个退避周期，不要立即重试
+        pollBackoffUntil = Date.now() + POLL_BACKOFF;
+        console.warn("[data] 限流，自动轮询退避至 " + new Date(pollBackoffUntil).toLocaleTimeString());
+      }
+      if (remote && remote.error === "SERVER_API_REQUIRED") {
+        console.warn("[data] 宿主返回 SERVER_API_REQUIRED，冷却 24 小时");
+        await storageSet(NET_BLOCK_KEY, { at: Date.now(), version: APP_VERSION });
+      }
+      if (!manual) return false;
+      if (!remote) toast("预览版暂不支持在线更新");
+      else if (remote.error === "SERVER_API_REQUIRED") toast("当前客户端暂不支持在线更新");
+      else if (remote.error === "RATE_LIMITED" || remote.error === "RATE_LIMITED_BY_RUNTIME") toast("操作过于频繁，请稍后再试");
+      else toast("检查更新失败，请稍后再试");
+      return false;
     } catch (e) {
-      /* 静默回退到内置/缓存数据 */
+      if (manual) toast("检查更新失败，请稍后再试");
+      return false;
     } finally {
       refreshing = false;
     }
   }
 
+  /* 握手晚于 1.5s：SDK 能力在 ready 后会恢复，补一次布局、账号与数据刷新 */
+  function scheduleLatePlatformRecovery(platformReady) {
+    if (platformReady) return;
+    whenPlatformReady(10000).then(function (ok) {
+      if (!ok) return;
+      setupViewport();
+      if (!$("#view-settings").hidden) renderSettings();
+      if (!$("#view-board").hidden) renderBoard();
+      refreshData();
+    });
+  }
+
+  /* ============================== 分享深链与宿主事件 ============================== */
+  /* 复制链接/转发携带 {v:1, m: 比赛id}；接收方启动后 getLaunchExtra 还原，数据就绪即定位。 */
+  var pendingDeepLink = "";
+  var runtimeRefreshed = false;
+
+  function readLaunchExtra() {
+    var extra = getLaunchExtra();
+    if (extra && typeof extra === "object" && !Array.isArray(extra) &&
+        extra.v === 1 && typeof extra.m === "string" && extra.m) {
+      pendingDeepLink = extra.m;
+    }
+  }
+
+  function deepLinkSelector(scope, matchId) {
+    // 属性选择器内引号/反斜杠会破坏匹配；id 来自自家链接，去掉即可
+    var safe = matchId.replace(/["\\]/g, "");
+    return scope + '[data-match="' + safe + '"]';
+  }
+
+  function flashMatchRow(el) {
+    try { el.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    catch (e) { el.scrollIntoView(true); }
+    el.classList.remove("deep-link-flash");
+    void el.offsetWidth; // 重启动画
+    el.classList.add("deep-link-flash");
+    setTimeout(function () { el.classList.remove("deep-link-flash"); }, 2000);
+  }
+
+  function locateDeepLinkRow(matchId, selector) {
+    // 赛程表分帧渲染，目标行可能还没插进来：轮询最多约 3 秒
+    var left = 30;
+    (function poll() {
+      var el = document.querySelector(selector);
+      if (el) {
+        pendingDeepLink = "";
+        flashMatchRow(el);
+        return;
+      }
+      if (left-- <= 0) {
+        pendingDeepLink = "";
+        toast("该比赛不在当前数据范围内");
+        return;
+      }
+      setTimeout(poll, 100);
+    })();
+  }
+
+  function resolveDeepLink() {
+    if (!pendingDeepLink) return;
+    if (!$("#onboardBackdrop").hidden) { pendingDeepLink = ""; return; } // 新用户先看引导，不打断
+    var m = matchById(pendingDeepLink);
+    if (!m) {
+      // 内置窗口只是快照：等运行时数据到了再下结论
+      if (runtimeRefreshed) {
+        pendingDeepLink = "";
+        toast("分享的比赛不在当前数据范围内");
+      }
+      return;
+    }
+    var start = new Date(m.startAt).getTime();
+    var now = Date.now();
+    if (start >= now - HOME_PAST_DAYS * 86400000 && start <= now + HOME_FUTURE_DAYS * 86400000) {
+      if (currentView !== "matches") switchView("matches");
+      locateDeepLinkRow(m.id, deepLinkSelector(".team-row", m.id));
+    } else {
+      // 赛程表 ±30 天窗口覆盖其余比赛；重置筛选避免被当前过滤条件挡住
+      schedGame = "all";
+      schedTournament = "__all__";
+      schedQuery = "";
+      $("#scheduleSearch").value = "";
+      $("#scheduleSearchClear").hidden = true;
+      if (currentView !== "schedule") switchView("schedule");
+      locateDeepLinkRow(m.id, deepLinkSelector(".schedule-row", m.id));
+    }
+  }
+
+  /** 登录态变化/回前台：刷新账号展示与榜单高亮（数据仍只在启动时拉取，属既定设计）。 */
+  function bindHostEvents() {
+    onHostEvent("heybox_app_login_change", function () {
+      Cloud.resetIdentity();
+      if (!$("#view-settings").hidden) renderSettings();
+      if (!$("#view-board").hidden) renderBoard();
+    });
+    onHostEvent("show", function () {
+      // 回前台：可见页账号/榜单重渲染 + 赛程节流刷新（3 分钟内查过则只走本地缓存）
+      refreshData(false);
+      if (!$("#view-settings").hidden) renderSettings();
+      if (!$("#view-board").hidden) renderBoard();
+    });
+  }
+
   /* ============================== 启动 ============================== */
   async function boot() {
-    await initPlatform();
+    var platformReady = await initPlatform();
     await initTheme();
+    readLaunchExtra(); // SDK 已加载即可同步读取启动链接里的分享 extra
     // 安全区测量最多等 800ms，避免旧宿主阻塞启动
     await Promise.race([
       setupViewport().catch(function () { return null; }),
       new Promise(function (resolve) { setTimeout(resolve, 800); })
     ]);
     state = await loadState();
+    var loadedSnapshot = stateSnapshot();
     validateLoadedState();
-    saveState(); // 把修正后的状态写回，防止脏数据长期残留
+    persistedSnapshot = stateSnapshot();
+    if (persistedSnapshot !== loadedSnapshot) {
+      // validate 修正了脏数据：写回本地（不以此刷高 updatedAt，避免压过云端较新记录）
+      storageSet(STORAGE_KEY, state);
+    }
+    maybeRestoreFromCloud(); // 云端较新则异步拉回覆盖，不阻塞首屏
     var events = settlePending();
     bindEvents();
+    bindHostEvents();
     bindOnboard();
+    bindNetGate();
     initHistory();
     initScrollRail();
     initPageLifecycle();
+    registerIdentity(); // 确保榜单条目存在，隔离身份在任何宿主上都可读（不依赖 user.getInfo）
 
     // 数据文件加载失败：给出明确提示，避免白屏
     if (!MATCHES.length) {
@@ -2299,25 +2864,35 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       $("#openCount").textContent = "赛程数据加载失败，请稍后重试";
       $("#matchList").innerHTML =
         '<div class="empty-state"><strong>赛程数据加载失败</strong>请检查网络后刷新页面，或稍后再试</div>';
-      renderSettings();
-      maybeShowOnboard();
-      refreshData();
+      if (isHarmonyOS()) {
+        runHarmonyGate();
+      } else {
+        maybeShowOnboard();
+        refreshData();
+      }
+      scheduleLatePlatformRecovery(platformReady);
       return;
     }
 
     renderSelectors();
     renderAll();
-    renderSettings();
-    maybeShowOnboard();
-    refreshData();
+    resolveDeepLink(); // 分享目标在内置窗口内时先定位；运行时数据到达后 applySnapshot 会再试
+    if (isHarmonyOS()) {
+      runHarmonyGate();
+    } else {
+      maybeShowOnboard();
+      refreshData();
+    }
+    scheduleLatePlatformRecovery(platformReady);
 
     if (events.length) {
-      syncBoards();
+      if (!isHarmonyOS()) syncBoards();
       var total = events.reduce(function (s, e) { return s + e.pred.profit; }, 0);
       var wins = events.filter(function (e) { return e.pred.won; }).length;
       setTimeout(function () {
         toast("已结算 " + events.length + " 场 · 命中 " + wins + " 场 · " +
           (total >= 0 ? "+" : "") + fmtNum(total) + " 沙粒");
+        vibrate("medium");
       }, 500);
     }
 
@@ -2331,8 +2906,17 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         syncBoards();
         var total = settledNow.reduce(function (s, e) { return s + e.pred.profit; }, 0);
         toast("已结算 " + settledNow.length + " 场预测 · " + (total >= 0 ? "+" : "") + fmtNum(total) + " 沙粒");
+        vibrate("medium");
       }
     }, 60000);
+
+    // 统一轮询：与采集器 5 分钟更新节奏对齐；maxAge 节流下每轮只花一次 meta 探测，
+    // hash 变了才拉整包；限流退避期间跳过。榜单页可见时顺路刷新（宿主读缓存 5 分钟）。
+    setInterval(function () {
+      if (Date.now() < pollBackoffUntil) return;
+      refreshData(false);
+      if (!$("#view-board").hidden) renderBoard();
+    }, POLL_INTERVAL);
   }
 
   boot();

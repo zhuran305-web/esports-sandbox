@@ -83,6 +83,16 @@
             </button>
           </div>
 
+          <div class="selector">
+            <button class="game-select-btn" id="homeScheduleBtn" type="button">
+              <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="5" width="16" height="16" rx="2"/>
+                <path d="M8 3v4M16 3v4M4 10h16"/>
+              </svg>
+              <span class="select-label">赛程表</span>
+            </button>
+          </div>
+
           <span class="game-select-count" id="gameSelectCount"></span>
 
           <div class="game-popover tournament-popover" id="tournamentPopover" role="dialog" aria-labelledby="tournamentPopoverTitle" hidden>
@@ -211,12 +221,18 @@
           <div class="settings-account">
             <div class="account-avatar" id="accountAvatar">盒</div>
             <div class="account-main">
-              <span class="account-name" id="accountName">本地体验</span>
-              <span class="account-id" id="accountId">ID: local</span>
+              <span class="account-name" id="accountName">未登录</span>
+              <span class="account-id" id="accountId">ID: --</span>
             </div>
-            <span class="account-badge" id="accountBadge">本地模式</span>
+            <span class="account-badge" id="accountBadge">未登录</span>
           </div>
-          <p class="settings-hint" id="accountHint">发布后将自动读取小黑盒账号，无需注册或登录</p>
+          <p class="settings-hint" id="accountHint">打开小程序后自动绑定隔离身份；可先设置展示昵称用于榜单</p>
+          <div class="nick-row">
+            <button class="nick-save hb-sync-btn" id="hbSyncBtn" type="button">同步黑盒资料</button>
+            <span class="nick-label">展示昵称</span>
+            <input class="nick-input" id="nickInput" type="text" maxlength="12" placeholder="榜单显示用，最多12字">
+            <button class="nick-save" id="nickSave" type="button">保存</button>
+          </div>
         </div>
 
         <div class="settings-group">
@@ -250,13 +266,36 @@
             <span class="settings-row-value" id="settingsDataInfo">--</span>
             <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
           </button>
-          <div class="settings-row">
+          <button class="settings-row" id="refreshDataBtn" type="button" title="点击检查赛程更新">
             <span class="settings-row-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/></svg>
             </span>
             <span class="settings-row-label">数据更新</span>
             <span class="settings-row-value" id="settingsUpdatedAt">--</span>
-          </div>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <button class="settings-row" id="openAboutBtn" type="button">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+            </span>
+            <span class="settings-row-label">关于小程序</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+
+        <p class="settings-footer">赛事沙盘 · 沙粒为虚拟道具，无现实价值</p>
+      </section>
+
+      <!-- 关于小程序（设置子页面） -->
+      <section class="view" id="view-about" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="aboutBackBtn" type="button" aria-label="返回设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">关于小程序</h1>
+        </div>
+
+        <div class="settings-group">
           <div class="settings-row">
             <span class="settings-row-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17.3 9.1 3.9 3.9 0 0 1 17 18H7z"/></svg>
@@ -264,9 +303,6 @@
             <span class="settings-row-label">数据来源</span>
             <span class="settings-row-value" id="settingsSource">PandaScore</span>
           </div>
-        </div>
-
-        <div class="settings-group">
           <div class="settings-row">
             <span class="settings-row-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
@@ -276,11 +312,33 @@
           </div>
           <div class="settings-row">
             <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H6a2 2 0 0 0-2 2v3M16 3h2a2 2 0 0 1 2 2v3M8 21H6a2 2 0 0 1-2-2v-3M16 21h2a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="2.5"/></svg>
+            </span>
+            <span class="settings-row-label">环境诊断</span>
+            <span class="settings-row-value" id="settingsDiag">--</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 9.2 4.5 4.5 0 0 0 7 18h10.5z"/><path d="M9 14l2 2 4-4"/></svg>
             </span>
             <span class="settings-row-label">云服务</span>
             <span class="settings-row-value" id="settingsCloudMode">本地模拟</span>
           </div>
+          <div class="settings-row">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17.3 8.1 3.9 3.9 0 0 1 17 16h-3"/><path d="M12 20v-7M9.5 15.5 12 13l2.5 2.5"/></svg>
+            </span>
+            <span class="settings-row-label">战绩云同步</span>
+            <span class="settings-row-value" id="settingsCloudSync">—</span>
+          </div>
+          <button class="settings-row" id="clearDataBtn" type="button">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6l1 14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-14"/></svg>
+            </span>
+            <span class="settings-row-label">清除本地数据</span>
+            <span class="settings-row-value" id="clearDataHint">重置全部</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
         </div>
 
         <p class="settings-footer">赛事沙盘 · 沙粒为虚拟道具，无现实价值</p>
@@ -508,7 +566,7 @@
           </div>
           <h2>请先读这段</h2>
           <p>沙粒是<strong>虚拟道具，没有任何现实价值</strong>——不可充值、不可兑换、不可转让，输了也不心疼。这里没有真钱，也不提供任何博彩服务。</p>
-          <p class="onboard-dim">赛事预测仅供娱乐，请理性看待胜负，享受比赛本身。点「开始」即表示你已了解并同意以上规则。</p>
+          <p class="onboard-dim">赛事预测仅供娱乐，请理性看待胜负，享受比赛本身。点「同步黑盒资料」即表示你已了解并同意以上规则，并开始使用；将拉起小黑盒授权页确认昵称头像（可随时在设置页重新同步）。</p>
         </div>
       </div>
       <div class="onboard-dots" id="onboardDots">
@@ -517,6 +575,39 @@
       <div class="onboard-actions">
         <button class="ghost-btn" id="onboardSkip" type="button">跳过</button>
         <button class="danger-btn" id="onboardNext" type="button">下一步</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 鸿蒙进入门：强制更新，失败阻断 -->
+  <div class="onboard-backdrop" id="netGateBackdrop" hidden>
+    <div class="onboard" role="dialog" aria-modal="true" aria-labelledby="netGateTitle">
+      <div class="onboard-step is-active">
+        <div class="onboard-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/></svg>
+        </div>
+        <h2 id="netGateTitle">正在更新赛程</h2>
+        <p id="netGateText">进入前需要获取最新赛程与赛果，请稍候。</p>
+      </div>
+      <div class="onboard-actions" id="netGateActions" hidden>
+        <button class="danger-btn" id="netGateRetry" type="button">重试</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 鸿蒙阻断：鸿蒙版服务端能力异常，进入即说明原因并退出 -->
+  <div class="onboard-backdrop harmony-block-backdrop" id="harmonyBlockBackdrop" hidden>
+    <div class="onboard" role="dialog" aria-modal="true" aria-labelledby="harmonyBlockTitle">
+      <div class="onboard-step is-active">
+        <div class="onboard-icon onboard-warn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5"/><path d="M12 16.5v.01"/><path d="M10.3 4.2 2.6 17.5a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/></svg>
+        </div>
+        <h2 id="harmonyBlockTitle">鸿蒙版暂不可用</h2>
+        <p id="harmonyBlockText">小黑盒鸿蒙版的网络与账号功能目前存在异常，赛事沙盘在鸿蒙设备上无法正常使用。请改用 <b>Android / iOS 版小黑盒</b> 打开。</p>
+        <p class="onboard-dim" id="harmonyBlockHint">5 秒后自动退出小程序。</p>
+      </div>
+      <div class="onboard-actions">
+        <button class="danger-btn" id="harmonyBlockExit" type="button">退出小程序</button>
       </div>
     </div>
   </div>
@@ -532,10 +623,12 @@
       <canvas id="shareCanvas" width="750" height="1000"></canvas>
       <div class="share-actions">
         <button class="ghost-btn" id="shareCancel" type="button">关闭</button>
+        <button class="ghost-btn" id="shareForward" type="button">转发</button>
+        <button class="ghost-btn" id="shareCopyLink" type="button">复制链接</button>
         <button class="ghost-btn" id="shareCopyText" type="button">复制文案</button>
         <button class="danger-btn" id="shareSave" type="button">保存图片</button>
       </div>
-      <p class="sheet-tip">保存图片 + 复制文案，即可发帖或发群 · 图片含总盈亏</p>
+      <p class="sheet-tip">转发/保存图片 + 复制文案，即可发帖或发群 · 复制链接可直达这场比赛</p>
     </div>
   </div>
 

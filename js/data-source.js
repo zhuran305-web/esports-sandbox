@@ -1,9 +1,11 @@
 /*
  * 运行时赛程数据源：先拉 meta.json，hash/updatedAt 变化时才拉 matches.json。
- * 所有网络/存储错误都返回 null，由调用方回退到缓存或内置数据。
+ * 网络失败返回 { error: 错误码 }，由调用方回退到缓存或内置数据。
+ * 预览版本的 effective network 未启用，直接跳过，避免宿主弹 SERVER_API_REQUIRED。
+ * 1.1.16 起全平台统一轮询（无 ohos 特殊分支）；maxAgeMs 供轮询/回前台做节流。
  */
 import { RUNTIME_DATA_BASE } from "./config.js";
-import { networkGetJson, storageGet, storageSet } from "./platform.js";
+import { networkGetJson, storageGet, storageSet, getRuntimeMode, whenPlatformReady } from "./platform.js";
 
 var CACHE_KEY = "esports_sandbox_remote_v1";
 var MAX_MATCHES = 10000;
@@ -69,10 +71,19 @@ async function saveCache(meta, matches, checkedAt) {
 
 export async function fetchRemoteSnapshot(options) {
   if (!isRuntimeEnabled()) return null;
+  // 握手未完成时 environment 还读不到，先等一会，避免把预览态误判成生产态
+  if (getRuntimeMode() === "unknown") {
+    await whenPlatformReady(5000);
+  }
+  if (getRuntimeMode() === "preview") {
+    console.info("[data] 预览态没有 effective network，跳过运行时拉取");
+    return null;
+  }
 
-  var maxAge = options && typeof options.maxAgeMs === "number" ? options.maxAgeMs : 0;
+  var force = options && options.force === true;
+  var maxAgeMs = options && typeof options.maxAgeMs === "number" ? options.maxAgeMs : 0;
   var cached = await loadCachedSnapshot();
-  if (cached && maxAge > 0 && Date.now() - cached.checkedAt < maxAge) {
+  if (cached && maxAgeMs > 0 && Date.now() - cached.checkedAt < maxAgeMs) {
     return {
       meta: cached.meta,
       matches: cached.matches,
@@ -82,10 +93,18 @@ export async function fetchRemoteSnapshot(options) {
     };
   }
 
-  var meta = await networkGetJson(baseUrl() + "meta.json?t=" + Date.now(), 10000);
-  if (!validMeta(meta)) return null;
+  var meta;
+  try {
+    meta = await networkGetJson(baseUrl() + "meta.json?t=" + Date.now(), 10000);
+  } catch (e) {
+    return { error: (e && e.code) || "REQUEST_FAILED" };
+  }
+  if (!validMeta(meta)) return { error: "INVALID_META" };
 
   if (cached && cached.meta.hash === meta.hash && cached.meta.updatedAt === meta.updatedAt) {
+    // 数据未变化：也刷新 checkedAt，让 maxAge 节流在下一轮生效（每轮轮询只花一次 meta 探测）
+    cached.checkedAt = Date.now();
+    await saveCache(meta, cached.matches, cached.checkedAt);
     return {
       meta: meta,
       matches: cached.matches,
@@ -95,12 +114,17 @@ export async function fetchRemoteSnapshot(options) {
   }
 
   // 整包约 1.2 MiB，弱网下 10s 容易超时；meta 很小，仍用 10s
-  var raw = await networkGetJson(
-    baseUrl() + "matches.json?v=" + encodeURIComponent(meta.hash),
-    30000
-  );
+  var raw;
+  try {
+    raw = await networkGetJson(
+      baseUrl() + "matches.json?v=" + encodeURIComponent(meta.hash),
+      30000
+    );
+  } catch (e) {
+    return { error: (e && e.code) || "REQUEST_FAILED" };
+  }
   var matches = normalizeMatches(raw);
-  if (!matches) return null;
+  if (!matches) return { error: "INVALID_MATCHES" };
 
   var checkedAt = Date.now();
   var cachedOk = await saveCache(meta, matches, checkedAt);

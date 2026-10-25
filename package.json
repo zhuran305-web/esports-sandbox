@@ -1,23 +1,24 @@
 {
   "name": "esports-sandbox",
-  "version": "1.1.0",
+  "version": "1.1.25",
   "private": true,
   "type": "module",
   "description": "赛事沙盘 · 电竞赛事预测模拟盘（小黑盒小程序）+ 赛事数据采集器",
   "scripts": {
-    "predev": "node tools/pull-data.mjs --if-missing",
+    "predev": "node tools/pull-data.mjs --if-missing && node tools/trim-embedded.mjs",
     "dev": "hb-sdk dev",
     "dev:vite": "vite",
-    "prebuild": "node tools/pull-data.mjs --if-missing",
+    "prebuild": "node tools/pull-data.mjs --if-missing && node tools/trim-embedded.mjs",
     "build": "hb-sdk build",
-    "data:pull": "node tools/pull-data.mjs --force",
+    "data:pull": "node tools/pull-data.mjs --force && node tools/trim-embedded.mjs",
     "runtime:build": "node tools/build-runtime-data.mjs",
     "runtime:serve": "node tools/serve-runtime.mjs",
     "runtime:publish": "node tools/publish-runtime-oss.mjs",
     "boards:create": "hb-sdk remote cloud leaderboard create sha_board_win --order desc --rank-limit 500 && hb-sdk remote cloud leaderboard create sha_board_lose --order desc --rank-limit 500",
     "fetch": "node tools/fetch-matches.mjs",
     "fetch:dry": "node tools/fetch-matches.mjs --dry-run",
-    "fetch:manual": "node tools/fetch-matches.mjs --only=manual"
+    "fetch:manual": "node tools/fetch-matches.mjs --only=manual",
+    "test:cloud": "node tools/test-cloud-nick.mjs"
   },
   "heybox": {
     "name": "赛事沙盘",
@@ -34,6 +35,13 @@
     "coverImages": [
       "public/cover-1.png"
     ],
+    "bindAppIds": [
+      "900000045",
+      "900006125",
+      "900168298",
+      "900196328",
+      "900217539"
+    ],
     "permissions": {
       "share": {
         "enabled": true
@@ -47,6 +55,12 @@
       "leaderboard": {
         "enabled": true
       },
+      "cloud_storage": {
+        "enabled": true
+      },
+      "clipboard": {
+        "enabled": true
+      },
       "network": {
         "enabled": true,
         "useOfficialDomain": false
@@ -55,9 +69,10 @@
     "miniProgramId": "01a15496-0e1f-7ee8-ba8d-f15266cb94f1"
   },
   "dependencies": {
-    "@heybox/hb-sdk": "^0.9.1"
+    "@heybox/hb-sdk": "0.9.3"
   },
   "devDependencies": {
+    "@alicloud/fc-open20210406": "^2.0.13",
     "sharp": "^0.34.5",
     "vite": "^8.3.4"
   }

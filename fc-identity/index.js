@@ -34,7 +34,7 @@ function postJson(path, headers, bodyObj) {
       });
     });
     req.on("error", reject);
-    req.setTimeout(10000, function () { req.destroy(new Error("upstream timeout")); });
+    req.setTimeout(5000, function () { req.destroy(new Error("upstream timeout")); });
     req.write(body);
     req.end();
   });
@@ -57,7 +57,7 @@ function getJson(path, headers) {
       });
     });
     req.on("error", reject);
-    req.setTimeout(10000, function () { req.destroy(new Error("upstream timeout")); });
+    req.setTimeout(5000, function () { req.destroy(new Error("upstream timeout")); });
     req.end();
   });
 }
@@ -110,6 +110,13 @@ exports.handler = async function (request, response, context) {
   } catch (e) { /* 读取失败走参数校验 */ }
   if (!code || typeof code !== "string" || code.length > 256) {
     send(response, 200, { error: "invalid_request", message: "missing code" });
+    return;
+  }
+  // 扫描器防护：auth.login 的授权码是 URL-safe 短串。公开 OSS 桶的镜像回源（api/ 前缀）
+  // 与直连地址都会被互联网扫描器持续探测——格式不符直接拒绝，不发起上游 OpenAPI 请求，
+  // 把单次垃圾请求的成本从「调用+上游往返（最长 10s）」降到「调用+微秒返回」。
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(code)) {
+    send(response, 200, { error: "invalid_request", message: "invalid code format" });
     return;
   }
 

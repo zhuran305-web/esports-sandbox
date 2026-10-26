@@ -11,7 +11,8 @@ import { isMiniProgram, getSDK } from "./platform.js";
 
 var BOARD_KEYS = {
   win: "sha_board_win",
-  lose: "sha_board_lose"
+  lose: "sha_board_lose",
+  temple: "sha_board_god"
 };
 
 /* score = 次数×1e9 + 沙粒数（10 亿进制）。沙粒数封顶在 1e9-1：
@@ -28,6 +29,22 @@ function encode(wins, amount) {
 function decode(score) {
   var wins = Math.floor(score / 1e9);
   return { first: wins, second: score - wins * 1e9 };
+}
+
+/* 魔神殿总榜（平台配额 3 榜已满，封神/破产共用一榜）：
+ * score = 封神次数×1e9 + min(破产次数, AMOUNT_CAP)。
+ * 两个计数都单调递增 → score 单调递增，天然兼容 only-if-better；
+ * 字典序 = 封神优先、破产次之；封顶防破产次数进位污染封神位。
+ * 昵称刷新不走 second+1（+1 会落在破产位上），仅随次数变化刷新。 */
+function encodeTemple(gods, bankrupts) {
+  var b = Math.max(0, Math.round(bankrupts));
+  if (b > AMOUNT_CAP) b = AMOUNT_CAP;
+  return Math.max(0, Math.round(gods)) * 1e9 + b;
+}
+
+function decodeTemple(score) {
+  var gods = Math.floor(score / 1e9);
+  return { gods: gods, bankrupts: score - gods * 1e9 };
 }
 
 /* ============================== 本地模拟 ============================== */
@@ -61,11 +78,22 @@ function mockWrite(data) {
 function mockEnsure() {
   var data = mockRead();
   if (!data) {
-    data = { win: {}, lose: {} };
+    data = { win: {}, lose: {}, temple: {} };
     MOCK_BOTS.forEach(function (b) {
       data.win[b.uid] = { uid: b.uid, nick: b.nick, score: encode(b.wins, b.winProfit), extra: { first: b.wins, second: b.winProfit } };
       data.lose[b.uid] = { uid: b.uid, nick: b.nick, score: encode(b.losses, b.loseAmount), extra: { first: b.losses, second: b.loseAmount } };
     });
+    // 示例：一位赌神 + 一位赌狗，便于浏览器联调时看到魔神殿形态
+    data.temple["t1"] = { uid: "t1", nick: "沙盘巴菲特", score: encodeTemple(3, 0), extra: { gods: 3, bankrupts: 0, nick: "沙盘巴菲特" } };
+    data.temple["t2"] = { uid: "t2", nick: "含泪吃面", score: encodeTemple(0, 5), extra: { gods: 0, bankrupts: 5, nick: "含泪吃面" } };
+    mockWrite(data);
+  }
+  if (!data.temple || !Object.keys(data.temple).length) {
+    // 存量 mock 数据升级：补示例（一位赌神 + 一位赌狗），便于浏览器联调时看到魔神殿形态
+    data.temple = {
+      t1: { uid: "t1", nick: "沙盘巴菲特", score: encodeTemple(3, 0), extra: { gods: 3, bankrupts: 0, nick: "沙盘巴菲特" } },
+      t2: { uid: "t2", nick: "含泪吃面", score: encodeTemple(0, 5), extra: { gods: 0, bankrupts: 5, nick: "含泪吃面" } }
+    };
     mockWrite(data);
   }
   return data;
@@ -102,6 +130,23 @@ function mockList(board, limit) {
 
 function mockMy(board) {
   var list = mockList(board, 9999);
+  return list.entries.filter(function (e) { return e.isMe; })[0] || null;
+}
+
+function mockTempleList(limit) {
+  var data = mockEnsure();
+  var list = Object.keys(data.temple).map(function (uid) {
+    var e = data.temple[uid];
+    var d = decodeTemple(e.score);
+    return { uid: e.uid, nick: e.nick, gods: d.gods, bankrupts: d.bankrupts, score: e.score, rank: 0, isMe: e.uid === "me" };
+  });
+  list.sort(function (a, b) { return b.score - a.score; });
+  list.forEach(function (e, i) { e.rank = i + 1; });
+  return { entries: list.slice(0, limit || 50) };
+}
+
+function mockTempleMe() {
+  var list = mockTempleList(9999);
   return list.entries.filter(function (e) { return e.isMe; })[0] || null;
 }
 
@@ -192,6 +237,29 @@ async function realMy(board) {
   };
 }
 
+async function realTempleMy() {
+  var sdk = getSDK();
+  if (!sdk || !sdk.cloud) return null;
+  var e = await sdk.cloud.leaderboard.getCurrentUserEntry({ key: BOARD_KEYS.temple });
+  if (!e) return null;
+  myUid = e.appUserId;
+  var d = decodeTemple(e.score);
+  return { uid: e.appUserId, scoreRaw: e.score, gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, extra: e.extra || {}, isMe: true };
+}
+
+/** 魔神殿总榜提交：仅当（封神, 破产）字典序高于榜上时落库；昵称仅随次数变化刷新。 */
+async function realSubmitTemple(gods, bankrupts, displayNick) {
+  var sdk = getSDK();
+  if (!sdk || !sdk.cloud) return;
+  var extra = { gods: gods, bankrupts: bankrupts };
+  if (displayNick) extra.nick = displayNick;
+  await sdk.cloud.leaderboard.submit({
+    key: BOARD_KEYS.temple,
+    score: encodeTemple(gods, bankrupts),
+    extra: extra
+  });
+}
+
 /* ============================== 对外接口 ============================== */
 
 export var Cloud = {
@@ -241,6 +309,56 @@ export var Cloud = {
   },
 
   decodeScore: decode,
+
+  decodeTemple: decodeTemple,
+
+  /** 与沙粒数封顶同源的转生阈值（10 亿）：余额≥CAP 可封神、≤-CAP 可破产 */
+  CAP: AMOUNT_CAP,
+
+  /** 魔神殿总榜提交：封神/破产次数（字典序编码，见 encodeTemple）。0/0 不提交。 */
+  submitHonor: async function (gods, bankrupts, displayNick) {
+    var g = Math.max(0, Math.round(gods || 0));
+    var b = Math.max(0, Math.round(bankrupts || 0));
+    if (g <= 0 && b <= 0) return;
+    if (!isMiniProgram()) {
+      mockUpsert("temple", { uid: "me", nick: displayNick || "我", score: encodeTemple(g, b), extra: { gods: g, bankrupts: b, nick: displayNick || "我" } });
+      return;
+    }
+    try {
+      var cur = await realTempleMy();
+      var next = encodeTemple(g, b);
+      if (!cur || next > cur.scoreRaw) await realSubmitTemple(g, b, displayNick);
+    } catch (e) { /* 未登录或异常静默，下次 syncBoards 重试 */ }
+  },
+
+  /** 魔神殿总榜（score 序 = 封神优先、破产次之）；拉取失败返回空，不阻塞调用方 */
+  getTemple: async function (limit) {
+    if (!isMiniProgram()) return mockTempleList(limit || 50);
+    try {
+      var sdk = getSDK();
+      if (!sdk || !sdk.cloud) return { entries: [] };
+      var page = await sdk.cloud.leaderboard.getList({ key: BOARD_KEYS.temple, limit: limit });
+      var entries = (page && page.entries) || [];
+      return {
+        entries: entries.map(function (e) {
+          var d = decodeTemple(e.score);
+          var extra = e.extra || {};
+          return { uid: e.appUserId, nick: extra.nick || "赌徒", gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, isMe: myUid ? e.appUserId === myUid : false };
+        })
+      };
+    } catch (e) {
+      return { entries: [] };
+    }
+  },
+
+  getMyTemple: async function () {
+    if (!isMiniProgram()) return mockTempleMe();
+    try {
+      return await realTempleMy();
+    } catch (e) {
+      return null;
+    }
+  },
 
   /** 账号切换/登录态变化时清掉缓存的当前用户标识，榜单 isMe 下次渲染重新判定 */
   resetIdentity: function () {
@@ -301,7 +419,12 @@ export var Sync = {
       return JSON.stringify({
         v: 1,
         updatedAt: updatedAt || 0,
-        state: { bankroll: state.bankroll, digs: state.digs, predictions: list }
+        state: {
+          bankroll: state.bankroll, digs: state.digs, predictions: list,
+          gods: state.gods || 0, bankrupts: state.bankrupts || 0,
+          godOffered: state.godOffered === true, bankruptOffered: state.bankruptOffered === true,
+          lastCeremonyAt: state.lastCeremonyAt || 0
+        }
       });
     }
     var body = tryPack(predictions);

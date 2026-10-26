@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.28";
+  var APP_VERSION = "1.1.29";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -75,7 +75,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   ];
 
   /* ============================== 状态 ============================== */
-  var state = { bankroll: START_BALANCE, predictions: [], digs: 0 };
+  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0 };
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
@@ -165,7 +165,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
-    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop",
+    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony",
     "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover"
   ];
 
@@ -195,7 +195,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0 };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0 };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -205,6 +205,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         bankroll: typeof parsed.bankroll === "number" && isFinite(parsed.bankroll) ? parsed.bankroll : START_BALANCE,
         predictions: Array.isArray(parsed.predictions) ? parsed.predictions : [],
         digs: typeof parsed.digs === "number" ? parsed.digs : 0,
+        gods: typeof parsed.gods === "number" && parsed.gods >= 0 ? parsed.gods : 0,
+        bankrupts: typeof parsed.bankrupts === "number" && parsed.bankrupts >= 0 ? parsed.bankrupts : 0,
+        godOffered: parsed.godOffered === true,
+        bankruptOffered: parsed.bankruptOffered === true,
+        lastCeremonyAt: typeof parsed.lastCeremonyAt === "number" && parsed.lastCeremonyAt >= 0 ? parsed.lastCeremonyAt : 0,
         updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
@@ -216,7 +221,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var persistedSnapshot = "";
 
   function stateSnapshot() {
-    return JSON.stringify([state.bankroll, state.digs, state.predictions]);
+    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt]);
   }
 
   function saveState() {
@@ -244,14 +249,22 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     }, 2500);
   }
 
-  /** 应用一条云端记录：仅在比本地新时覆盖并重渲染。 */
+  /** 应用一条云端记录：仅在比本地新时覆盖并重渲染。
+   *  封神/破产计数单调递增，冲突合并取 max（防旧设备晚推送把次数刷回去）；
+   *  庆祝页已弹标记取 OR；仪式时间取 max。其余字段按 LWW。 */
   function applyCloudRecord(rec) {
     if (!rec || !(rec.updatedAt > (state.updatedAt || 0))) return;
     var s = rec.state;
+    var localGods = state.gods || 0, localBankrupts = state.bankrupts || 0;
     state = {
       bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
       predictions: Array.isArray(s.predictions) ? s.predictions : [],
       digs: typeof s.digs === "number" && isFinite(s.digs) ? s.digs : 0,
+      gods: Math.max(localGods, typeof s.gods === "number" && s.gods > 0 ? s.gods : 0),
+      bankrupts: Math.max(localBankrupts, typeof s.bankrupts === "number" && s.bankrupts > 0 ? s.bankrupts : 0),
+      godOffered: state.godOffered === true || s.godOffered === true,
+      bankruptOffered: state.bankruptOffered === true || s.bankruptOffered === true,
+      lastCeremonyAt: Math.max(state.lastCeremonyAt || 0, typeof s.lastCeremonyAt === "number" ? s.lastCeremonyAt : 0),
       updatedAt: rec.updatedAt
     };
     validateLoadedState();
@@ -1149,7 +1162,87 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         losses: s.losses,
         loseAmount: s.loseAmount
       }, nick);
+      // 魔神殿：有封神/破产记录才提交（0/0 用户不上榜）
+      if (state.gods > 0 || state.bankrupts > 0) {
+        await Cloud.submitHonor(state.gods, state.bankrupts, nick);
+      }
     } catch (e) { /* 未登录或网络异常时静默失败 */ }
+  }
+
+  /* ============================== 转生体系：封神 / 破产 ============================== */
+  /* 资格锚定「当前余额」而非累计数（累计永不下降，否则可无限刷次数）：
+   * 余额 ≥ 10 亿（Cloud.CAP，与榜单封顶同源）可封神、≤ -10 亿可破产。
+   * 仪式前置：无未结算竞猜（投入已扣，防止重置后巨注结算回流）。
+   * 仪式效果：对应次数 +1、余额重置 10,000；累计战绩与历史永不重置。 */
+  var ceremonyType = "";
+  var bootDone = false; // 启动完成前不弹庆祝页（新手引导优先）
+
+  function honorQualified() {
+    if (state.bankroll >= Cloud.CAP) return "god";
+    if (state.bankroll <= -Cloud.CAP) return "bankrupt";
+    return "";
+  }
+
+  function canCeremony() {
+    return !state.predictions.some(function (p) { return !p.settled; });
+  }
+
+  /** 达标后自动弹一次全屏庆祝页（每轮一次，拒绝后可在魔神殿再次举行） */
+  function checkHonorPopup() {
+    if (!bootDone) return;
+    var type = honorQualified();
+    if (!type) return;
+    if (type === "god" && state.godOffered) return;
+    if (type === "bankrupt" && state.bankruptOffered) return;
+    if (!$("#onboardBackdrop").hidden) return; // 新手引导进行中不抢屏
+    if (type === "god") state.godOffered = true; else state.bankruptOffered = true;
+    saveState();
+    showCeremony(type);
+  }
+
+  function showCeremony(type) {
+    ceremonyType = type;
+    var god = type === "god";
+    var panel = $("#cerPanel");
+    panel.setAttribute("data-type", type);
+    $("#cerBadge").textContent = god ? "👑" : "💀";
+    $("#cerTitle").textContent = god ? "封 神" : "破 产";
+    $("#cerDesc").innerHTML = god
+      ? '你手握 <b>10 亿沙粒</b>，沙盘为你封神。<br>接受册封，名字将永载封神榜。'
+      : '你负债 <b>10 亿沙粒</b>，光荣登上赌狗榜。<br>宣布破产，一笔勾销重新来过。';
+    $("#cerFactHonor").textContent = god ? "封神次数 +1，载入封神榜" : "破产次数 +1，载入赌狗榜";
+    $("#cerCta").textContent = god ? "立即封神" : "宣布破产";
+    $("#cerCta").className = "cer-cta" + (god ? "" : " danger");
+    updateCeremonyGate();
+    $("#templeCeremony").hidden = false;
+  }
+
+  function updateCeremonyGate() {
+    var ok = canCeremony();
+    $("#cerCta").disabled = !ok;
+    $("#cerGate").textContent = ok ? "" : "仍有未结算竞猜，先等赛果或撤回后再举行仪式";
+  }
+
+  function closeCeremony() {
+    $("#templeCeremony").hidden = true;
+    ceremonyType = "";
+  }
+
+  function performCeremony() {
+    if (!ceremonyType) return;
+    if (!canCeremony()) { toast("仍有未结算竞猜，先等赛果或撤回后再举行仪式"); return; }
+    var god = ceremonyType === "god";
+    if (god) state.gods += 1; else state.bankrupts += 1;
+    state.bankroll = START_BALANCE;
+    state.lastCeremonyAt = Date.now();
+    if (god) state.godOffered = false; else state.bankruptOffered = false;
+    saveState();
+    closeCeremony();
+    renderAll();
+    renderProfile();
+    syncBoards();
+    vibrate("medium");
+    toast(god ? "封神！沙粒重置 10,000，名字已载入封神榜" : "已宣布破产：负债清零，沙粒重置 10,000");
   }
 
   /* ============================== 渲染：我的 ============================== */
@@ -1189,6 +1282,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#recLosses").textContent = settled.length - wins;
     $("#recBestWin").textContent = bestWin ? "+" + fmtNum(bestWin.profit) : "--";
     $("#recWorstLoss").textContent = worstLoss ? "-" + fmtNum(Math.abs(worstLoss.profit)) : "--";
+
+    // 转生荣誉与本轮盈亏（上次封神/破产以来的已结算净变化，历史区保持累计）
+    $("#profileGods").textContent = state.gods || 0;
+    $("#profileBankrupts").textContent = state.bankrupts || 0;
+    var epoch = 0;
+    var since = state.lastCeremonyAt || 0;
+    for (var k = 0; k < settled.length; k++) {
+      if ((settled[k].settledAt || 0) > since) epoch += settled[k].profit || 0;
+    }
+    $("#profileEpoch").textContent = (epoch > 0 ? "+" : "") + fmtNum(epoch);
 
     $("#pnlBreakdown").textContent = "已结算投入 " + fmtNum(staked) + " · 累计返还 " + fmtNum(payout);
 
@@ -1242,6 +1345,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     else matchesDirty = true;
     if (!$("#view-profile").hidden) renderProfile();
     updateScrollRail();
+    checkHonorPopup(); // 余额变化后检测是否触发封神/破产庆祝页（标记防重复）
   }
 
   /* ============================== 滚动指示 ============================== */
@@ -1609,9 +1713,24 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     // 0 分注册条目（registerIdentity 为保证身份可读而建）不上榜展示；
     // 按分排序 0 分必沉底，过滤后可见名次仍从 1 开始连续
     entries = entries.filter(function (e) { return e.first > 0; });
+    // 转生者功成身退：魔神殿在册（封神/破产>0）的用户从胜败榜隐藏，
+    // 新一轮分数超过历史峰值时 only-if-better 自然接受、重新上榜
+    var honored = {};
+    try {
+      var templePage = await Cloud.getTemple(200);
+      templePage.entries.forEach(function (e) {
+        if (e.gods > 0 || e.bankrupts > 0) honored[e.uid] = 1;
+      });
+    } catch (te) { /* 拉取失败不过滤，下次再试 */ }
+    entries = entries.filter(function (e) { return !honored[e.uid]; });
 
     // 我的成绩卡
-    if (my && my.first > 0) {
+    if (my && honored[my.uid]) {
+      $("#boardMyRank").textContent = "--";
+      $("#boardMyLabel").textContent = "已功成身退";
+      $("#boardMyScore").textContent = "魔神殿见";
+      $("#boardMyBest").textContent = "--";
+    } else if (my && my.first > 0) {
       $("#boardMyRank").textContent = "#" + my.rank;
       $("#boardMyLabel").textContent = currentBoard === "win" ? "猜对次数排名" : "猜错次数排名";
       $("#boardMyScore").textContent = my.first + " 场";
@@ -1640,6 +1759,84 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
             '<span class="board-first ' + (isWin ? "won" : "lost") + '">' + e.first + " 场</span>" +
             '<span class="board-second">' + (isWin ? "赚 " : "亏 ") + fmtNum(e.second) + " 沙粒</span>" +
           "</span>" +
+        "</div>"
+      );
+    }).join("");
+  }
+
+  /* ============================== 渲染：魔神殿 ============================== */
+  var templeTab = "god";
+
+  async function renderTemple() {
+    var godTab = templeTab === "god";
+    document.querySelectorAll("#templeTabs .temple-tab").forEach(function (t) {
+      var on = t.dataset.temple === templeTab;
+      t.classList.toggle("is-active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    $("#templeHint").textContent = godTab
+      ? "手握 10 亿沙粒即可封神：沙粒重置 10,000，名字永载封神榜"
+      : "负债 10 亿沙粒即达破产：负债清零重开，次数载入赌狗榜";
+
+    // 我的荣誉 + 距离阈值进度（资格锚定当前余额）
+    var my = null, entries = [];
+    try {
+      var results = await Promise.all([Cloud.getTemple(200), Cloud.getMyTemple()]);
+      entries = results[0].entries || [];
+      my = results[1];
+    } catch (e) { /* 空榜 */ }
+    $("#templeMyGods").textContent = state.gods || 0;
+    $("#templeMyBankrupts").textContent = state.bankrupts || 0;
+    var toGod = Cloud.CAP - state.bankroll;
+    var toBankrupt = state.bankroll + Cloud.CAP;
+    var pct, label;
+    if (toGod <= toBankrupt) {
+      pct = state.bankroll / Cloud.CAP;
+      label = toGod <= 0 ? "已达标 · 可封神" : "距封神还差 <b>" + fmtNum(toGod) + "</b> 沙粒";
+    } else {
+      pct = -state.bankroll / Cloud.CAP;
+      label = toBankrupt <= 0 ? "已达标 · 可宣布破产" : "距破产还差 <b>" + fmtNum(toBankrupt) + "</b> 沙粒";
+    }
+    $("#templeMyBar").style.width = (Math.max(0, Math.min(1, pct)) * 100).toFixed(2) + "%";
+    $("#templeMyDist").innerHTML = label;
+
+    // 仪式入口：达标才出现；未结算竞猜时点击会被拦下并提示
+    var q = honorQualified();
+    var btn = $("#templeCeremonyBtn");
+    if (q) {
+      btn.hidden = false;
+      btn.textContent = q === "god" ? "立即封神" : "宣布破产";
+      btn.className = "temple-cta" + (q === "bankrupt" ? " danger" : "");
+    } else {
+      btn.hidden = true;
+    }
+
+    // 榜单：封神榜按封神次数（服务端字典序天然如此）；赌狗榜按破产次数重排
+    if (godTab) entries = entries.filter(function (e) { return e.gods > 0; });
+    else {
+      entries = entries.filter(function (e) { return e.bankrupts > 0; });
+      entries.sort(function (a, b) { return b.bankrupts - a.bankrupts; });
+    }
+
+    var listEl = $("#templeList");
+    if (!entries.length) {
+      listEl.innerHTML = godTab
+        ? '<div class="empty-state"><strong>封神榜还空着</strong>首位手握 10 亿沙粒的赌神将在这里留名</div>'
+        : '<div class="empty-state"><strong>赌狗榜还空着</strong>首位负债 10 亿的勇士将在这里留名</div>';
+      return;
+    }
+    listEl.innerHTML = entries.map(function (e, i) {
+      var main = godTab
+        ? '<b style="color:#ffd166">封神 ' + e.gods + " 次</b>"
+        : '<b style="color:#9db4ff">破产 ' + e.bankrupts + " 次</b>";
+      var sub = godTab
+        ? (e.bankrupts > 0 ? "破产 " + e.bankrupts + " 次" : "从未破产")
+        : (e.gods > 0 ? "封神 " + e.gods + " 次" : "从未封神");
+      return (
+        '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
+          '<span class="board-rank">' + (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1) + "</span>" +
+          '<span class="board-nick">' + esc(e.nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+          '<span class="board-detail">' + main + '<span class="board-second">' + sub + "</span></span>" +
         "</div>"
       );
     }).join("");
@@ -1757,10 +1954,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     ctx.textAlign = "center";
     ctx.fillStyle = "#6c788d";
     ctx.font = "500 24px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText(
-      "累计猜对 " + stats.wins + " 场 · 猜错 " + stats.losses + " 场",
-      W / 2, 836
-    );
+    var honorLine = "累计猜对 " + stats.wins + " 场 · 猜错 " + stats.losses + " 场";
+    if (state.gods > 0 || state.bankrupts > 0) {
+      honorLine += " · 封神 " + (state.gods || 0) + " · 破产 " + (state.bankrupts || 0);
+    }
+    ctx.fillText(honorLine, W / 2, 836);
 
     // 底部
     ctx.fillStyle = "#4a5568";
@@ -1805,6 +2003,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!Array.isArray(state.predictions)) state.predictions = [];
     if (typeof state.digs !== "number" || !isFinite(state.digs) || state.digs < 0) state.digs = 0;
     if (state.bankroll > 1e12) state.bankroll = START_BALANCE; // 异常大值视为脏数据
+    if (typeof state.gods !== "number" || !isFinite(state.gods) || state.gods < 0) state.gods = 0;
+    if (typeof state.bankrupts !== "number" || !isFinite(state.bankrupts) || state.bankrupts < 0) state.bankrupts = 0;
+    if (state.godOffered !== true) state.godOffered = false;
+    if (state.bankruptOffered !== true) state.bankruptOffered = false;
+    if (typeof state.lastCeremonyAt !== "number" || !isFinite(state.lastCeremonyAt) || state.lastCeremonyAt < 0) state.lastCeremonyAt = 0;
 
     var seen = {};
     state.predictions = state.predictions.filter(function (p) {
@@ -2015,6 +2218,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       "最高连对 " + bestStreak() + " 场",
       "最大单场收益：" + (s.bestWin ? "+" + fmtNum(s.bestWin.profit) + "（" + nameOf(s.bestWin) + "）" : "暂无"),
       "最大单场亏损：" + (s.worstLoss ? fmtNum(s.worstLoss.profit) + "（" + nameOf(s.worstLoss) + "）" : "暂无"),
+      (state.gods > 0 || state.bankrupts > 0) ? "封神 " + (state.gods || 0) + " 次 · 破产 " + (state.bankrupts || 0) + " 次（魔神殿在册）" : "",
       "",
       "沙粒是虚拟道具，无现实价值，仅娱乐预测。",
       "数据来源：PandaScore / Liquipedia",
@@ -2205,7 +2409,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about";
+    return name === "rules" || name === "schedule" || name === "about" || name === "temple";
   }
 
   function initHistory() {
@@ -2287,16 +2491,18 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var schedList = $("#scheduleList");
       if (schedList) schedList.innerHTML = "";
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
-    var tabName = isSubPage ? "settings" : name;
+    // 魔神殿从排行榜进入，返回键回排行榜：二级页通用高亮归到来源 tab
+    var tabName = name === "temple" ? "board" : (isSubPage ? "settings" : name);
     document.querySelectorAll(".tab").forEach(function (t) {
       t.classList.toggle("is-active", t.dataset.view === tabName);
     });
     if (name === "matches" && matchesDirty) renderMatches();
     if (name === "profile") renderProfile();
     if (name === "board") { syncBoards(); renderBoard(); }
+    if (name === "temple") renderTemple();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -2519,6 +2725,23 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     $("#openScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
     $("#scheduleBackBtn").addEventListener("click", function () { goBack("settings"); });
+
+    // 魔神殿与转生仪式
+    $("#openTemple").addEventListener("click", function () { switchView("temple"); });
+    $("#templeBackBtn").addEventListener("click", function () { goBack("board"); });
+    $("#templeTabs").addEventListener("click", function (e) {
+      var tab = e.target.closest(".temple-tab");
+      if (!tab || tab.dataset.temple === templeTab) return;
+      templeTab = tab.dataset.temple;
+      renderTemple();
+    });
+    $("#templeCeremonyBtn").addEventListener("click", function () {
+      var q = honorQualified();
+      if (!q) { toast("尚未达到封神/破产条件"); return; }
+      showCeremony(q);
+    });
+    $("#cerCta").addEventListener("click", performCeremony);
+    $("#cerLater").addEventListener("click", closeCeremony);
 
     $("#schedGameBtn").addEventListener("click", function () {
       if ($("#schedGamePopover").hidden) openSchedGame();
@@ -2949,6 +3172,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       refreshData(false);
       if (!$("#view-board").hidden) renderBoard();
     }, POLL_INTERVAL);
+
+    // 启动完成：云端恢复的达标余额此后可正常触发庆祝页
+    bootDone = true;
+    checkHonorPopup();
   }
 
   boot();

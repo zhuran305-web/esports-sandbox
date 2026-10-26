@@ -150,8 +150,31 @@ var submitsH2 = makeSdk({});
 await Cloud.submitStats({ wins: 3, winProfit: 21023, losses: 0, loseAmount: 0 }, "常人");
 check("5 万级净赚原样编码", submitsH2[0].score === 3 * 1e9 + 21023 && submitsH2[0].extra.second === 21023);
 
-/* ---------- 场景 I：app.js 不得裸引用 cloud.js 私有变量 myUid（曾致 renderBoard 全崩、榜单页空白） ---------- */
-console.log("I. app.js 静态检查（无裸引用 myUid / getMyUid 已导出）：");
+/* ---------- 场景 J：魔神殿总榜（score = 封神×1e9 + 破产，字典序兼容 only-if-better） ---------- */
+console.log("J. 魔神殿总榜：");
+check("decodeTemple 往返", Cloud.decodeTemple(2e9 + 7).gods === 2 && Cloud.decodeTemple(2e9 + 7).bankrupts === 7);
+check("CAP 与转生阈值同源", Cloud.CAP === 999999999);
+var submitsJ = makeSdk({});
+await Cloud.submitHonor(1, 3, "赌神");
+check("首次提交 score = 1e9+3", submitsJ.length === 1 && submitsJ[0].score === 1e9 + 3,
+  JSON.stringify(submitsJ.map(function (s) { return s.score; })));
+check("extra 带 gods/bankrupts/nick", submitsJ[0].extra.gods === 1 && submitsJ[0].extra.bankrupts === 3 && submitsJ[0].extra.nick === "赌神");
+var lenJ = submitsJ.length;
+await Cloud.submitHonor(1, 3, "改名");
+check("同次数不重复提交（second+1 会污染破产位）", submitsJ.length === lenJ);
+await Cloud.submitHonor(2, 3, "赌神");
+check("封神次数增加被接受", submitsJ.length === lenJ + 1 && submitsJ[lenJ].score === 2e9 + 3);
+await Cloud.submitHonor(2, 5, "赌神");
+check("破产次数增加被接受", submitsJ.length === lenJ + 2 && submitsJ[lenJ + 1].score === 2e9 + 5);
+await Cloud.submitHonor(0, 0, "x");
+check("0/0 不提交", submitsJ.length === lenJ + 2);
+var submitsJ2 = makeSdk({});
+await Cloud.submitHonor(1, 2e9, "极限");
+check("破产次数封顶不污染封神位", submitsJ2.length === 1 && submitsJ2[0].score === 1e9 + 999999999,
+  String(submitsJ2[0] && submitsJ2[0].score));
+
+/* ---------- 场景 K：app.js 不得裸引用 cloud.js 私有变量 myUid（曾致 renderBoard 全崩、榜单页空白） ---------- */
+console.log("K. 静态检查（myUid / 转生视图齐备）：");
 var { readFileSync: rf } = await import("node:fs");
 var appSrc = rf(path.join(root, "js", "app.js"), "utf8");
 var appNoComments = appSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
@@ -159,6 +182,9 @@ check("app.js 无裸引用 myUid", !/\bmyUid\b/.test(appNoComments));
 var cloudSrc = rf(path.join(root, "js", "cloud.js"), "utf8");
 check("Cloud.getMyUid 已定义并被使用", /getMyUid\s*:\s*function/.test(cloudSrc) && /Cloud\.getMyUid\(\)/.test(appSrc));
 check("换票已同步短路存在（防重复计费）", /function hbProfileMatchesIdentity/.test(appSrc) && /已同步过/.test(appSrc));
+var htmlSrc = rf(path.join(root, "index.html"), "utf8");
+check("魔神殿视图/庆祝页/入口齐备", /id="view-temple"/.test(htmlSrc) && /id="templeCeremony"/.test(htmlSrc) && /id="openTemple"/.test(htmlSrc));
+check("转生逻辑齐备", /function performCeremony/.test(appSrc) && /function renderTemple/.test(appSrc) && /function checkHonorPopup/.test(appSrc));
 
 rmSync(tmp, { recursive: true, force: true });
 

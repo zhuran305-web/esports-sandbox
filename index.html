@@ -148,6 +148,12 @@
           </div>
         </div>
 
+        <div class="honor-line">
+          <span>封神 <b id="profileGods">0</b> 次</span>
+          <span>破产 <b id="profileBankrupts">0</b> 次</span>
+          <span>本轮 <b id="profileEpoch">+0</b> 沙粒</span>
+        </div>
+
         <div class="pnl-card" id="pnlCard">
           <div class="pnl-head">
             <span>总盈亏</span>
@@ -210,7 +216,55 @@
 
         <div class="board-list" id="boardList"></div>
 
+        <div class="temple-entry" id="openTemple" role="button" tabindex="0" aria-label="进入魔神殿">
+          <span class="temple-entry-ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.735H5.81a1 1 0 0 1-.957-.735L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/>
+              <path d="M5 21h14"/>
+            </svg>
+          </span>
+          <span class="temple-entry-main"><b>魔神殿</b><small>封神与破产的荣誉殿堂</small></span>
+          <svg class="temple-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </div>
+
         <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
+      </section>
+
+      <!-- 魔神殿（二级页） -->
+      <section class="view" id="view-temple" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="templeBackBtn" type="button" aria-label="返回排行榜">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">魔神殿</h1>
+        </div>
+
+        <div class="board-tabs" id="templeTabs" role="tablist" aria-label="魔神殿榜单切换">
+          <button class="board-tab temple-tab is-active" data-temple="god" role="tab" aria-selected="true" type="button">
+            <span class="board-dot god"></span>封神榜
+          </button>
+          <button class="board-tab temple-tab" data-temple="dog" role="tab" aria-selected="false" type="button">
+            <span class="board-dot dog"></span>赌狗榜
+          </button>
+        </div>
+        <p class="board-hint" id="templeHint">手握 10 亿沙粒即可封神：沙粒重置 10,000，名字永载封神榜</p>
+
+        <div class="board-me temple-me">
+          <div class="temple-mine">
+            <div><span class="temple-cap">封神</span><strong id="templeMyGods">0</strong></div>
+            <div><span class="temple-cap">破产</span><strong id="templeMyBankrupts">0</strong></div>
+          </div>
+          <div class="temple-progress">
+            <div class="temple-progress-bar"><div id="templeMyBar"></div></div>
+            <span class="temple-dist" id="templeMyDist">--</span>
+          </div>
+        </div>
+
+        <button class="temple-cta" id="templeCeremonyBtn" type="button" hidden>立即封神</button>
+
+        <div class="board-list" id="templeList"></div>
+
+        <p class="data-note">转生（封神/破产）后将从胜败榜功成身退，在魔神殿以次数留名；累计战绩与历史永不受影响。</p>
       </section>
 
       <!-- 设置 -->
@@ -541,6 +595,23 @@
   </div>
 
   <!-- 新手引导 -->
+  <!-- 转生庆祝页（封神/破产，全屏） -->
+  <div class="cer-backdrop" id="templeCeremony" hidden>
+    <div class="cer-panel" id="cerPanel" data-type="god" role="dialog" aria-modal="true" aria-labelledby="cerTitle">
+      <div class="cer-badge" id="cerBadge">👑</div>
+      <h2 class="cer-title" id="cerTitle">封 神</h2>
+      <p class="cer-desc" id="cerDesc"></p>
+      <div class="cer-facts">
+        <div><span>沙粒</span><b>重置为 10,000</b></div>
+        <div><span>荣誉</span><b id="cerFactHonor">封神次数 +1，载入封神榜</b></div>
+        <div><span>战绩</span><b>累计战绩永久保留</b></div>
+      </div>
+      <button class="cer-cta" id="cerCta" type="button">立即封神</button>
+      <p class="cer-gate" id="cerGate"></p>
+      <button class="cer-ghost" id="cerLater" type="button">稍后再说 · 魔神殿内可随时举行</button>
+    </div>
+  </div>
+
   <div class="onboard-backdrop" id="onboardBackdrop" hidden>
     <div class="onboard" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
       <div class="onboard-steps" id="onboardSteps">

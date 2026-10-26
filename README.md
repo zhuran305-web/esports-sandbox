@@ -22,7 +22,7 @@
 ```
 页面（Vite + @heybox/hb-sdk）
  ├─ 赛程数据：内置 4+16 天窗口快照 → 运行时每 5 分钟轮询 OSS（meta 探测，hash 变才拉整包）
- ├─ 身份：榜单通道 app_user_id（boot 自动注册）+ 授权换票（auth.login → OSS/api/exchange/<code> → 镜像回源 FC → OpenAPI）
+ ├─ 身份：榜单通道 app_user_id（boot 自动注册）+ 授权换票（auth.login → 直连 FC（失败降级 OSS 回源）→ OpenAPI）
  ├─ 排行榜：平台 cloud.leaderboard（score=次数×1e9+沙粒数，昵称在 extra.nick）
  └─ 跨设备战绩：cloud.storage key state_v1（LWW）
 

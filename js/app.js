@@ -1,6 +1,6 @@
 import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
-import { IDENTITY_EXCHANGE_URL } from "./config.js";
+import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.25";
+  var APP_VERSION = "1.1.26";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -2061,6 +2061,24 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     return storageSet(HB_PROFILE_KEY, p);
   }
 
+  /** 换票请求：直连 FC 优先（2026-10-26 官方口径：network 批准后第三方 HTTPS 免追加）；
+   *  传输层失败（旧客户端域名拦截 / 网络异常）自动降级 OSS Mirror 回源兜底。 */
+  var hbExchangeMode = ""; // 本次实际走通的链路："直连" | "回源"
+
+  function exchangeProfile(code) {
+    var path = "/" + encodeURIComponent(code);
+    return networkGetJson(IDENTITY_EXCHANGE_URL + path, 10000).then(function (data) {
+      hbExchangeMode = "直连";
+      return data;
+    }).catch(function (e) {
+      console.warn("[exchange] 直连失败，降级回源：" + ((e && e.code) || "网络异常"));
+      return networkGetJson(IDENTITY_EXCHANGE_FALLBACK + path, 10000).then(function (data) {
+        hbExchangeMode = "回源";
+        return data;
+      });
+    });
+  }
+
   /** 同步黑盒资料：授权（用户手势）→ 一次性 code → 换票端点 → 缓存昵称头像。 */
   function syncHbProfile() {
     authLogin().then(function (login) {
@@ -2070,15 +2088,14 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         else toast("授权未完成：" + ((login && login.error) || "UNKNOWN"));
         return;
       }
-      // code 放路径（/api/exchange/<code>）：OSS 回源缓存键按路径，一次性 code 进路径
-      // 保证每个码独立回源，绝无缓存串号（响应即便落桶也只是该码自己的结果）
-      var url = IDENTITY_EXCHANGE_URL + "/" + encodeURIComponent(login.code);
-      networkGetJson(url, 10000).then(function (data) {
+      // code 放路径（/api/exchange/<code>）：一次性码=唯一路径，回源兜底时也绝无缓存串号
+      exchangeProfile(login.code).then(function (data) {
         if (data && data.appUserId) {
           saveHbProfile({
             appUserId: data.appUserId,
             nick: data.nickname || "",
             avatar: data.avatar || "",
+            via: hbExchangeMode,
             at: Date.now()
           }).then(function () {
             toast(data.nickname ? "已同步黑盒资料：" + data.nickname : "已同步身份（该账号未设置昵称）");
@@ -2088,7 +2105,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         } else if (data && data.error === "invalid_grant") {
           toast("授权码已失效，请再点一次重新授权");
         } else if (data && (data.error === "HTTP_403" || data.error === "HTTP_404")) {
-          toast("换票通道未就绪（回源规则待配置），稍后再试");
+          toast("换票服务暂不可用（通道返回 " + data.error.replace("HTTP_", "") + "），稍后再试");
         } else {
           toast("换票失败：" + ((data && data.error) || "UNKNOWN"));
         }
@@ -2157,7 +2174,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       $("#hbSyncBtn").hidden = false;
       // 诊断行：宿主环境快照（版本/模式/系统），用于各端排障
       $("#settingsDiag").textContent = getDiagnostics() +
-        (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") : "");
+        (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") + (hb.via ? "(" + hb.via + ")" : "") : "");
     }).catch(function () {
       $("#accountBadge").textContent = "游客";
     });

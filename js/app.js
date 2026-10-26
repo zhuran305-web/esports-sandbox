@@ -25,7 +25,14 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.31";
+  var APP_VERSION = "1.1.32";
+  // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
+  window.addEventListener("error", function (e) {
+    try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    try { document.documentElement.dataset.promiseErr = String((e.reason && (e.reason.stack || e.reason.message)) || e.reason).slice(0, 220); } catch (x) { /* 忽略 */ }
+  });
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -1201,6 +1208,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   function showCeremony(type) {
+    // 误弹保险丝：弹出瞬间再验一次资格（防模块混合/竞态把不达标状态弹出来）
+    if (type === "god" && !(state.bankroll >= Cloud.CAP)) return;
+    if (type === "bankrupt" && !(state.bankroll <= -Cloud.CAP)) return;
     ceremonyType = type;
     var god = type === "god";
     var panel = $("#cerPanel");

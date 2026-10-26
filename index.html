@@ -275,14 +275,18 @@
           <div class="settings-account">
             <div class="account-avatar" id="accountAvatar">盒</div>
             <div class="account-main">
-              <span class="account-name" id="accountName">未登录</span>
+              <div class="account-name-row">
+                <span class="account-name" id="accountName">未登录</span>
+                <span class="account-badge" id="accountBadge">未登录</span>
+              </div>
               <span class="account-id" id="accountId">ID: --</span>
             </div>
-            <span class="account-badge" id="accountBadge">未登录</span>
           </div>
           <p class="settings-hint" id="accountHint">打开小程序后自动绑定隔离身份；可先设置展示昵称用于榜单</p>
+          <div class="account-actions">
+            <button class="hb-sync-btn" id="hbSyncBtn" type="button">同步黑盒资料</button>
+          </div>
           <div class="nick-row">
-            <button class="nick-save hb-sync-btn" id="hbSyncBtn" type="button">同步黑盒资料</button>
             <span class="nick-label">展示昵称</span>
             <input class="nick-input" id="nickInput" type="text" maxlength="12" placeholder="榜单显示用，最多12字">
             <button class="nick-save" id="nickSave" type="button">保存</button>

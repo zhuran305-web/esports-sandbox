@@ -121,8 +121,15 @@ input { font-family: inherit; }
   border-bottom: 1px solid var(--border-soft);
 }
 
-/* 宿主右上角有「更多 / 退出」胶囊（实测宽约 107px + 右边距 15px），标题区让出右侧空间 */
-.in-host .topbar { padding-right: calc(var(--safe-right) + 130px); }
+/* 宿主右上角有「更多 / 退出」胶囊（实测宽约 107px + 右边距 15px）。
+   沙粒胶囊改为绝对定位错开：贴屏幕右缘、落在宿主胶囊下方（top +42px），
+   不再横向挤占标题——标题全宽不换行，沙粒数再多也只向左伸展胶囊自身。 */
+.in-host .topbar { padding: calc(var(--safe-top) + 8px) 18px 26px; }
+.in-host .balance-pill {
+  position: absolute;
+  right: calc(var(--safe-right) + 12px);
+  top: calc(var(--safe-top) + 42px);
+}
 
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
@@ -338,11 +345,11 @@ input { font-family: inherit; }
   padding: 12px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: linear-gradient(180deg, #1b2231, #141a25);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
   animation: popIn .18s ease both;
   scrollbar-width: thin;
-  scrollbar-color: #39445a transparent;
+  scrollbar-color: var(--border) transparent;
 }
 .game-popover::-webkit-scrollbar { width: 6px; }
 .game-popover::-webkit-scrollbar-thumb { background: #39445a; border-radius: 999px; }
@@ -1148,28 +1155,28 @@ input { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 15px 16px 11px;
 }
 
 .account-avatar {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 800;
   color: #1a0e04;
   background: linear-gradient(145deg, #ffd08a, var(--accent-strong));
 }
 
 .account-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.account-name { font-size: 15px; font-weight: 700; }
+.account-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.account-name { font-size: 16px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .account-id { font-size: 11px; color: var(--text-faint); }
 
 .account-badge {
-  margin-left: auto;
   flex: 0 0 auto;
   padding: 3px 8px;
   border-radius: 999px;
@@ -1180,6 +1187,25 @@ input { font-family: inherit; }
   font-weight: 700;
   white-space: nowrap;
 }
+
+.account-actions { padding: 2px 16px 12px; }
+.hb-sync-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 138, 61, .32);
+  border-radius: 12px;
+  background: rgba(255, 138, 61, .08);
+  color: #ffcf9f;
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hb-sync-btn:active { filter: brightness(1.08); }
 
 .settings-hint {
   margin: 0;
@@ -2069,36 +2095,37 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #aeb9c9;
 html[data-theme="light"] .game-popover::-webkit-scrollbar-thumb { background: #c3ccd9; }
 
 /* ============================== 魔神殿与转生（Apple HIG：大标题/分段/卡片层级） ============================== */
-.temple-entry { display: flex; align-items: center; gap: 12px; margin: 16px 0 10px; padding: 13px 14px; border-radius: 16px; background: var(--surface); border: 1px solid rgba(255,255,255,.07); cursor: pointer; }
-.temple-entry:active { background: rgba(255,255,255,.07); }
+.temple-entry { display: flex; align-items: center; gap: 12px; margin: 16px 0 10px; padding: 13px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border-soft); cursor: pointer; }
+.temple-entry:active { background: rgba(127, 127, 127, .12); }
 .temple-entry-ic { width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: #ffd166; background: linear-gradient(135deg, rgba(255,209,102,.22), rgba(255,195,143,.12)); }
 .temple-entry-ic svg { width: 22px; height: 22px; }
 .temple-entry-main { min-width: 0; }
 .temple-entry-main b { display: block; font-size: 15.5px; font-weight: 750; }
-.temple-entry-main small { display: block; color: #6c788d; font-size: 12px; margin-top: 2px; }
-.temple-entry-chev { width: 18px; height: 18px; margin-left: auto; flex: 0 0 auto; color: #4a5568; }
+.temple-entry-main small { display: block; color: var(--text-faint); font-size: 12px; margin-top: 2px; }
+.temple-entry-chev { width: 18px; height: 18px; margin-left: auto; flex: 0 0 auto; color: var(--text-faint); }
 
 .board-dot.god { background: #ffd166; }
 .board-dot.dog { background: #7c8cff; }
 
 .temple-me { display: flex; flex-direction: column; gap: 12px; }
 .temple-mine { display: flex; gap: 22px; }
-.temple-cap { display: block; color: #6c788d; font-size: 11.5px; margin-bottom: 2px; }
+.temple-cap { display: block; color: var(--text-faint); font-size: 11.5px; margin-bottom: 2px; }
 .temple-mine strong { font-size: 22px; font-weight: 800; }
-.temple-progress-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+.temple-progress-bar { height: 6px; border-radius: 3px; background: rgba(127,127,127,.16); overflow: hidden; }
 .temple-progress-bar > div { height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, #ffd166, #ffb35c); transition: width .3s ease; }
-.temple-dist { display: block; color: #6c788d; font-size: 12px; margin-top: 7px; }
-.temple-dist b { color: #e9eef7; }
+.temple-dist { display: block; color: var(--text-faint); font-size: 12px; margin-top: 7px; }
+.temple-dist b { color: var(--text); }
 
 .temple-cta { width: 100%; border: 0; font: inherit; font-weight: 800; font-size: 15px; color: #1a1204; padding: 13px 0; border-radius: 14px; cursor: pointer; margin: 2px 0 12px; background: linear-gradient(135deg, #ffd166, #ffb35c); box-shadow: 0 8px 22px rgba(255,179,92,.25); }
 .temple-cta.danger { background: linear-gradient(135deg, #ff5d6c, #b04dff); color: #fff; box-shadow: 0 8px 22px rgba(255,93,108,.22); }
 .temple-cta:active { filter: brightness(1.06); }
 
-.honor-line { display: flex; gap: 16px; justify-content: center; margin: 12px 0 4px; padding: 10px 12px; border-radius: 14px; background: var(--surface); border: 1px solid rgba(255,255,255,.06); color: #6c788d; font-size: 12.5px; flex-wrap: wrap; }
-.honor-line b { color: #e9eef7; font-weight: 750; }
+.honor-line { display: flex; gap: 16px; justify-content: center; margin: 12px 0 4px; padding: 10px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-faint); font-size: 12.5px; flex-wrap: wrap; }
+.honor-line b { color: var(--text); font-weight: 750; }
 
-/* 转生庆祝页（全屏） */
+/* 转生庆祝页（全屏）——[hidden] 必须显式恢复 display:none，否则被下方 display:flex 压制（同 .game-popover 先例） */
 .cer-backdrop { position: fixed; inset: 0; z-index: 92; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(4,7,12,.8); }
+.cer-backdrop[hidden] { display: none; }
 .cer-panel { width: 100%; max-width: 360px; border-radius: 22px; padding: 26px 22px 14px; text-align: center; border: 1px solid rgba(255,255,255,.1); background: linear-gradient(180deg, #171c2a, #0b0e15); }
 .cer-panel[data-type="god"] { background: radial-gradient(120% 60% at 50% 0%, rgba(255,196,80,.16), transparent 60%), linear-gradient(180deg, #171c2a, #0b0e15); }
 .cer-panel[data-type="bankrupt"] { background: radial-gradient(120% 60% at 50% 0%, rgba(120,140,255,.14), transparent 60%), linear-gradient(180deg, #141a26, #0b0e15); }
@@ -2125,3 +2152,14 @@ html[data-theme="light"] .game-popover::-webkit-scrollbar-thumb { background: #c
   .temple-entry-main b { font-size: 14.5px; }
   .cer-panel { padding: 22px 16px 10px; }
 }
+
+/* ============================== 浅色模式补齐（浮层/魔神殿/账号卡） ============================== */
+html[data-theme="light"] .game-popover { background: var(--surface); box-shadow: 0 22px 55px rgba(24, 32, 45, .16); }
+html[data-theme="light"] .game-tile.is-selected { background: rgba(232, 98, 15, .07); border-color: rgba(232, 98, 15, .5); }
+html[data-theme="light"] .tournament-row.is-selected { background: rgba(232, 98, 15, .08); color: #b34f08; }
+html[data-theme="light"] .hb-sync-btn { background: rgba(232, 98, 15, .07); border-color: rgba(232, 98, 15, .32); color: #a8430a; }
+html[data-theme="light"] .temple-entry-ic { color: #b8860b; background: linear-gradient(135deg, rgba(255, 209, 102, .32), rgba(255, 195, 143, .18)); }
+html[data-theme="light"] .temple-progress-bar { background: rgba(24, 32, 45, .08); }
+html[data-theme="light"] .temple-dist b, html[data-theme="light"] .cer-desc b { color: var(--text); }
+html[data-theme="light"] .cer-backdrop { background: rgba(24, 32, 45, .45); }
+html[data-theme="light"] .temple-cta { color: #4a2f04; }

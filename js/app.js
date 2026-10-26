@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.26";
+  var APP_VERSION = "1.1.27";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -2079,38 +2079,52 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
   }
 
-  /** 同步黑盒资料：授权（用户手势）→ 一次性 code → 换票端点 → 缓存昵称头像。 */
+  /** 已同步判定：本机换票缓存与当前榜单身份一致（身份暂未知时按已同步处理，宁可不换票也不重复计费） */
+  function hbProfileMatchesIdentity(hb) {
+    if (!hb) return false;
+    var uid = Cloud.getMyUid();
+    return !uid || hb.appUserId === uid;
+  }
+
+  /** 同步黑盒资料：授权（用户手势）→ 一次性 code → 换票端点 → 缓存昵称头像。
+   *  已同步过的账号直接短路（每次换票=一次 FC 调用，防重复计费）；换账号后身份不匹配才允许重新同步。 */
   function syncHbProfile() {
-    authLogin().then(function (login) {
-      if (!login || login.error || !login.code) {
-        if (login && login.error === "AUTHORIZATION_CANCELLED") toast("已取消授权");
-        else if (login && login.error === "USER_GESTURE_REQUIRED") toast("请直接点击按钮触发授权");
-        else toast("授权未完成：" + ((login && login.error) || "UNKNOWN"));
+    loadHbProfile().then(function (hb) {
+      if (hbProfileMatchesIdentity(hb)) {
+        toast("已同步过" + (hb.nick ? "：" + hb.nick : "") + "，无需重复同步");
         return;
       }
-      // code 放路径（/api/exchange/<code>）：一次性码=唯一路径，回源兜底时也绝无缓存串号
-      exchangeProfile(login.code).then(function (data) {
-        if (data && data.appUserId) {
-          saveHbProfile({
-            appUserId: data.appUserId,
-            nick: data.nickname || "",
-            avatar: data.avatar || "",
-            via: hbExchangeMode,
-            at: Date.now()
-          }).then(function () {
-            toast(data.nickname ? "已同步黑盒资料：" + data.nickname : "已同步身份（该账号未设置昵称）");
-            syncBoards(data.nickname || undefined); // 黑盒昵称优先随榜单 extra 提交
-            renderSettings();
-          });
-        } else if (data && data.error === "invalid_grant") {
-          toast("授权码已失效，请再点一次重新授权");
-        } else if (data && (data.error === "HTTP_403" || data.error === "HTTP_404")) {
-          toast("换票服务暂不可用（通道返回 " + data.error.replace("HTTP_", "") + "），稍后再试");
-        } else {
-          toast("换票失败：" + ((data && data.error) || "UNKNOWN"));
+      authLogin().then(function (login) {
+        if (!login || login.error || !login.code) {
+          if (login && login.error === "AUTHORIZATION_CANCELLED") toast("已取消授权");
+          else if (login && login.error === "USER_GESTURE_REQUIRED") toast("请直接点击按钮触发授权");
+          else toast("授权未完成：" + ((login && login.error) || "UNKNOWN"));
+          return;
         }
-      }).catch(function (e) {
-        toast("换票失败：" + ((e && e.code) || "网络异常"));
+        // code 放路径（/api/exchange/<code>）：一次性码=唯一路径，回源兜底时也绝无缓存串号
+        exchangeProfile(login.code).then(function (data) {
+          if (data && data.appUserId) {
+            saveHbProfile({
+              appUserId: data.appUserId,
+              nick: data.nickname || "",
+              avatar: data.avatar || "",
+              via: hbExchangeMode,
+              at: Date.now()
+            }).then(function () {
+              toast(data.nickname ? "已同步黑盒资料：" + data.nickname : "已同步身份（该账号未设置昵称）");
+              syncBoards(data.nickname || undefined); // 黑盒昵称优先随榜单 extra 提交
+              renderSettings();
+            });
+          } else if (data && data.error === "invalid_grant") {
+            toast("授权码已失效，请再点一次重新授权");
+          } else if (data && (data.error === "HTTP_403" || data.error === "HTTP_404")) {
+            toast("换票服务暂不可用（通道返回 " + data.error.replace("HTTP_", "") + "），稍后再试");
+          } else {
+            toast("换票失败：" + ((data && data.error) || "UNKNOWN"));
+          }
+        }).catch(function (e) {
+          toast("换票失败：" + ((e && e.code) || "网络异常"));
+        });
       });
     });
   }
@@ -2165,12 +2179,13 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       $("#accountAvatar").textContent = displayName.slice(0, 1) || "盒";
       $("#accountBadge").textContent = (hb && hb.nick) ? "已同步黑盒资料" : (entry ? "已绑定身份" : "游客");
       $("#accountHint").textContent = (hb && hb.nick)
-        ? "昵称头像来自小黑盒授权资料 · 需更新时可再点「同步黑盒资料」"
+        ? "昵称头像来自小黑盒授权资料（已同步，重复点击不会再次换票）"
         : (entry
           ? "已绑定小黑盒隔离身份 · 点「同步黑盒资料」可显示黑盒昵称头像，或设置展示昵称"
           : "打开小程序后自动绑定隔离身份；可先设置展示昵称用于榜单");
       $("#nickInput").value = localNick;
-      // 同步黑盒资料按钮：已同步过仍保留（授权资料可能变更）
+      // 已同步账号：按钮转为状态提示（点击只提示，不再发起换票=不再产生 FC 调用）
+      $("#hbSyncBtn").textContent = hbProfileMatchesIdentity(hb) ? "已同步黑盒资料" : "同步黑盒资料";
       $("#hbSyncBtn").hidden = false;
       // 诊断行：宿主环境快照（版本/模式/系统），用于各端排障
       $("#settingsDiag").textContent = getDiagnostics() +

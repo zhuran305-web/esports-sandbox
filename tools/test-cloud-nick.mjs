@@ -143,6 +143,7 @@ var appNoComments = appSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/
 check("app.js 无裸引用 myUid", !/\bmyUid\b/.test(appNoComments));
 var cloudSrc = rf(path.join(root, "js", "cloud.js"), "utf8");
 check("Cloud.getMyUid 已定义并被使用", /getMyUid\s*:\s*function/.test(cloudSrc) && /Cloud\.getMyUid\(\)/.test(appSrc));
+check("换票已同步短路存在（防重复计费）", /function hbProfileMatchesIdentity/.test(appSrc) && /已同步过/.test(appSrc));
 
 rmSync(tmp, { recursive: true, force: true });
 

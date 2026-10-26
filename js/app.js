@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.27";
+  var APP_VERSION = "1.1.28";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];

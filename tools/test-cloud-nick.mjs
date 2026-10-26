@@ -135,8 +135,23 @@ var mockLose = await Cloud.getBoard("lose", 50);
 var meLose = mockLose.entries.filter(function (e) { return e.isMe; })[0];
 check("mock lose 榜不新建", !meLose, meLose ? JSON.stringify(meLose) : "");
 
-/* ---------- 场景 H：app.js 不得裸引用 cloud.js 私有变量 myUid（曾致 renderBoard 全崩、榜单页空白） ---------- */
-console.log("H. app.js 静态检查（无裸引用 myUid / getMyUid 已导出）：");
+/* ---------- 场景 H：净赚超 10 亿封顶——score 次数位不被污染，真实值在 extra ---------- */
+console.log("H. 净赚 18 亿（指数杠杆极端值）：");
+var submitsH = makeSdk({});
+await Cloud.submitStats({ wins: 8, winProfit: 1.8e9, losses: 0, loseAmount: 0 }, "鲸鱼");
+check("score = 8×1e9 + 封顶值（次数位完整）",
+  submitsH.length === 1 && submitsH[0].score === 8 * 1e9 + 999999999,
+  String(submitsH[0] && submitsH[0].score));
+check("extra.second 保留真实净赚", submitsH[0] && submitsH[0].extra && submitsH[0].extra.second === 1.8e9,
+  String(submitsH[0] && submitsH[0].extra && submitsH[0].extra.second));
+check("decode 往返次数位正确", Cloud.decodeScore(8 * 1e9 + 999999999).first === 8);
+console.log("   正常值不封顶：");
+var submitsH2 = makeSdk({});
+await Cloud.submitStats({ wins: 3, winProfit: 21023, losses: 0, loseAmount: 0 }, "常人");
+check("5 万级净赚原样编码", submitsH2[0].score === 3 * 1e9 + 21023 && submitsH2[0].extra.second === 21023);
+
+/* ---------- 场景 I：app.js 不得裸引用 cloud.js 私有变量 myUid（曾致 renderBoard 全崩、榜单页空白） ---------- */
+console.log("I. app.js 静态检查（无裸引用 myUid / getMyUid 已导出）：");
 var { readFileSync: rf } = await import("node:fs");
 var appSrc = rf(path.join(root, "js", "app.js"), "utf8");
 var appNoComments = appSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");

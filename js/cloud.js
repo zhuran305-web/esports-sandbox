@@ -14,8 +14,15 @@ var BOARD_KEYS = {
   lose: "sha_board_lose"
 };
 
+/* score = 次数×1e9 + 沙粒数（10 亿进制）。沙粒数封顶在 1e9-1：
+ * 净赚超过 10 亿会溢出污染次数位（指数杠杆下十来场连赢即可触发）。
+ * 封顶只影响排序键；真实沙粒数随 extra.second 提交，展示优先读 extra。 */
+var AMOUNT_CAP = 999999999;
+
 function encode(wins, amount) {
-  return wins * 1e9 + Math.max(0, Math.round(amount));
+  var amt = Math.max(0, Math.round(amount));
+  if (amt > AMOUNT_CAP) amt = AMOUNT_CAP;
+  return wins * 1e9 + amt;
 }
 
 function decode(score) {
@@ -79,7 +86,14 @@ function mockList(board, limit) {
   var list = Object.keys(data[board]).map(function (uid) {
     var e = data[board][uid];
     var d = decode(e.score);
-    return { uid: e.uid, nick: e.nick, first: d.first, second: d.second, isMe: e.uid === "me" };
+    var extra = e.extra || {};
+    return {
+      uid: e.uid,
+      nick: e.nick,
+      first: typeof extra.first === "number" ? extra.first : d.first,
+      second: typeof extra.second === "number" ? extra.second : d.second,
+      isMe: e.uid === "me"
+    };
   });
   list.sort(function (a, b) { return b.first - a.first || b.second - a.second; });
   list.forEach(function (e, i) { e.rank = i + 1; });
@@ -147,8 +161,9 @@ async function realList(board, limit) {
       return {
         uid: e.appUserId,
         nick: extra.nick || "盒友",
-        first: d.first,
-        second: d.second,
+        // 展示值优先读 extra（score 里的沙粒数已封顶，extra 存真实值；老条目两者一致）
+        first: typeof extra.first === "number" ? extra.first : d.first,
+        second: typeof extra.second === "number" ? extra.second : d.second,
         rank: e.rank,
         isMe: myUid ? e.appUserId === myUid : false
       };
@@ -170,8 +185,8 @@ async function realMy(board) {
     uid: e.appUserId,
     nick: extra.nick || "我",
     extra: extra,
-    first: d.first,
-    second: d.second,
+    first: typeof extra.first === "number" ? extra.first : d.first,
+    second: typeof extra.second === "number" ? extra.second : d.second,
     rank: e.rank,
     isMe: true
   };

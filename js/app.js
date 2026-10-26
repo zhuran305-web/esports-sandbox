@@ -1,7 +1,7 @@
 import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
-import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, shareScreenshot, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.29";
+  var APP_VERSION = "1.1.30";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -1853,6 +1853,33 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     ctx.closePath();
   }
 
+  /** 画布文字自适应：超宽先缩字号（最低 22px），再省略号截断——修复长队名/赛事名与比分重叠 */
+  function fitCanvasText(ctx, text, maxWidth, size, weight) {
+    var s = size;
+    var apply = function () { ctx.font = weight + " " + s + "px -apple-system, 'PingFang SC', sans-serif"; };
+    apply();
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    while (s > 22) {
+      s -= 2;
+      apply();
+      if (ctx.measureText(text).width <= maxWidth) return text;
+    }
+    while (text.length > 1 && ctx.measureText(text + "…").width > maxWidth) {
+      text = text.slice(0, -1);
+    }
+    return text + "…";
+  }
+
+  function drawTeamAvatar(ctx, x, y, size, label) {
+    ctx.fillStyle = "rgba(255,255,255,.06)";
+    roundRect(ctx, x, y, size, size, 14);
+    ctx.fill();
+    ctx.fillStyle = "#9aa6ba";
+    ctx.textAlign = "center";
+    ctx.font = "800 " + Math.round(size * 0.36) + "px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText(String(label || "?").slice(0, 3).toUpperCase(), x + size / 2, y + size / 2 + Math.round(size * 0.13));
+  }
+
   function drawShareCard(pred) {
     var m = matchById(pred.matchId);
     if (!m) return;
@@ -1864,7 +1891,6 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var stats = recordStats();
     var profit = settledInOrder().reduce(function (s, p) { return s + (p.profit || 0); }, 0);
     var pickTeam = pred.pick === "A" ? m.teamA : m.teamB;
-    var winTeam = m.result.winner === "A" ? m.teamA : m.teamB;
 
     // 背景
     var bg = ctx.createLinearGradient(0, 0, 0, H);
@@ -1872,7 +1898,6 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     bg.addColorStop(1, "#0a0d13");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
-    // 顶部光晕
     var glow = ctx.createRadialGradient(W - 120, 80, 20, W - 120, 80, 420);
     glow.addColorStop(0, won ? "rgba(53,211,154,.22)" : "rgba(255,93,108,.2)");
     glow.addColorStop(1, "rgba(0,0,0,0)");
@@ -1880,90 +1905,102 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     ctx.fillRect(0, 0, W, H);
 
     // 品牌行
-    ctx.fillStyle = "#6c788d";
-    ctx.font = "600 26px -apple-system, 'PingFang SC', sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("赛事沙盘 · 竞猜战绩", 60, 96);
+    ctx.fillStyle = "#e9eef7";
+    ctx.font = "800 32px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText("赛事沙盘", 60, 92);
     ctx.textAlign = "right";
-    ctx.fillText(fmtTime(m.startAt), W - 60, 96);
+    ctx.fillStyle = "#6c788d";
+    ctx.font = "500 26px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText(fmtTime(m.startAt), W - 60, 92);
 
-    // 大结果
+    // 大结果 + 连对副行
     ctx.textAlign = "center";
     ctx.fillStyle = accent;
-    ctx.font = "800 96px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText(won ? "预测正确" : "预测失败", W / 2, 236);
+    ctx.font = "850 96px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText(won ? "预测正确" : "预测失败", W / 2, 244);
+    ctx.fillStyle = "#6c788d";
+    ctx.font = "500 27px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText(won ? "当前连对 ×" + currentStreak() : "连对中断", W / 2, 296);
 
     // 对阵卡
-    ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,255,255,.03)";
-    roundRect(ctx, 60, 300, W - 120, 190, 24);
+    roundRect(ctx, 50, 330, W - 100, 310, 28);
     ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,.07)";
     ctx.lineWidth = 2;
-    roundRect(ctx, 60, 300, W - 120, 190, 24);
+    roundRect(ctx, 50, 330, W - 100, 310, 28);
     ctx.stroke();
 
-    ctx.font = "700 30px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillStyle = "#e9eef7";
-    ctx.fillText(m.teamA.name, 100, 372);
-    ctx.fillText(m.teamB.name, 100, 442);
-    ctx.fillStyle = "#6c788d";
-    ctx.font = "500 24px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText(m.tournament + " · " + m.stage, 100, 404);
-    ctx.textAlign = "right";
-    ctx.font = "800 56px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillStyle = m.result.winner === "A" ? "#e9eef7" : "#6c788d";
-    ctx.fillText(String(m.result.score).split(":")[0], W - 100, 386);
-    ctx.fillStyle = m.result.winner === "B" ? "#e9eef7" : "#6c788d";
-    ctx.fillText(String(m.result.score).split(":")[1], W - 100, 452);
     ctx.textAlign = "center";
     ctx.fillStyle = "#6c788d";
-    ctx.font = "700 22px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText("VS", W / 2, 416);
+    ctx.font = "500 26px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText(fitCanvasText(ctx, m.tournament + " · " + m.stage, W - 180, 26, "500"), W / 2, 402);
 
-    // 我的预测
+    var scoreA = String(m.result.score).split(":")[0];
+    var scoreB = String(m.result.score).split(":")[1];
+    var rows = [
+      { team: m.teamA, score: scoreA, win: m.result.winner === "A", y: 492 },
+      { team: m.teamB, score: scoreB, win: m.result.winner === "B", y: 596 }
+    ];
+    rows.forEach(function (r, i) {
+      if (i > 0) {
+        ctx.strokeStyle = "rgba(255,255,255,.05)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(90, 544);
+        ctx.lineTo(W - 90, 544);
+        ctx.stroke();
+      }
+      drawTeamAvatar(ctx, 90, r.y - 42, 56, (r.team.short || r.team.name));
+      ctx.textAlign = "left";
+      ctx.fillStyle = r.win ? "#e9eef7" : "#9aa6ba";
+      ctx.font = (r.win ? "800 " : "700 ") + "44px -apple-system, 'PingFang SC', sans-serif";
+      ctx.fillText(fitCanvasText(ctx, r.team.name, W - 330, 44, r.win ? "800" : "700"), 168, r.y);
+      ctx.textAlign = "right";
+      ctx.font = "850 60px -apple-system, 'PingFang SC', sans-serif";
+      ctx.fillStyle = r.win ? "#e9eef7" : "#6c788d";
+      ctx.fillText(r.score, W - 90, r.y + 4);
+    });
+
+    // 我的预测行
     ctx.textAlign = "left";
-    ctx.fillStyle = "#9aa6ba";
+    ctx.fillStyle = "#6c788d";
     ctx.font = "500 26px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText("我的预测", 60, 560);
+    ctx.fillText("我的预测", 60, 706);
     ctx.fillStyle = accent;
-    ctx.font = "800 34px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText(pickTeam.name + (won ? " ✓" : " ✗"), 60, 606);
+    ctx.font = "800 36px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText(fitCanvasText(ctx, pickTeam.name + (won ? " ✓" : " ✗"), 420, 36, "800"), 60, 760);
     ctx.textAlign = "right";
+    ctx.fillStyle = "#6c788d";
     ctx.font = "500 26px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillStyle = "#9aa6ba";
-    ctx.fillText("投入 " + fmtNum(pred.stake) + " 沙粒", W - 60, 560);
-    ctx.font = "800 34px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText("投入 " + fmtNum(pred.stake) + " 沙粒", W - 60, 706);
+    ctx.font = "850 36px -apple-system, 'PingFang SC', sans-serif";
     ctx.fillStyle = won ? "#35d39a" : "#ff5d6c";
-    ctx.fillText((pred.profit > 0 ? "+" : "") + fmtNum(pred.profit) + " 沙粒", W - 60, 606);
+    ctx.fillText((pred.profit > 0 ? "+" : "") + fmtNum(pred.profit) + " 沙粒", W - 60, 760);
 
-    // 总盈亏（次要位置）
+    // 总盈亏卡（底边 886 = 官方水印预留区上沿）
     ctx.fillStyle = "rgba(255,255,255,.03)";
-    roundRect(ctx, 60, 660, W - 120, 130, 24);
+    roundRect(ctx, 50, 790, W - 100, 96, 24);
     ctx.fill();
     ctx.textAlign = "left";
     ctx.fillStyle = "#6c788d";
-    ctx.font = "500 24px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText("累计总盈亏", 100, 718);
+    ctx.font = "500 25px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText("累计总盈亏", 90, 842);
     ctx.textAlign = "right";
-    ctx.font = "800 40px -apple-system, 'PingFang SC', sans-serif";
+    ctx.font = "850 42px -apple-system, 'PingFang SC', sans-serif";
     ctx.fillStyle = profit >= 0 ? "#35d39a" : "#ff5d6c";
-    ctx.fillText((profit > 0 ? "+" : "") + fmtNum(profit) + " 沙粒", W - 100, 728);
+    ctx.fillText((profit > 0 ? "+" : "") + fmtNum(profit) + " 沙粒", W - 90, 848);
 
-    // 战绩小字
+    // 战绩小字（底部 57 逻辑像素为官方水印预留区，勿放重要内容）
     ctx.textAlign = "center";
     ctx.fillStyle = "#6c788d";
     ctx.font = "500 24px -apple-system, 'PingFang SC', sans-serif";
-    var honorLine = "累计猜对 " + stats.wins + " 场 · 猜错 " + stats.losses + " 场";
+    var metaLine = "累计猜对 " + stats.wins + " 场 · 猜错 " + stats.losses + " 场";
     if (state.gods > 0 || state.bankrupts > 0) {
-      honorLine += " · 封神 " + (state.gods || 0) + " · 破产 " + (state.bankrupts || 0);
+      metaLine += " · 封神 " + (state.gods || 0) + " · 破产 " + (state.bankrupts || 0);
     }
-    ctx.fillText(honorLine, W / 2, 836);
-
-    // 底部
-    ctx.fillStyle = "#4a5568";
-    ctx.font = "600 26px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText("赛事沙盘 · 沙粒为虚拟道具，仅娱乐预测", W / 2, H - 90);
+    ctx.fillText(fitCanvasText(ctx, metaLine, W - 120, 24, "500"), W / 2, 878);
   }
 
   var sharePred = null;
@@ -2539,16 +2576,37 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (e.target === $("#shareBackdrop")) closeShare();
     });
     $("#shareSave").addEventListener("click", function () {
+      var canvas = $("#shareCanvas");
+      // 宿主内走官方截图分享（saveToAlbum 提供相册入口，rect 截卡片区域）；
+      // SDK ≥0.9.1 自动叠加官方水印（卡片底部已预留 57 逻辑像素）
+      var r = canvas.getBoundingClientRect();
+      shareScreenshot({
+        rect: {
+          x: Math.max(0, r.left + 4),
+          y: Math.max(0, r.top + 4),
+          width: Math.max(1, r.width - 8),
+          height: Math.max(1, r.height - 8)
+        },
+        saveToAlbum: true,
+        watermarkTheme: "dark"
+      }).then(function (res) {
+        if (res === null) { toast("已唤起保存面板，可选择保存到相册"); return; }
+        if (res === "UNSUPPORTED" || res === "METHOD_FORBIDDEN") { browserSave(canvas); return; }
+        toast("保存未完成（" + res + "），可长按图片或截图保存");
+      });
+    });
+
+    function browserSave(canvas) {
       try {
         var link = document.createElement("a");
         link.download = "赛事沙盘战绩.png";
-        link.href = $("#shareCanvas").toDataURL("image/png");
+        link.href = canvas.toDataURL("image/png");
         link.click();
-        toast("图片已生成，可选择保存位置");
+        toast("图片已生成（浏览器环境可直接下载）");
       } catch (err) {
         toast("当前环境不支持保存，可长按/右键图片保存");
       }
-    });
+    }
 
     $("#shareCopyText").addEventListener("click", function () {
       var text = buildPostText();

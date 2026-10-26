@@ -427,6 +427,22 @@ export async function copyShareLink(extra) {
   }
 }
 
+/**
+ * 宿主截图分享：截取指定区域并唤起系统分享/保存流程（saveToAlbum 提供相册入口）。
+ * options: { rect?: {x,y,width,height}（窗口逻辑像素）, saveToAlbum?, watermarkTheme?, post?, delay? }。
+ * SDK ≥0.9.1 默认叠加官方水印，截图区域底部需预留 ≥57 逻辑像素空白。
+ * 返回 null = 流程已唤起（结果不透明，不能据返回值判断是否保存）；字符串 = 错误码。
+ */
+export async function shareScreenshot(options) {
+  if (!sdk || !sdk.share || typeof sdk.share.screenshot !== "function") return "UNSUPPORTED";
+  try {
+    await sdk.share.screenshot(options || {});
+    return null;
+  } catch (e) {
+    return (e && e.code) || "FAILED";
+  }
+}
+
 /** 启动链接携带的 extra（同步、免权限、不依赖握手）；无有效数据返回 undefined。 */
 export function getLaunchExtra() {
   if (!sdk || !sdk.share || typeof sdk.share.getExtra !== "function") return undefined;

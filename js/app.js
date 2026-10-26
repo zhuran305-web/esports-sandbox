@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.30";
+  var APP_VERSION = "1.1.31";
   var START_BALANCE = 10000;
   var MIN_STAKE = 10;
   var STAKE_FIXED = [10, 100, 1000];
@@ -2323,6 +2323,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /** 已同步判定：本机换票缓存与当前榜单身份一致（身份暂未知时按已同步处理，宁可不换票也不重复计费） */
   function hbProfileMatchesIdentity(hb) {
     if (!hb) return false;
+    // 1.1.26 前的旧缓存没有 via 字段（链路标记）：视为未同步，放行一次重新换票补标记
+    // ——否则防重复门控会让这些用户永远无法记录实际链路（诊断行无法区分直连/回源）
+    if (!hb.via) return false;
     var uid = Cloud.getMyUid();
     return !uid || hb.appUserId === uid;
   }
@@ -2430,7 +2433,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       $("#hbSyncBtn").hidden = false;
       // 诊断行：宿主环境快照（版本/模式/系统），用于各端排障
       $("#settingsDiag").textContent = getDiagnostics() +
-        (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") + (hb.via ? "(" + hb.via + ")" : "") : "");
+        (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") +
+          (hb.via ? "(" + hb.via + ")" : "(旧缓存，点同步刷新)") : "");
     }).catch(function () {
       $("#accountBadge").textContent = "游客";
     });

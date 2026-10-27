@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.34";
+  var APP_VERSION = "1.1.35";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
     try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }
@@ -488,9 +488,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     return list;
   }
 
+  // 大型赛事（S/A 级）：tier 有值就以 tier 为准（PandaScore 的 VCT/BLAST/LCS 等品牌
+  // 覆盖多等级赛事，名字白名单会把 B/C/D 一起算进来）；tier 为空（手工数据）才退回名字。
   function isMajor(m) {
     var tier = String(m.tier || "").toLowerCase();
-    if (tier === "s" || tier === "a") return true;
+    if (tier) return tier === "s" || tier === "a";
     var name = String(m.tournament || "");
     return /major|worlds|world championship|全球总决赛|总决赛|champions|iem|blast|esl pro league|msi|lpl|lck|lec|lcs|vct|kpl|pel|six invitational|algs|the international/i.test(name);
   }

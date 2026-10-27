@@ -2163,3 +2163,10 @@ html[data-theme="light"] .temple-progress-bar { background: rgba(24, 32, 45, .08
 html[data-theme="light"] .temple-dist b, html[data-theme="light"] .cer-desc b { color: var(--text); }
 html[data-theme="light"] .cer-backdrop { background: rgba(24, 32, 45, .45); }
 html[data-theme="light"] .temple-cta { color: #4a2f04; }
+
+/* 分享卡全屏预览（保存兜底：系统截屏） */
+.card-full { position: fixed; inset: 0; z-index: 94; background: rgba(0, 0, 0, .93); display: flex; align-items: center; justify-content: center; }
+.card-full[hidden] { display: none; }
+.card-full-img { max-width: 100%; max-height: calc(100% - 104px); object-fit: contain; }
+.card-full-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 18px calc(16px + var(--safe-bottom)); display: flex; align-items: center; gap: 12px; color: rgba(255, 255, 255, .75); font-size: 12px; line-height: 1.5; }
+.card-full-bar button { margin-left: auto; flex: 0 0 auto; padding: 9px 18px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .28); background: rgba(255, 255, 255, .12); color: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }

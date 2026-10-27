@@ -599,6 +599,15 @@
   </div>
 
   <!-- 新手引导 -->
+  <!-- 分享卡全屏预览（保存兜底：宿主截图流程不可用时，让用户直接系统截屏） -->
+  <div class="card-full" id="cardFullscreen" hidden>
+    <img class="card-full-img" id="cardFullImg" alt="分享卡">
+    <div class="card-full-bar">
+      <span>长按图片可尝试保存 · 或使用系统截屏（电源键 + 音量键）</span>
+      <button id="cardFullClose" type="button">关闭</button>
+    </div>
+  </div>
+
   <!-- 转生庆祝页（封神/破产，全屏） -->
   <div class="cer-backdrop" id="templeCeremony" hidden>
     <div class="cer-panel" id="cerPanel" data-type="god" role="dialog" aria-modal="true" aria-labelledby="cerTitle">

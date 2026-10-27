@@ -1,7 +1,7 @@
 import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
-import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, shareScreenshot, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
@@ -25,7 +25,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.32";
+  var APP_VERSION = "1.1.33";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
     try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }
@@ -172,7 +172,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
-    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony",
+    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
     "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover"
   ];
 
@@ -2590,37 +2590,22 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (e.target === $("#shareBackdrop")) closeShare();
     });
     $("#shareSave").addEventListener("click", function () {
+      // 保存兜底方案（2026-10-27）：宿主截图分享流程在实测中给不出相册入口，
+      // 改为卡片全屏展示，用户直接系统截屏保存——不依赖任何宿主能力，全平台可靠。
       var canvas = $("#shareCanvas");
-      // 宿主内走官方截图分享（saveToAlbum 提供相册入口，rect 截卡片区域）；
-      // SDK ≥0.9.1 自动叠加官方水印（卡片底部已预留 57 逻辑像素）
-      var r = canvas.getBoundingClientRect();
-      shareScreenshot({
-        rect: {
-          x: Math.max(0, r.left + 4),
-          y: Math.max(0, r.top + 4),
-          width: Math.max(1, r.width - 8),
-          height: Math.max(1, r.height - 8)
-        },
-        saveToAlbum: true,
-        watermarkTheme: "dark"
-      }).then(function (res) {
-        if (res === null) { toast("已唤起保存面板，可选择保存到相册"); return; }
-        if (res === "UNSUPPORTED" || res === "METHOD_FORBIDDEN") { browserSave(canvas); return; }
-        toast("保存未完成（" + res + "），可长按图片或截图保存");
-      });
-    });
-
-    function browserSave(canvas) {
       try {
-        var link = document.createElement("a");
-        link.download = "赛事沙盘战绩.png";
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-        toast("图片已生成（浏览器环境可直接下载）");
+        $("#cardFullImg").src = canvas.toDataURL("image/png");
+        $("#cardFullscreen").hidden = false;
       } catch (err) {
-        toast("当前环境不支持保存，可长按/右键图片保存");
+        toast("图片生成失败，可直接截屏分享卡");
       }
-    }
+    });
+    $("#cardFullClose").addEventListener("click", function () {
+      $("#cardFullscreen").hidden = true;
+    });
+    $("#cardFullscreen").addEventListener("click", function (e) {
+      if (e.target === $("#cardFullscreen")) $("#cardFullscreen").hidden = true;
+    });
 
     $("#shareCopyText").addEventListener("click", function () {
       var text = buildPostText();

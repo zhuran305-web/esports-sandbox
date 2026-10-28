@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { collectTeamLogos, stripTeamLogos } from "./lib.mjs";
 
 var ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -50,7 +51,9 @@ var out = {
     futureDays: FUTURE_DAYS,
     generatedAt: new Date(now).toISOString()
   },
-  matches: matches
+  // 只带窗口内队伍的队标（全量 902 支，窗口内约 400 支）
+  teams: collectTeamLogos(matches),
+  matches: stripTeamLogos(matches)
 };
 
 var body = JSON.stringify(out);

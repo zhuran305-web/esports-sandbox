@@ -614,6 +614,28 @@ input { font-family: inherit; }
   text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
 }
 
+/* 队标：透明 PNG 放深色底上；加载失败（403/断网/队名对不上）降级为文字徽标 */
+.avatar,
+.pick-avatar { position: relative; }
+.avatar-img {
+  position: absolute;
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
+  object-fit: contain;
+  display: block;
+}
+.avatar.has-logo,
+.pick-avatar.has-logo {
+  padding: 0;
+  background: rgba(255, 255, 255, .06);
+}
+.avatar-fallback { display: none; }
+.no-logo .avatar-img { display: none; }
+.no-logo .avatar-fallback { display: grid; place-items: center; }
+.no-logo.avatar,
+.no-logo.pick-avatar { background: linear-gradient(145deg, #2b3242, #1a1f2b); }
+
 .team-main { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
 .team-name { font-size: 14.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .team-sub { font-size: 11px; color: var(--text-faint); display: flex; align-items: center; gap: 6px; }

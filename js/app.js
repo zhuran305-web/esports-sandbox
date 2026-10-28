@@ -10,6 +10,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /* ============================== 配置 ============================== */
   var DATA = matchesData;
   var MATCHES = (DATA.matches || []).slice();
+  // 队标：数据里只存相对路径（队名 → 路径），换自建 OSS 镜像时只改这一行
+  var TEAM_LOGOS = DATA.teams || {};
+  var LOGO_BASE = "https://cdn.pandascore.co/images/team/image/";
   var matchIndex = new Map();
   rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";
@@ -25,7 +28,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2"
   ];
-  var APP_VERSION = "1.1.35";
+  var APP_VERSION = "1.2.0";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
     try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }
@@ -394,6 +397,48 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (first.length >= 3 && first.length <= 4) return first.toUpperCase();
     if (cleaned.length <= 4) return cleaned.toUpperCase();
     return cleaned.slice(0, 4).toUpperCase();
+  }
+
+  function logoUrl(team) {
+    if (!team) return "";
+    var path = TEAM_LOGOS[team.name] || team.logo || "";
+    if (!path) return "";
+    return /^https?:\/\//i.test(path) ? path : LOGO_BASE + path;
+  }
+
+  // 有队标就画图（失败自动降级成文字徽标，见全局 error 监听），没有就沿用首字母色块
+  function avatarHTML(team) {
+    var url = logoUrl(team);
+    if (!url) {
+      return '<span class="avatar" style="' + avatarStyle(team.name) + '">' + esc(avatarText(team)) + "</span>";
+    }
+    return '<span class="avatar has-logo">' +
+      '<img class="avatar-img" src="' + esc(url) + '" alt="" loading="lazy" decoding="async">' +
+      '<span class="avatar-fallback">' + esc(avatarText(team)) + "</span></span>";
+  }
+
+  // 队标加载失败（403/断网/队名对不上）→ 去掉图片，露出文字徽标
+  document.addEventListener("error", function (e) {
+    var el = e.target;
+    if (el && el.tagName === "IMG" && el.classList.contains("avatar-img") && el.parentNode) {
+      el.parentNode.classList.add("no-logo");
+    }
+  }, true);
+
+  function paintAvatar(el, team) {
+    if (!el) return;
+    var url = logoUrl(team);
+    el.classList.remove("no-logo");
+    if (!url) {
+      el.classList.remove("has-logo");
+      el.setAttribute("style", avatarStyle(team.name));
+      el.textContent = avatarText(team);
+      return;
+    }
+    el.classList.add("has-logo");
+    el.removeAttribute("style");
+    el.innerHTML = '<img class="avatar-img" src="' + esc(url) + '" alt="" loading="lazy" decoding="async">' +
+      '<span class="avatar-fallback">' + esc(avatarText(team)) + "</span>";
   }
 
   // 已截止比赛显示绝对日期，并提示距离开赛还有多久
@@ -1088,7 +1133,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       }
 
       var inner =
-        '<span class="avatar" style="' + avatarStyle(team.name) + '">' + esc(avatarText(team)) + "</span>" +
+        avatarHTML(team) +
         '<span class="team-main"><span class="team-name">' + esc(team.name) + '</span><span class="team-sub">' + sub + "</span></span>" +
         right;
 
@@ -1532,10 +1577,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       m.tournament + " · " + m.stage + " · " + m.format + " · " + fmtTime(m.startAt);
     $("#pickNameA").textContent = m.teamA.name;
     $("#pickNameB").textContent = m.teamB.name;
-    $("#pickAvatarA").textContent = avatarText(m.teamA);
-    $("#pickAvatarB").textContent = avatarText(m.teamB);
-    $("#pickAvatarA").setAttribute("style", avatarStyle(m.teamA.name));
-    $("#pickAvatarB").setAttribute("style", avatarStyle(m.teamB.name));
+    paintAvatar($("#pickAvatarA"), m.teamA);
+    paintAvatar($("#pickAvatarB"), m.teamB);
 
     $("#sheetBalance").textContent = fmtNum(state.bankroll);
     if (state.bankroll < 0) $("#sheetBalance").textContent = "-" + fmtNum(Math.abs(state.bankroll));
@@ -2926,7 +2969,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   /* ============================== 运行时数据 ============================== */
-  function applySnapshot(matches, meta) {
+  function applySnapshot(matches, meta, teams) {
     if (!matches || !matches.length) return;
 
     var map = {};
@@ -2941,6 +2984,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     MATCHES.sort(function (a, b) {
       return new Date(a.startAt) - new Date(b.startAt);
     });
+    // 队标映射只增不减：老队伍退场后保留，成本只有几十 KB 内存
+    if (teams) {
+      Object.keys(teams).forEach(function (name) { TEAM_LOGOS[name] = teams[name]; });
+    }
     rebuildMatchIndex();
     if (meta && meta.updatedAt) DATA_UPDATED_AT = meta.updatedAt;
     runtimeRefreshed = true;
@@ -2985,7 +3032,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var cached = await loadCachedSnapshot();
       if (cached && cached.meta && cached.meta.updatedAt &&
           cached.meta.updatedAt !== DATA_UPDATED_AT) {
-        applySnapshot(cached.matches, cached.meta);
+        applySnapshot(cached.matches, cached.meta, cached.teams);
       }
 
       // 宿主明确拒绝服务端 API 时，24 小时内不再自动重试，避免每次启动弹原生错误框
@@ -3007,7 +3054,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         pollBackoffUntil = 0;
         await storageSet(NET_BLOCK_KEY, { at: 0, version: APP_VERSION });
         if (remote.meta.updatedAt && remote.meta.updatedAt !== DATA_UPDATED_AT) {
-          applySnapshot(remote.matches, remote.meta);
+          applySnapshot(remote.matches, remote.meta, remote.teams);
           if (manual) toast("赛程已更新");
         } else if (manual) {
           toast("赛程已是最新");

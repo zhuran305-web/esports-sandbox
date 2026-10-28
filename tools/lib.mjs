@@ -31,15 +31,43 @@ export function shortName(name) {
 export function normalizeTeam(team) {
   if (!team) return null;
   if (typeof team === "string") {
-    return { name: team, short: shortName(team), region: "" };
+    return { name: team, short: shortName(team), region: "", logo: "" };
   }
   var name = String(team.name || "").trim();
   if (!name) return null;
   return {
     name: name,
     short: String(team.short || "").trim() || shortName(name),
-    region: String(team.region || "").trim()
+    region: String(team.region || "").trim(),
+    logo: String(team.logo || "").trim()
   };
+}
+
+// 队标单独存「队名 → 路径」映射，不内联进每场比赛：3780 场内联约 +300KiB，映射只要 ~47KiB
+export function collectTeamLogos(matches) {
+  var map = {};
+  (matches || []).forEach(function (m) {
+    ["teamA", "teamB"].forEach(function (side) {
+      var t = m && m[side];
+      if (t && t.name && t.logo) map[t.name] = t.logo;
+    });
+  });
+  return map;
+}
+
+export function stripTeamLogos(matches) {
+  return (matches || []).map(function (m) {
+    if (!m) return m;
+    var copy = Object.assign({}, m);
+    ["teamA", "teamB"].forEach(function (side) {
+      if (copy[side] && copy[side].logo) {
+        var t = Object.assign({}, copy[side]);
+        delete t.logo;
+        copy[side] = t;
+      }
+    });
+    return copy;
+  });
 }
 
 export function normalizeMatch(raw, source) {
@@ -161,6 +189,12 @@ export function mergeMatches(existing, incoming, options) {
       merged.id = cur.id || m.id || makeId(m, usedIds);
       merged.note = m.note || cur.note || "";
       merged.source = newP >= curP ? m.source : cur.source;
+      // 手工条目没有队标：沿用已有条目的，避免覆盖时丢图
+      ["teamA", "teamB"].forEach(function (side) {
+        if (merged[side] && cur[side] && !merged[side].logo && cur[side].logo) {
+          merged[side] = Object.assign({}, merged[side], { logo: cur[side].logo });
+        }
+      });
       map.set(key, merged);
       updated++;
     }

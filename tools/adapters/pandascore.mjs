@@ -12,6 +12,14 @@ import { normalizeMatch } from "../lib.mjs";
 
 var API = "https://api.pandascore.co";
 var RATE_LIMIT_MS = 1200;
+// 队标 CDN：只存相对路径，客户端拼 LOGO_BASE（换成自建 OSS 镜像时客户端无需改动）
+var LOGO_PREFIX = "https://cdn.pandascore.co/images/team/image/";
+
+function logoPath(url) {
+  var u = String(url || "").trim();
+  if (!u) return "";
+  return u.indexOf(LOGO_PREFIX) === 0 ? u.slice(LOGO_PREFIX.length) : u;
+}
 
 // 游戏 id -> PandaScore 路由 slug（注意：路由别名与 /videogames 的 slug 不同）
 var SLUGS = {
@@ -76,8 +84,8 @@ function toRaw(item, game) {
     startAt: startAt,
     bestof: item.number_of_games || 0,
     tier: item.tournament && item.tournament.tier ? String(item.tournament.tier).toLowerCase() : "",
-    teamA: { name: op1.name, short: op1.acronym || "", region: "" },
-    teamB: { name: op2.name, short: op2.acronym || "", region: "" },
+    teamA: { name: op1.name, short: op1.acronym || "", region: "", logo: logoPath(op1.image_url) },
+    teamB: { name: op2.name, short: op2.acronym || "", region: "", logo: logoPath(op2.image_url) },
     status: result ? "finished" : undefined,
     result: result,
     note: ""

@@ -628,7 +628,8 @@ input { font-family: inherit; }
 .avatar.has-logo,
 .pick-avatar.has-logo {
   padding: 0;
-  background: rgba(255, 255, 255, .06);
+  /* 队标多为 lightmode/allmode（深色线条给浅底用），深色底上会糊成黑块，用浅色底板 */
+  background: #eef2f8;
 }
 .avatar-fallback { display: none; }
 .no-logo .avatar-img { display: none; }

@@ -12,7 +12,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var MATCHES = (DATA.matches || []).slice();
   // 队标：数据里只存相对路径（队名 → 路径），换自建 OSS 镜像时只改这一行
   var TEAM_LOGOS = DATA.teams || {};
-  var LOGO_BASE = "https://cdn.pandascore.co/images/team/image/";
+  var LOGO_BASE = "https://cdn-api.pandascore.co/images/team/image/";
   var matchIndex = new Map();
   rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";

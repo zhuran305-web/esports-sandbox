@@ -13,12 +13,19 @@ import { normalizeMatch } from "../lib.mjs";
 var API = "https://api.pandascore.co";
 var RATE_LIMIT_MS = 1200;
 // 队标 CDN：只存相对路径，客户端拼 LOGO_BASE（换成自建 OSS 镜像时客户端无需改动）
-var LOGO_PREFIX = "https://cdn.pandascore.co/images/team/image/";
+// API 现在返回 cdn-api 域名，老数据/文档里是 cdn，两种前缀都剥掉
+var LOGO_PREFIXES = [
+  "https://cdn-api.pandascore.co/images/team/image/",
+  "https://cdn.pandascore.co/images/team/image/"
+];
 
 function logoPath(url) {
   var u = String(url || "").trim();
   if (!u) return "";
-  return u.indexOf(LOGO_PREFIX) === 0 ? u.slice(LOGO_PREFIX.length) : u;
+  for (var i = 0; i < LOGO_PREFIXES.length; i++) {
+    if (u.indexOf(LOGO_PREFIXES[i]) === 0) return u.slice(LOGO_PREFIXES[i].length);
+  }
+  return u;
 }
 
 // 游戏 id -> PandaScore 路由 slug（注意：路由别名与 /videogames 的 slug 不同）

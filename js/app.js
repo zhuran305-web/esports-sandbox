@@ -2495,7 +2495,20 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var displayName = (hb && hb.nick) || localNick || entryNick || "盒友";
       $("#accountName").textContent = displayName;
       $("#accountId").textContent = "ID: " + ((hb && hb.appUserId) || (entry && entry.uid) || "--");
-      $("#accountAvatar").textContent = displayName.slice(0, 1) || "盒";
+      // 头像：换票缓存里有 URL 就叠图（首字兜底，加载失败由全局 error 监听摘图），
+      // 没有就维持首字母色块——OpenAPI 的 avatar 字段是否真有值，看诊断行的「+头像」
+      var av = $("#accountAvatar");
+      var letter = displayName.slice(0, 1) || "盒";
+      if (hb && hb.avatar) {
+        av.classList.remove("no-logo");
+        var img = av.querySelector("img.avatar-img");
+        if (!img || img.getAttribute("src") !== hb.avatar) {
+          av.innerHTML = esc(letter) +
+            '<img class="avatar-img" src="' + esc(hb.avatar) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">';
+        }
+      } else {
+        av.textContent = letter;
+      }
       $("#accountBadge").textContent = (hb && hb.nick) ? "已同步黑盒资料" : (entry ? "已绑定身份" : "游客");
       $("#accountHint").textContent = (hb && hb.nick)
         ? "昵称头像来自小黑盒授权资料（已同步，重复点击不会再次换票）"
@@ -2509,7 +2522,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       // 诊断行：宿主环境快照（版本/模式/系统），用于各端排障
       $("#settingsDiag").textContent = getDiagnostics() +
         (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") +
-          (hb.via ? "(" + hb.via + ")" : "(旧缓存，点同步刷新)") : "");
+          (hb.via ? "(" + hb.via + ")" : "(旧缓存，点同步刷新)") +
+          (hb.avatar ? "+头像" : "-无头像") : "");
     }).catch(function () {
       $("#accountBadge").textContent = "游客";
     });

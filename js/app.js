@@ -3168,7 +3168,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       pendingDuelLaunch = {
         d: extra.d, m: extra.m, p: extra.p,
         s: Math.min(Math.round(extra.s), 1e12),
-        n: extra.n.trim().slice(0, 24)
+        n: extra.n.trim().slice(0, 24),
+        r: typeof extra.r === "string" && /^[A-Za-z0-9]{2,8}$/.test(extra.r) ? extra.r : ""
       };
     }
   }
@@ -3268,7 +3269,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
    *   d:1 约战（赛前，发起方带选择/投入/昵称）→ 对方应战下注 → d:2 战报（赛后，应战方回传）
    *   → 发起方据此补全记录。应战方在应战时就有完整记录。
    * 记录只存本机：cloud.storage 是每用户 16KB 配额且他人不可读，同步对决列表无意义。
-   * extra 上限 128 字节（MessagePack 编码后），实测 {v,d,m,p,s,n} 约 54~100B，昵称截断到 12 字符。
+   * extra 上限 128 字节（MessagePack 编码后），带随机码实测约 60~110B（超长 id+8 字昵称最坏 109B），
+   * 昵称截断到 12 字符。
    */
   var DUELS_KEY = "esports_sandbox_duels_v1";
   var DUEL_INVITE_KEY = "esports_sandbox_duel_invite";
@@ -3292,8 +3294,21 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     storageSet(DUELS_KEY, DUELS.slice(0, DUEL_MAX)).catch(function () { /* 存储失败不阻塞对局 */ });
   }
 
-  function duelId(matchId, role, oppNick) {
-    return "duel-" + String(matchId + "|" + role + "|" + oppNick).replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80);
+  function duelId(matchId, role, oppKey) {
+    return "duel-" + String(matchId + "|" + role + "|" + oppKey).replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80);
+  }
+
+  // 对手身份只有昵称（无账号体系），昵称撞车（尤其默认「盒友」）会让记录互相覆盖；
+  // 链接里带 4 字符随机码掺进 id：同一个人重复发送=同码=去重，不同人=异码=各自成账
+  function duelCode() {
+    // 非加密用途（仅防昵称撞车的去重码）；强随机源优先，旧 WebView 回退时间戳
+    try {
+      var buf = new Uint32Array(1);
+      crypto.getRandomValues(buf);
+      return (buf[0] % 1679616).toString(36).padStart(4, "0");
+    } catch (e) {
+      return (Date.now() % 1679616).toString(36).padStart(4, "0");
+    }
   }
 
   function matchLockTime(m) { return new Date(m.startAt).getTime() - 3600000; }
@@ -3324,7 +3339,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     duelNick().then(function (nick) {
       return copyShareLink({
         v: 1, d: 1, m: m.id, p: sheetPick,
-        s: existing.stake, n: nick
+        s: existing.stake, n: nick, r: duelCode()
       });
     }).then(function (err) {
       if (!err) {
@@ -3342,7 +3357,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!m) { toast("约战的比赛不在当前数据范围内"); return; }
     if (statusOf(m) !== "open") { toast("这场比赛已截止，无法应战"); return; }
     if (predictionFor(m.id)) { acceptDuel(ex); return; }
-    duelInvite = { m: ex.m, p: ex.p, s: ex.s, n: ex.n, exp: matchLockTime(m) };
+    duelInvite = { m: ex.m, p: ex.p, s: ex.s, n: ex.n, r: ex.r || "", exp: matchLockTime(m) };
     storageSet(DUEL_INVITE_KEY, duelInvite).catch(function () {});
     renderDuelBanner();
   }
@@ -3354,12 +3369,13 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var my = predictionFor(ex.m);
     if (!my) return; // 应战必须以真实下注为准
     var rec = {
-      id: duelId(ex.m, "challenger", ex.n),
+      id: duelId(ex.m, "challenger", ex.n + (ex.r ? "+" + ex.r : "")),
       matchId: ex.m,
       role: "challenger",
       oppNick: ex.n, oppPick: ex.p, oppPickName: pickName(m, ex.p), oppStake: ex.s,
       myPick: my.pick, myPickName: pickName(m, my.pick), myStake: my.stake,
       label: matchLabel(m), startAt: m.startAt, createdAt: Date.now(),
+      rc: duelCode(), // 应战方随机码：回执/战报携带，发起方据此建账防同昵称覆盖
       status: "pending", settledAt: 0, myProfit: 0
     };
     var idx = -1;
@@ -3450,7 +3466,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!m) { toast("战报的比赛不在当前数据范围内"); return; }
     var my = predictionFor(ex.m);
     if (!my) { toast("这场你没有参与竞猜，战报已忽略"); return; }
-    var id = duelId(ex.m, "initiator", ex.n);
+    var id = duelId(ex.m, "initiator", ex.n + (ex.r ? "+" + ex.r : ""));
     var rec = null;
     DUELS.forEach(function (x) { if (x.id === id) rec = x; });
     if (!rec) {
@@ -3459,6 +3475,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         oppNick: ex.n, oppPick: ex.p, oppPickName: pickName(m, ex.p), oppStake: ex.s,
         myPick: my.pick, myPickName: pickName(m, my.pick), myStake: my.stake,
         label: matchLabel(m), startAt: m.startAt, createdAt: Date.now(),
+        rc: duelCode(), // 我方随机码：回战报时携带，对面建账同样防覆盖
         status: "pending", settledAt: 0, myProfit: 0
       };
       DUELS.unshift(rec);
@@ -3509,7 +3526,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   // 赛后再发就是「战报」（纯社交动作）。锁仓后两时点数据一致，发起方侧处理复用同一个入口。
   function sendDuelReport(d) {
     duelNick().then(function (nick) {
-      return copyShareLink({ v: 1, d: 2, m: d.matchId, p: d.myPick, s: d.myStake, n: nick });
+      return copyShareLink({ v: 1, d: 2, m: d.matchId, p: d.myPick, s: d.myStake, n: nick, r: d.rc || duelCode() });
     }).then(function (err) {
       if (!err) {
         toast(d.status === "pending"

@@ -118,6 +118,7 @@ function mockList(board, limit) {
     return {
       uid: e.uid,
       nick: e.nick,
+      avatar: typeof extra.avatar === "string" ? extra.avatar : "",
       first: typeof extra.first === "number" ? extra.first : d.first,
       second: typeof extra.second === "number" ? extra.second : d.second,
       isMe: e.uid === "me"
@@ -138,7 +139,7 @@ function mockTempleList(limit) {
   var list = Object.keys(data.temple).map(function (uid) {
     var e = data.temple[uid];
     var d = decodeTemple(e.score);
-    return { uid: e.uid, nick: e.nick, gods: d.gods, bankrupts: d.bankrupts, score: e.score, rank: 0, isMe: e.uid === "me" };
+    return { uid: e.uid, nick: e.nick, avatar: e.extra && e.extra.avatar || "", quote: e.extra && e.extra.quote || "", gods: d.gods, bankrupts: d.bankrupts, score: e.score, rank: 0, isMe: e.uid === "me" };
   });
   list.sort(function (a, b) { return b.score - a.score; });
   list.forEach(function (e, i) { e.rank = i + 1; });
@@ -161,11 +162,12 @@ var myUid = null;
  * 1.1.17+ 真实昵称头像由授权换票获得（app.js#syncHbProfile，须用户手势）。
  */
 
-async function realSubmit(board, first, second, displayNick) {
+async function realSubmit(board, first, second, displayNick, avatar) {
   var sdk = getSDK();
   if (!sdk || !sdk.cloud) return;
   var extra = { first: first, second: second };
   if (displayNick) extra.nick = displayNick; // 自选/黑盒昵称（跨设备经 extra.nick 读回）
+  if (avatar) extra.avatar = String(avatar).slice(0, 300); // 公开展示头像（extra 上限 2048 字节，实测余量充足）
   await sdk.cloud.leaderboard.submit({
     key: BOARD_KEYS[board],
     score: encode(first, second),
@@ -180,17 +182,19 @@ async function realSubmit(board, first, second, displayNick) {
  * 本地 0 胜 0 负（新用户/清除本地数据后榜上还有旧条目）同样要能刷昵称；
  * 榜上无条目且无分数时不新建（win 榜条目由 registerIdentity 保证，败榜输过才出现）。
  */
-async function submitBoardWithNick(board, first, second, displayNick) {
+async function submitBoardWithNick(board, first, second, displayNick, avatar) {
   var cur = await realMy(board).catch(function () { return null; });
   var curFirst = cur ? cur.first : 0;
   var curSecond = cur ? cur.second : 0;
   var curNick = (cur && cur.extra && cur.extra.nick) || "";
   if (first > curFirst || (first === curFirst && second > curSecond)) {
-    await realSubmit(board, first, second, displayNick);
+    await realSubmit(board, first, second, displayNick, avatar);
     return;
   }
   if (cur && displayNick && displayNick !== curNick) {
-    await realSubmit(board, curFirst, curSecond + 1, displayNick); // 仅刷昵称，1 沙粒触发 only-if-better
+    // 仅刷昵称/头像，1 沙粒触发 only-if-better。avatar 语义：undefined=沿用榜上旧值，
+    // 显式传空串=清除（如清除本地数据后不想再展示头像）
+    await realSubmit(board, curFirst, curSecond + 1, displayNick, avatar !== undefined ? avatar : (cur.extra && cur.extra.avatar));
   }
 }
 
@@ -206,6 +210,7 @@ async function realList(board, limit) {
       return {
         uid: e.appUserId,
         nick: extra.nick || "盒友",
+        avatar: typeof extra.avatar === "string" ? extra.avatar : "",
         // 展示值优先读 extra（score 里的沙粒数已封顶，extra 存真实值；老条目两者一致）
         first: typeof extra.first === "number" ? extra.first : d.first,
         second: typeof extra.second === "number" ? extra.second : d.second,
@@ -229,6 +234,7 @@ async function realMy(board) {
   return {
     uid: e.appUserId,
     nick: extra.nick || "我",
+    avatar: typeof extra.avatar === "string" ? extra.avatar : "",
     extra: extra,
     first: typeof extra.first === "number" ? extra.first : d.first,
     second: typeof extra.second === "number" ? extra.second : d.second,
@@ -248,11 +254,12 @@ async function realTempleMy() {
 }
 
 /** 魔神殿总榜提交：仅当（封神, 破产）字典序高于榜上时落库；昵称仅随次数变化刷新。 */
-async function realSubmitTemple(gods, bankrupts, displayNick) {
+async function realSubmitTemple(gods, bankrupts, displayNick, quote) {
   var sdk = getSDK();
   if (!sdk || !sdk.cloud) return;
   var extra = { gods: gods, bankrupts: bankrupts };
   if (displayNick) extra.nick = displayNick;
+  if (quote) extra.quote = String(quote).slice(0, 48); // 转生感言（公开展示，extra 上限 2048 字节）
   await sdk.cloud.leaderboard.submit({
     key: BOARD_KEYS.temple,
     score: encodeTemple(gods, bankrupts),
@@ -269,16 +276,17 @@ export var Cloud = {
     return !isMiniProgram();
   },
 
-  submitStats: async function (stats, displayNick) {
+  submitStats: async function (stats, displayNick, avatar) {
     if (!isMiniProgram()) {
       var mockNick = displayNick || "我";
-      if (stats.wins > 0 || displayNick) mockUpsert("win", { uid: "me", nick: mockNick, score: encode(stats.wins, Math.max(0, stats.winProfit)), extra: { first: stats.wins, second: Math.max(0, stats.winProfit) } });
-      if (stats.losses > 0) mockUpsert("lose", { uid: "me", nick: mockNick, score: encode(stats.losses, Math.max(0, stats.loseAmount)), extra: { first: stats.losses, second: Math.max(0, stats.loseAmount) } });
+      var mockAvatar = avatar || "";
+      if (stats.wins > 0 || displayNick) mockUpsert("win", { uid: "me", nick: mockNick, score: encode(stats.wins, Math.max(0, stats.winProfit)), extra: { first: stats.wins, second: Math.max(0, stats.winProfit), avatar: mockAvatar } });
+      if (stats.losses > 0) mockUpsert("lose", { uid: "me", nick: mockNick, score: encode(stats.losses, Math.max(0, stats.loseAmount)), extra: { first: stats.losses, second: Math.max(0, stats.loseAmount), avatar: mockAvatar } });
       return;
     }
     // 0 胜/0 负也带昵称提交：新用户与「清除本地数据」后的用户，榜上旧条目才刷得出昵称
-    if (stats.wins > 0 || displayNick) await submitBoardWithNick("win", stats.wins, Math.max(0, stats.winProfit), displayNick);
-    if (stats.losses > 0 || displayNick) await submitBoardWithNick("lose", stats.losses, Math.max(0, stats.loseAmount), displayNick);
+    if (stats.wins > 0 || displayNick) await submitBoardWithNick("win", stats.wins, Math.max(0, stats.winProfit), displayNick, avatar);
+    if (stats.losses > 0 || displayNick) await submitBoardWithNick("lose", stats.losses, Math.max(0, stats.loseAmount), displayNick, avatar);
   },
 
   getBoard: async function (board, limit) {
@@ -316,18 +324,18 @@ export var Cloud = {
   CAP: AMOUNT_CAP,
 
   /** 魔神殿总榜提交：封神/破产次数（字典序编码，见 encodeTemple）。0/0 不提交。 */
-  submitHonor: async function (gods, bankrupts, displayNick) {
+  submitHonor: async function (gods, bankrupts, displayNick, quote) {
     var g = Math.max(0, Math.round(gods || 0));
     var b = Math.max(0, Math.round(bankrupts || 0));
     if (g <= 0 && b <= 0) return;
     if (!isMiniProgram()) {
-      mockUpsert("temple", { uid: "me", nick: displayNick || "我", score: encodeTemple(g, b), extra: { gods: g, bankrupts: b, nick: displayNick || "我" } });
+      mockUpsert("temple", { uid: "me", nick: displayNick || "我", score: encodeTemple(g, b), extra: { gods: g, bankrupts: b, nick: displayNick || "我", quote: quote || "" } });
       return;
     }
     try {
       var cur = await realTempleMy();
       var next = encodeTemple(g, b);
-      if (!cur || next > cur.scoreRaw) await realSubmitTemple(g, b, displayNick);
+      if (!cur || next > cur.scoreRaw) await realSubmitTemple(g, b, displayNick, quote);
     } catch (e) { /* 未登录或异常静默，下次 syncBoards 重试 */ }
   },
 
@@ -343,7 +351,13 @@ export var Cloud = {
         entries: entries.map(function (e) {
           var d = decodeTemple(e.score);
           var extra = e.extra || {};
-          return { uid: e.appUserId, nick: extra.nick || "赌徒", gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, isMe: myUid ? e.appUserId === myUid : false };
+          return {
+            uid: e.appUserId,
+            nick: extra.nick || "赌徒",
+            avatar: typeof extra.avatar === "string" ? extra.avatar : "",
+            quote: typeof extra.quote === "string" ? extra.quote : "",
+            gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, isMe: myUid ? e.appUserId === myUid : false
+          };
         })
       };
     } catch (e) {

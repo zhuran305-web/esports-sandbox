@@ -193,6 +193,15 @@
           <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </button>
 
+        <button class="duel-entry" id="versusShareBtn" type="button">
+          <span class="duel-entry-icon" aria-hidden="true">📊</span>
+          <span class="duel-entry-main">
+            <b>晒战绩</b>
+            <span>生成对比链接 · 好友点开直接比</span>
+          </span>
+          <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+
         <div class="section-head">
           <h2>竞猜记录</h2>
           <span id="historyCount" class="section-sub">0 条</span>
@@ -207,6 +216,15 @@
         <div id="duelSentBox" hidden></div>
         <div class="duel-summary" id="duelSummary"></div>
         <div id="duelList" class="duel-list"></div>
+      </section>
+
+      <!-- 战绩对比（链接打开） -->
+      <section class="view" id="view-versus" hidden>
+        <h1 class="page-title">战绩对比</h1>
+        <p class="duel-page-sub" id="versusSub"></p>
+        <div class="versus-head" id="versusHead"></div>
+        <div class="versus-grid" id="versusGrid"></div>
+        <p class="duel-page-sub">不服？竞猜面板「约战好友」，正面刚一场</p>
       </section>
 
       <!-- 排行榜 -->
@@ -663,6 +681,9 @@
         <div><span>沙粒</span><b>重置为 10,000</b></div>
         <div><span>荣誉</span><b id="cerFactHonor">封神次数 +1，载入封神榜</b></div>
         <div><span>战绩</span><b>累计战绩永久保留</b></div>
+      </div>
+      <div class="cer-quote">
+        <input id="cerQuote" type="text" maxlength="24" placeholder="留一句感言，载入魔神殿（可选）" aria-label="魔神殿感言">
       </div>
       <button class="cer-cta" id="cerCta" type="button">立即封神</button>
       <p class="cer-gate" id="cerGate"></p>

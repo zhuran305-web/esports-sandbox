@@ -2313,3 +2313,91 @@ html[data-theme="light"] .duel-badge.drawn { color: #a8720a; background: rgba(20
 .duel-sent-label { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .duel-sent-label i { font-style: normal; margin-left: 8px; font-size: 11px; color: var(--text-faint); }
 html[data-theme="light"] .duel-sent-row { background: rgba(24, 32, 45, .03); }
+
+/* 人物头像（榜单/对决/对比页） */
+.person-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1a0e04;
+  background: linear-gradient(145deg, #ffd08a, var(--accent-strong));
+}
+.person-avatar .avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.board-row .person-avatar { margin-right: 2px; }
+.duel-card-head .person-avatar { margin-right: 2px; }
+
+/* 对决卡底部操作区（再战/战报并排） */
+.duel-foot-acts { margin-left: auto; display: flex; gap: 8px; }
+.duel-foot-acts .duel-report-btn { margin-left: 0; }
+
+/* 魔神殿感言 */
+.temple-quote { color: var(--text-dim); font-style: normal; }
+
+/* 战绩对比页 */
+.versus-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 16px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, .03);
+}
+.versus-side { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.versus-side .person-avatar { width: 52px; height: 52px; font-size: 22px; }
+.versus-side b { font-size: 14px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.versus-side span { font-size: 11px; color: var(--text-faint); }
+.versus-vs { font-size: 20px; font-weight: 900; color: var(--accent-strong); }
+.versus-grid { display: flex; flex-direction: column; gap: 8px; }
+.versus-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, .03);
+}
+.versus-val { font-size: 15px; font-weight: 800; color: var(--text-dim); }
+.versus-val.mine { text-align: right; }
+.versus-val.theirs { text-align: left; }
+.versus-val.win { color: #35d39a; }
+.versus-label { font-size: 12px; color: var(--text-faint); }
+html[data-theme="light"] .versus-head,
+html[data-theme="light"] .versus-row { background: rgba(24, 32, 45, .03); }
+
+/* 转生仪式感言输入 */
+.cer-quote { margin: 14px 24px 0; }
+.cer-quote input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .06);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+html[data-theme="light"] .cer-quote input {
+  border-color: var(--border);
+  background: rgba(24, 32, 45, .04);
+  color: var(--text);
+}

@@ -445,6 +445,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       '<span class="avatar-fallback">' + esc(avatarText(team)) + "</span>";
   }
 
+  // 人物头像（榜单/对决/对比页）：有头像叠图（加载失败由全局 error 监听回退首字），无头像首字色块
+  function personAvatar(nick, avatar) {
+    var letter = String(nick || "盒").slice(0, 1) || "盒";
+    if (!avatar) return '<span class="person-avatar">' + esc(letter) + "</span>";
+    return '<span class="person-avatar has-photo">' +
+      '<img class="avatar-img" src="' + esc(avatar) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' +
+      '<span class="avatar-fallback">' + esc(letter) + "</span></span>";
+  }
+
   // 已截止比赛显示绝对日期，并提示距离开赛还有多久
   function fmtLockedTime(m) {
     var d = new Date(m.startAt);
@@ -1204,25 +1213,29 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     return stats;
   }
 
-  async function syncBoards(overrideNick) {
+  async function syncBoards(overrideNick, honorQuote) {
     var s = recordStats();
     try {
       // 昵称链：调用方显式指定（如刚同步的黑盒昵称）→ 黑盒资料缓存 → 自选展示昵称
       var nick = overrideNick;
+      var avatar = "";
       if (!nick) {
         var hb = await loadHbProfile().catch(function () { return null; });
         nick = (hb && hb.nick) || "";
+        avatar = (hb && hb.avatar) || "";
       }
       if (!nick) nick = await loadNick();
+      myNickCache = String(nick || "").slice(0, 12);
+      if (avatar) myAvatarCache = avatar;
       await Cloud.submitStats({
         wins: s.wins,
         winProfit: s.winProfit,
         losses: s.losses,
         loseAmount: s.loseAmount
-      }, nick);
-      // 魔神殿：有封神/破产记录才提交（0/0 用户不上榜）
+      }, nick, avatar);
+      // 魔神殿：有封神/破产记录才提交（0/0 用户不上榜）；honorQuote = 转生仪式感言
       if (state.gods > 0 || state.bankrupts > 0) {
-        await Cloud.submitHonor(state.gods, state.bankrupts, nick);
+        await Cloud.submitHonor(state.gods, state.bankrupts, nick, honorQuote);
       }
     } catch (e) { /* 未登录或网络异常时静默失败 */ }
   }
@@ -1293,6 +1306,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!ceremonyType) return;
     if (!canCeremony()) { toast("仍有未结算竞猜，先等赛果或撤回后再举行仪式"); return; }
     var god = ceremonyType === "god";
+    var quote = ($("#cerQuote").value || "").trim().slice(0, 24); // 感言随（封神,破产）次数提交，次数变化必过 only-if-better
+    $("#cerQuote").value = "";
     if (god) state.gods += 1; else state.bankrupts += 1;
     state.bankroll = START_BALANCE;
     state.lastCeremonyAt = Date.now();
@@ -1301,12 +1316,29 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     closeCeremony();
     renderAll();
     renderProfile();
-    syncBoards();
+    syncBoards(undefined, quote);
     vibrate("medium");
-    toast(god ? "封神！沙粒重置 10,000，名字已载入封神榜" : "已宣布破产：负债清零，沙粒重置 10,000");
+    toast((god ? "封神！" : "已宣布破产：") + "沙粒重置 10,000" + (quote ? "，感言已载入魔神殿" : ""));
   }
 
   /* ============================== 渲染：我的 ============================== */
+  // 战绩摘要（对比页/晒战绩链接共用）：累计口径与榜单提交一致
+  function recordSummary() {
+    var settled = settledInOrder();
+    var wins = 0, profit = 0;
+    settled.forEach(function (p) {
+      profit += p.profit || 0;
+      if (p.won) wins++;
+    });
+    return {
+      settled: settled.length,
+      wins: wins,
+      losses: settled.length - wins,
+      profit: profit,
+      hitRate: settled.length ? Math.round((wins / settled.length) * 100) + "%" : "--"
+    };
+  }
+
   function renderProfile() {
     var settled = settledInOrder();
     var wins = 0, profit = 0, staked = 0, payout = 0;
@@ -1830,6 +1862,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       return (
         '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
           '<span class="board-rank">' + (e.rank <= 3 ? ["🥇", "🥈", "🥉"][e.rank - 1] : e.rank) + "</span>" +
+          personAvatar(nick, e.avatar) +
           '<span class="board-nick">' + esc(nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
           '<span class="board-detail">' +
             '<span class="board-first ' + (isWin ? "won" : "lost") + '">' + e.first + " 场</span>" +
@@ -1908,13 +1941,54 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var sub = godTab
         ? (e.bankrupts > 0 ? "破产 " + e.bankrupts + " 次" : "从未破产")
         : (e.gods > 0 ? "封神 " + e.gods + " 次" : "从未封神");
+      if (e.quote) sub += ' · <span class="temple-quote">「' + esc(e.quote) + "」</span>";
       return (
         '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
           '<span class="board-rank">' + (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1) + "</span>" +
+          personAvatar(e.nick, e.avatar) +
           '<span class="board-nick">' + esc(e.nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
           '<span class="board-detail">' + main + '<span class="board-second">' + sub + "</span></span>" +
         "</div>"
       );
+    }).join("");
+  }
+
+  // 战绩对比页：对方数据来自分享链接（打开时刻快照），我方实时计算
+  async function renderVersus() {
+    if (!versusData) {
+      $("#versusHead").innerHTML = "";
+      $("#versusGrid").innerHTML = "";
+      return;
+    }
+    $("#versusSub").textContent = versusData.n + " 发来战绩挑战 · 数据为各自打开时刻";
+    var my = recordSummary();
+    var nick = await duelNick();
+    var map = await ensureDuelAvatars();
+    $("#versusHead").innerHTML =
+      '<div class="versus-side">' + personAvatar(nick, myAvatarCache) +
+        "<b>" + esc(nick) + "</b><span>我</span></div>" +
+      '<div class="versus-vs">VS</div>' +
+      '<div class="versus-side">' + personAvatar(versusData.n, map[versusData.n]) +
+        "<b>" + esc(versusData.n) + "</b><span>TA</span></div>";
+    var rows = [
+      { label: "已结算", mine: my.settled, theirs: versusData.w + versusData.l, better: "more" },
+      { label: "猜对", mine: my.wins, theirs: versusData.w, better: "more" },
+      { label: "总盈亏", mine: my.profit, theirs: versusData.p, better: "more" },
+      { label: "封神", mine: state.gods || 0, theirs: versusData.g, better: "more" },
+      { label: "破产", mine: state.bankrupts || 0, theirs: versusData.b, better: "less" }
+    ];
+    $("#versusGrid").innerHTML = rows.map(function (r) {
+      var mineWin = false, theirsWin = false;
+      if (r.better === "more") { mineWin = r.mine > r.theirs; theirsWin = r.theirs > r.mine; }
+      else if (r.better === "less") { mineWin = r.mine < r.theirs; theirsWin = r.theirs < r.mine; }
+      var fmt = function (v) {
+        return r.label === "总盈亏" ? (v > 0 ? "+" : "") + fmtNum(v) + " 沙粒" : fmtNum(v);
+      };
+      return '<div class="versus-row">' +
+        '<span class="versus-val mine' + (mineWin ? " win" : "") + '">' + fmt(r.mine) + "</span>" +
+        '<span class="versus-label">' + r.label + "</span>" +
+        '<span class="versus-val theirs' + (theirsWin ? " win" : "") + '">' + fmt(r.theirs) + "</span>" +
+        "</div>";
     }).join("");
   }
 
@@ -1956,7 +2030,49 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     ctx.fillText(String(label || "?").slice(0, 3).toUpperCase(), x + size / 2, y + size / 2 + Math.round(size * 0.13));
   }
 
-  function drawShareCard(pred) {
+  // 人物头像（战报卡）：有图裁圆绘制，无图/未加载回退渐变首字
+  function drawPersonAvatar(ctx, x, y, size, label, img) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    if (img && img.complete && img.naturalWidth > 0) {
+      var s = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+      var w = img.naturalWidth * s, h = img.naturalHeight * s;
+      ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
+    } else {
+      var g = ctx.createLinearGradient(x, y, x + size, y + size);
+      g.addColorStop(0, "#ffd08a");
+      g.addColorStop(1, "#ff8a3d");
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, size, size);
+      ctx.fillStyle = "#1a0e04";
+      ctx.textAlign = "center";
+      ctx.font = "800 " + Math.round(size * 0.4) + "px -apple-system, 'PingFang SC', sans-serif";
+      ctx.fillText(String(label || "盒").slice(0, 1), x + size / 2, y + size / 2 + Math.round(size * 0.14));
+    }
+    ctx.restore();
+  }
+
+  // 战报卡头像预加载：画布要 toDataURL，跨域图必须 CORS，加载失败/超时回退首字
+  function loadShareImage(url) {
+    return new Promise(function (resolve) {
+      if (!url) { resolve(null); return; }
+      var img = new Image();
+      var done = false;
+      var timer = setTimeout(function () {
+        if (!done) { done = true; resolve(null); }
+      }, 2500);
+      img.onload = function () { if (!done) { done = true; clearTimeout(timer); resolve(img); } };
+      img.onerror = function () { if (!done) { done = true; clearTimeout(timer); resolve(null); } };
+      img.crossOrigin = "anonymous";
+      img.referrerPolicy = "no-referrer";
+      img.src = url;
+    });
+  }
+
+  function drawShareCard(pred, avatarImg) {
     var m = matchById(pred.matchId);
     if (!m) return;
     var canvas = $("#shareCanvas");
@@ -2039,14 +2155,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       ctx.fillText(r.score, W - 90, r.y + 4);
     });
 
-    // 我的预测行
+    // 我的预测行（左侧带我的头像，回退首字色块）
+    drawPersonAvatar(ctx, 60, 652, 52, myNickCache || "我", avatarImg);
     ctx.textAlign = "left";
     ctx.fillStyle = "#6c788d";
     ctx.font = "500 26px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText("我的预测", 60, 706);
+    ctx.fillText("我的预测", 128, 690);
     ctx.fillStyle = accent;
     ctx.font = "800 36px -apple-system, 'PingFang SC', sans-serif";
-    ctx.fillText(fitCanvasText(ctx, pickTeam.name + (won ? " ✓" : " ✗"), 420, 36, "800"), 60, 760);
+    ctx.fillText(fitCanvasText(ctx, pickTeam.name + (won ? " ✓" : " ✗"), 380, 36, "800"), 128, 742);
     ctx.textAlign = "right";
     ctx.fillStyle = "#6c788d";
     ctx.font = "500 26px -apple-system, 'PingFang SC', sans-serif";
@@ -2081,8 +2198,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   var sharePred = null;
 
-  function openShare(pred) {
-    drawShareCard(pred);
+  async function openShare(pred) {
+    var img = await loadShareImage(myAvatarCache); // 失败/超时回退首字，不阻塞卡片打开太久
+    drawShareCard(pred, img);
     sharePred = pred;
     $("#shareBackdrop").hidden = false;
   }
@@ -2540,7 +2658,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels";
+    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus";
   }
 
   function initHistory() {
@@ -2622,12 +2740,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var schedList = $("#scheduleList");
       if (schedList) schedList.innerHTML = "";
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
-    // 魔神殿从排行榜进入返回回排行榜；对决记录从「我的」进入返回回「我的」
+    // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页从「我的」侧进入返回回「我的」
     var tabName = name === "temple" ? "board"
-      : name === "duels" ? "profile"
+      : name === "duels" || name === "versus" ? "profile"
         : (isSubPage ? "settings" : name);
     document.querySelectorAll(".tab").forEach(function (t) {
       t.classList.toggle("is-active", t.dataset.view === tabName);
@@ -2637,6 +2755,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "board") { syncBoards(); renderBoard(); }
     if (name === "temple") renderTemple();
     if (name === "duels") renderDuels();
+    if (name === "versus") renderVersus();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -2664,6 +2783,19 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     // 对决：约战按钮（先确认）/ 邀请横幅 / 战报回传 / 已发约战再复制
     $("#duelBtn").addEventListener("click", openDuelConfirm);
     $("#duelEntry").addEventListener("click", function () { switchView("duels"); });
+    $("#versusShareBtn").addEventListener("click", function () {
+      var s = recordSummary();
+      duelNick().then(function (nick) {
+        return copyShareLink({
+          v: 1, c: 1, n: nick,
+          w: s.wins, l: s.losses, p: s.profit,
+          g: state.gods || 0, b: state.bankrupts || 0
+        });
+      }).then(function (err) {
+        if (!err) toast("对比链接已复制 · 发给好友即可开比");
+        else toast("复制链接失败，当前端不支持");
+      });
+    });
     $("#duelDialogCopy").addEventListener("click", duelDialogCopyAction);
     $("#duelDialogDismiss").addEventListener("click", closeDuelDialog);
     $("#duelDialogClose").addEventListener("click", closeDuelDialog);
@@ -2694,10 +2826,17 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
     $("#duelList").addEventListener("click", function (e) {
       var btn = e.target.closest("button[data-duel-report]");
-      if (!btn) return;
-      var d = null;
-      DUELS.forEach(function (x) { if (x.id === btn.dataset.duelReport) d = x; });
-      if (d) sendDuelReport(d);
+      if (btn) {
+        var d = null;
+        DUELS.forEach(function (x) { if (x.id === btn.dataset.duelReport) d = x; });
+        if (d) sendDuelReport(d);
+        return;
+      }
+      var rm = e.target.closest("button[data-duel-rematch]");
+      if (rm) {
+        switchView("matches");
+        toast("选一场下注，再点「约战好友」向 " + rm.dataset.duelRematch + " 复仇");
+      }
     });
 
     $("#historyList").addEventListener("click", function (e) {
@@ -3078,6 +3217,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!$("#view-schedule").hidden) renderSchedule();
     if (!$("#view-board").hidden) renderBoard();
     resolveDeepLink();
+    resolveVersusLink();
 
     if (events.length) {
       syncBoards();
@@ -3186,9 +3326,25 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var pendingDeepLink = "";
   var runtimeRefreshed = false;
 
+  function clampStat(v) {
+    return typeof v === "number" && isFinite(v) && v >= 0 ? Math.min(Math.round(v), 1e9) : 0;
+  }
+
   function readLaunchExtra() {
     var extra = getLaunchExtra();
     if (!extra || typeof extra !== "object" || Array.isArray(extra) || extra.v !== 1) return;
+    // 战绩对比链接（c:1）：不依赖比赛数据，引导结束后直接进对比页
+    if (extra.c === 1 && typeof extra.n === "string" && extra.n.trim()) {
+      pendingVersusLaunch = {
+        n: extra.n.trim().slice(0, 12),
+        w: clampStat(extra.w),
+        l: clampStat(extra.l),
+        p: typeof extra.p === "number" && isFinite(extra.p) ? Math.max(-1e12, Math.min(1e12, Math.round(extra.p))) : 0,
+        g: clampStat(extra.g),
+        b: clampStat(extra.b)
+      };
+      return;
+    }
     if (typeof extra.m !== "string" || !extra.m) return;
     pendingDeepLink = extra.m;
     // 对决链接：d:1 约战 / d:2 战报，参数合法性在接收端逐项校验
@@ -3280,6 +3436,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     }
   }
 
+  // 战绩对比链接：不依赖比赛数据，引导结束后直接进对比页
+  function resolveVersusLink() {
+    if (!pendingVersusLaunch) return;
+    if (!$("#onboardBackdrop").hidden) return; // 新手引导进行中，等下一次调用
+    versusData = pendingVersusLaunch;
+    pendingVersusLaunch = null;
+    switchView("versus");
+  }
+
   /** 登录态变化/回前台：刷新账号展示与榜单高亮（数据仍只在启动时拉取，属既定设计）。 */
   function bindHostEvents() {
     onHostEvent("heybox_app_login_change", function () {
@@ -3316,6 +3481,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var duelDialogMode = null; // "confirm" 发起确认 | "relock" 已约战再复制
   var duelDialogMatchId = "";
   var duelDialogPick = "";
+  var myNickCache = ""; // 渲染用：我的展示昵称/头像（换票/榜单同步时刷新）
+  var myAvatarCache = "";
+  var duelAvatarMap = null; // 昵称 → 头像（来自榜单 extra，对决卡/对比页反查用）
+  var duelAvatarMapAt = 0;
+  var pendingVersusLaunch = null; // 战绩对比链接 extra，等引导结束后进对比页
+  var versusData = null; // 当前对比页的对方数据
   var pendingDuelLaunch = null; // 启动链接里的对决 extra，等比赛数据就绪后处理
 
   function loadDuels() {
@@ -3360,10 +3531,37 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   // 我的展示昵称：黑盒资料 → 自选昵称 → 盒友；链接空间有限截到 12 字符
   function duelNick() {
     return loadHbProfile().catch(function () { return null; }).then(function (hb) {
-      if (hb && hb.nick) return String(hb.nick).slice(0, 12);
+      if (hb && hb.nick) {
+        myNickCache = String(hb.nick).slice(0, 12);
+        myAvatarCache = hb.avatar || "";
+        return myNickCache;
+      }
       return loadNick().then(function (nick) {
-        return (nick ? nick : "盒友").slice(0, 12);
+        myNickCache = (nick ? nick : "盒友").slice(0, 12);
+        return myNickCache;
       });
+    });
+  }
+
+  // 昵称 → 头像 反查表：对决卡/对比页里只有对方昵称，头像从榜单 extra 反查（榜单读取带 5 分钟缓存）
+  function ensureDuelAvatars() {
+    if (Cloud.isMock()) return Promise.resolve({});
+    if (duelAvatarMap && Date.now() - duelAvatarMapAt < 300000) return Promise.resolve(duelAvatarMap);
+    duelAvatarMapAt = Date.now();
+    return Promise.all([
+      Cloud.getBoard("win", 200).catch(function () { return { entries: [] }; }),
+      Cloud.getBoard("lose", 200).catch(function () { return { entries: [] }; }),
+      Cloud.getTemple(200).catch(function () { return { entries: [] }; })
+    ]).then(function (rs) {
+      var map = {};
+      rs.forEach(function (r) {
+        (r.entries || []).forEach(function (e) {
+          if (e.nick && e.avatar && !map[e.nick]) map[e.nick] = e.avatar;
+        });
+      });
+      duelAvatarMap = map;
+      if (!$("#view-duels").hidden) renderDuels();
+      return map;
     });
   }
 
@@ -3756,6 +3954,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   function renderDuels() {
     renderDuelSent();
+    ensureDuelAvatars(); // 异步反查对手头像，到了自动重渲染
+    var amap = duelAvatarMap || {};
     var s = duelStats();
     $("#duelSummary").innerHTML =
       '<div class="duel-stat win"><b>' + s.won + "</b><span>胜</span></div>" +
@@ -3779,13 +3979,18 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       } else if (d.role === "challenger") {
         report = '<button type="button" class="duel-report-btn" data-duel-report="' + esc(d.id) + '">把应战发给他</button>';
       }
+      var rematch = d.status === "lost"
+        ? '<button type="button" class="duel-report-btn" data-duel-rematch="' + esc(d.oppNick) + '">再战一场</button>'
+        : "";
       return '<div class="duel-card">' +
-        '<div class="duel-card-head"><span class="duel-badge ' + d.status + '">' + duelOutcomeText(d.status) +
+        '<div class="duel-card-head">' + personAvatar(d.oppNick, amap[d.oppNick]) +
+          '<span class="duel-badge ' + d.status + '">' + duelOutcomeText(d.status) +
           '</span><span class="duel-opp">vs ' + esc(d.oppNick) + "</span>" + profit + "</div>" +
         '<div class="duel-match">' + esc(d.label) + "</div>" +
         '<div class="duel-picks">我押 <b>' + esc(d.myPickName || "?") + "</b> " + fmtNum(d.myStake) +
           " 沙粒 · 对方押 <b>" + esc(d.oppPickName || "?") + "</b> " + fmtNum(d.oppStake) + " 沙粒</div>" +
-        '<div class="duel-foot"><span>' + fmtMonthDay(d.startAt) + " " + fmtClock(d.startAt) + "</span>" + report + "</div>" +
+        '<div class="duel-foot"><span>' + fmtMonthDay(d.startAt) + " " + fmtClock(d.startAt) + "</span>" +
+          (rematch || report ? '<span class="duel-foot-acts">' + rematch + report + "</span>" : "") + "</div>" +
         "</div>";
     }).join("");
   }
@@ -3805,6 +4010,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     await loadDuelInvite();
     await loadDuelLocks();
     await loadDuelSent();
+    loadHbProfile().then(function (hb) {
+      if (hb) {
+        myNickCache = String(hb.nick || "").slice(0, 12);
+        myAvatarCache = hb.avatar || "";
+      }
+    }).catch(function () { /* 头像/昵称缓存缺省即可 */ });
     var loadedSnapshot = stateSnapshot();
     validateLoadedState();
     persistedSnapshot = stateSnapshot();
@@ -3844,6 +4055,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     renderAll();
     renderDuelBanner();
     resolveDeepLink(); // 分享目标在内置窗口内时先定位；运行时数据到达后 applySnapshot 会再试
+    resolveVersusLink();
     if (isHarmonyOS()) {
       runHarmonyGate();
     } else {

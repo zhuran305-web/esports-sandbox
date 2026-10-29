@@ -2295,3 +2295,21 @@ html[data-theme="light"] .duel-badge.drawn { color: #a8720a; background: rgba(20
   object-fit: cover;
   border-radius: 50%;
 }
+
+/* 约战确认 / 已约战弹窗 与 已发约战列表 */
+.duel-dialog-text { margin: 4px 0 6px; font-size: 13px; line-height: 1.7; color: var(--text-dim); }
+.duel-dialog-text b { color: var(--text); }
+.duel-sent-title { margin: 0 0 8px; font-size: 12px; font-weight: 800; color: var(--text-faint); letter-spacing: .04em; }
+.duel-sent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: rgba(255, 255, 255, .02);
+  margin-bottom: 8px;
+}
+.duel-sent-label { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duel-sent-label i { font-style: normal; margin-left: 8px; font-size: 11px; color: var(--text-faint); }
+html[data-theme="light"] .duel-sent-row { background: rgba(24, 32, 45, .03); }

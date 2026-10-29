@@ -204,6 +204,7 @@
       <section class="view" id="view-duels" hidden>
         <h1 class="page-title">对决记录</h1>
         <p class="duel-page-sub">和好友同场竞猜的胜负簿 · 竞猜面板「约战好友」发起，对方应战后自动结算</p>
+        <div id="duelSentBox" hidden></div>
         <div class="duel-summary" id="duelSummary"></div>
         <div id="duelList" class="duel-list"></div>
       </section>
@@ -617,6 +618,28 @@
         <button class="primary-btn" id="confirmPrediction" type="button">确认预测</button>
       </div>
       <p class="sheet-tip">开赛前 1 小时截止 · 沙粒为虚拟道具</p>
+    </div>
+  </div>
+
+  <!-- 约战确认 / 已约战复制入口 -->
+  <div class="sheet-backdrop" id="duelDialogBackdrop" hidden>
+    <div class="sheet duel-dialog" role="dialog" aria-modal="true" aria-labelledby="duelDialogTitle">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <h2 id="duelDialogTitle">约战好友</h2>
+          <p id="duelDialogMeta" class="sheet-meta"></p>
+        </div>
+        <button class="icon-btn" id="duelDialogClose" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <p class="duel-dialog-text" id="duelDialogText"></p>
+      <div class="sheet-actions">
+        <button class="duel-btn" id="duelDialogDismiss" type="button">先不了</button>
+        <button class="primary-btn" id="duelDialogCopy" type="button">复制约战链接</button>
+      </div>
+      <p class="sheet-tip" id="duelDialogTip">链接发给好友，对方点开下注即成立对决</p>
     </div>
   </div>
 

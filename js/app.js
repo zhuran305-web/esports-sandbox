@@ -29,7 +29,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_mock_cloud_v2",
     "esports_sandbox_duels_v1",
     "esports_sandbox_duel_invite",
-    "esports_sandbox_duel_locks"
+    "esports_sandbox_duel_locks",
+    "esports_sandbox_duel_sent"
   ];
   var APP_VERSION = "1.2.2";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
@@ -179,7 +180,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
     "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
-    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover"
+    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#duelDialogBackdrop"
   ];
 
   function closeAllOverlays() {
@@ -1582,7 +1583,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var m = matchById(matchId);
     if (!m || statusOf(m) !== "open") return;
     if (isDuelLocked(matchId)) {
-      toast("这场已约战锁定投入 · 截止前不可加注/撤回");
+      openDuelRelock(matchId); // 锁定场次进不了面板，但给「再复制约战链接」的入口
       return;
     }
 
@@ -2660,9 +2661,25 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       openSheet(row.dataset.match, row.dataset.pick);
     });
 
-    // 对决：约战按钮 / 邀请横幅 / 战报回传
-    $("#duelBtn").addEventListener("click", inviteDuel);
+    // 对决：约战按钮（先确认）/ 邀请横幅 / 战报回传 / 已发约战再复制
+    $("#duelBtn").addEventListener("click", openDuelConfirm);
     $("#duelEntry").addEventListener("click", function () { switchView("duels"); });
+    $("#duelDialogCopy").addEventListener("click", duelDialogCopyAction);
+    $("#duelDialogDismiss").addEventListener("click", closeDuelDialog);
+    $("#duelDialogClose").addEventListener("click", closeDuelDialog);
+    $("#duelDialogBackdrop").addEventListener("click", function (e) {
+      if (e.target === $("#duelDialogBackdrop")) closeDuelDialog();
+    });
+    $("#duelSentBox").addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-duel-recopy]");
+      if (!btn) return;
+      var sent = findSentInvite(btn.dataset.duelRecopy);
+      if (!sent) { toast("该约战已失效（比赛已截止）"); renderDuelSent(); return; }
+      copyDuelInvite(sent).then(function (err) {
+        if (!err) toast("约战链接已复制 · 发给好友即可应战");
+        else toast("复制链接失败，当前端不支持");
+      });
+    });
     $("#duelBanner").addEventListener("click", function (e) {
       var btn = e.target.closest("button[data-duel-act]");
       if (!btn) return;
@@ -3289,10 +3306,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var DUELS_KEY = "esports_sandbox_duels_v1";
   var DUEL_INVITE_KEY = "esports_sandbox_duel_invite";
   var DUEL_LOCKS_KEY = "esports_sandbox_duel_locks";
+  var DUEL_SENT_KEY = "esports_sandbox_duel_sent";
   var DUEL_MAX = 200;
+  var DUEL_SENT_MAX = 50;
   var DUELS = [];
-  var duelInvite = null; // 待应战的约战：{m,p,s,n,exp}
+  var duelInvite = null; // 待应战的约战：{m,p,s,n,r,exp}
   var duelLocks = {}; // 对决锁定的比赛：{matchId: lockedAt}。战书不可改——发出/应战后该场投入冻结到截止
+  var duelSent = []; // 已发出的约战：[{m,p,s,n,r,label,startAt,at}]，供再次复制链接
+  var duelDialogMode = null; // "confirm" 发起确认 | "relock" 已约战再复制
+  var duelDialogMatchId = "";
+  var duelDialogPick = "";
   var pendingDuelLaunch = null; // 启动链接里的对决 extra，等比赛数据就绪后处理
 
   function loadDuels() {
@@ -3344,24 +3367,101 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
   }
 
-  // 发起约战：竞猜面板内点击，链接带上当前选择/投入/昵称；发出即锁该场投入（战书不可改）
-  function inviteDuel() {
+  // 发起约战：先弹确认（预告锁仓），确认后才复制链接并锁定
+  function openDuelConfirm() {
     var m = matchById(sheetMatchId);
     if (!m || statusOf(m) !== "open") { toast("比赛已截止，无法约战"); return; }
     var existing = predictionFor(m.id);
     if (!existing) { toast("先下注才能约战 · 对决按你的真实投入进行"); return; }
-    duelNick().then(function (nick) {
-      return copyShareLink({
-        v: 1, d: 1, m: m.id, p: sheetPick,
-        s: existing.stake, n: nick, r: duelCode()
+    duelDialogMode = "confirm";
+    duelDialogMatchId = m.id;
+    duelDialogPick = sheetPick;
+    $("#duelDialogTitle").textContent = "约战好友";
+    $("#duelDialogMeta").textContent = matchLabel(m) + " · " + fmtTime(m.startAt);
+    $("#duelDialogText").innerHTML = "你押 <b>" + esc(pickName(m, sheetPick)) + "</b> · 投入 <b>" +
+      fmtNum(existing.stake) + "</b> 沙粒。链接发给好友，对方点开下注即成立对决。" +
+      "<b>发出后该场投入锁定到竞猜截止，不可加注/撤回。</b>";
+    $("#duelDialogTip").textContent = "对方应战后会回传应战，你这边才会出现对决记录";
+    $("#duelDialogCopy").textContent = "复制约战链接";
+    $("#duelDialogBackdrop").hidden = false;
+  }
+
+  // 已约战的场次：竞猜面板进不去，从这里（或对决记录页）再复制链接发给更多好友
+  function openDuelRelock(matchId) {
+    var m = matchById(matchId);
+    if (!m) return;
+    duelDialogMode = "relock";
+    duelDialogMatchId = matchId;
+    duelDialogPick = "";
+    $("#duelDialogTitle").textContent = "已约战";
+    $("#duelDialogMeta").textContent = matchLabel(m) + " · " + fmtTime(m.startAt);
+    $("#duelDialogText").innerHTML = "这场已发出约战，投入锁定到竞猜截止。对手点开链接下注即成立对决，可复制链接发给更多好友。";
+    $("#duelDialogTip").textContent = "重复复制的是同一条链接，已应战的好友不会重复建账";
+    $("#duelDialogCopy").textContent = "复制约战链接";
+    $("#duelDialogBackdrop").hidden = false;
+  }
+
+  function closeDuelDialog() {
+    $("#duelDialogBackdrop").hidden = true;
+    duelDialogMode = null;
+    duelDialogMatchId = "";
+  }
+
+  function copyDuelInvite(rec) {
+    // rec 缺字段（老数据/兜底重建）时按当前预测重造；随机码必须复用，否则已应战者会重复建账
+    return duelNick().then(function (nick) {
+      var extra = {
+        v: 1, d: 1, m: rec.m, p: rec.p, s: rec.s,
+        n: rec.n || nick, r: rec.r || duelCode()
+      };
+      return copyShareLink(extra).then(function (err) {
+        if (!err && !findSentInvite(rec.m)) saveSentInvite({
+          m: rec.m, p: extra.p, s: extra.s, n: extra.n, r: extra.r,
+          label: (matchById(rec.m) ? matchLabel(matchById(rec.m)) : rec.label) || "",
+          startAt: (matchById(rec.m) || {}).startAt || rec.startAt || "",
+          at: Date.now()
+        });
+        return err;
       });
-    }).then(function (err) {
-      if (!err) {
-        lockDuel(m.id);
-        toast("约战链接已复制 · 该场投入已锁定到竞猜截止");
-      } else {
-        toast("复制链接失败，当前端不支持");
-      }
+    });
+  }
+
+  function duelDialogCopyAction() {
+    var m = matchById(duelDialogMatchId);
+    if (!m) { closeDuelDialog(); return; }
+    if (duelDialogMode === "relock") {
+      var sent = findSentInvite(duelDialogMatchId);
+      var rec = sent || (function () {
+        var my = predictionFor(m.id);
+        return { m: m.id, p: my ? my.pick : "A", s: my ? my.stake : 0, r: duelCode() };
+      })();
+      copyDuelInvite(rec).then(function (err) {
+        if (!err) { closeDuelDialog(); toast("约战链接已复制 · 发给好友即可应战"); }
+        else toast("复制链接失败，当前端不支持");
+      });
+      return;
+    }
+    var existing = predictionFor(m.id);
+    if (!existing) { toast("本场预测已不存在"); closeDuelDialog(); return; }
+    duelNick().then(function (nick) {
+      var r = duelCode();
+      return copyShareLink({
+        v: 1, d: 1, m: m.id, p: duelDialogPick,
+        s: existing.stake, n: nick, r: r
+      }).then(function (err) {
+        if (!err) {
+          saveSentInvite({
+            m: m.id, p: duelDialogPick, s: existing.stake, n: nick, r: r,
+            label: matchLabel(m), startAt: m.startAt, at: Date.now()
+          });
+          lockDuel(m.id);
+          closeDuelDialog();
+          closeSheet();
+          toast("约战链接已复制 · 该场投入已锁定到截止");
+        } else {
+          toast("复制链接失败，当前端不支持");
+        }
+      });
     });
   }
 
@@ -3472,6 +3572,46 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   function lockDuel(matchId) {
     duelLocks[matchId] = Date.now();
     saveDuelLocks();
+  }
+
+  // ===== 已发出的约战：链接只在复制那一刻存在，存一份才能「再次复制」；同码重发=幂等
+  function loadDuelSent() {
+    return storageGet(DUEL_SENT_KEY).then(function (v) {
+      var list = typeof v === "string" ? JSON.parse(v) : v;
+      duelSent = Array.isArray(list) ? list.filter(function (x) {
+        return x && typeof x.m === "string" && typeof x.r === "string";
+      }) : [];
+      pruneDuelSent();
+    }).catch(function () { duelSent = []; });
+  }
+
+  function pruneDuelSent() {
+    // 比赛截止/数据过期后链接已无法被应战，条目失去意义
+    var kept = duelSent.filter(function (x) {
+      var m = matchById(x.m);
+      return m && statusOf(m) === "open";
+    });
+    if (kept.length !== duelSent.length) {
+      duelSent = kept;
+      saveDuelSent();
+    }
+  }
+
+  function saveDuelSent() {
+    storageSet(DUEL_SENT_KEY, duelSent.slice(0, DUEL_SENT_MAX)).catch(function () { /* 丢失最坏情况=无法再复制 */ });
+  }
+
+  function findSentInvite(matchId) {
+    var hit = null;
+    duelSent.forEach(function (x) { if (x.m === matchId) hit = x; });
+    return hit;
+  }
+
+  function saveSentInvite(rec) {
+    duelSent = duelSent.filter(function (x) { return x.m !== rec.m; });
+    duelSent.unshift(rec);
+    saveDuelSent();
+    if (!$("#view-duels").hidden) renderDuelSent();
   }
 
   // 收到战报（d:2）：发起时不知道谁应战，靠对方回传补全这一侧的记录
@@ -3594,7 +3734,28 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         '<button type="button" class="duel-ignore" data-duel-act="ignore">忽略</button></div>';
   }
 
+  function renderDuelSent() {
+    var box = $("#duelSentBox");
+    if (!box) return;
+    pruneDuelSent();
+    if (!duelSent.length) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = '<div class="duel-sent-title">我发出的约战</div>' + duelSent.map(function (x) {
+      var m = matchById(x.m);
+      var label = m ? matchLabel(m) : (x.label || "比赛");
+      var when = x.startAt ? fmtMonthDay(x.startAt) + " " + fmtClock(x.startAt) : "";
+      return '<div class="duel-sent-row">' +
+        '<span class="duel-sent-label">' + esc(label) + (when ? '<i>' + esc(when) + "</i>" : "") + "</span>" +
+        '<button type="button" class="duel-report-btn" data-duel-recopy="' + esc(x.m) + '">复制链接</button></div>';
+    }).join("");
+  }
+
   function renderDuels() {
+    renderDuelSent();
     var s = duelStats();
     $("#duelSummary").innerHTML =
       '<div class="duel-stat win"><b>' + s.won + "</b><span>胜</span></div>" +
@@ -3643,6 +3804,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     await loadDuels();
     await loadDuelInvite();
     await loadDuelLocks();
+    await loadDuelSent();
     var loadedSnapshot = stateSnapshot();
     validateLoadedState();
     persistedSnapshot = stateSnapshot();

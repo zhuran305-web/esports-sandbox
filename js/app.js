@@ -31,7 +31,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_invite",
     "esports_sandbox_duel_locks"
   ];
-  var APP_VERSION = "1.2.1";
+  var APP_VERSION = "1.2.2";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
     try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }

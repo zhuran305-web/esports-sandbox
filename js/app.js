@@ -3375,7 +3375,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     saveDuels();
     lockDuel(ex.m); // 应战成立同样锁仓：防赛后悄悄改边求平，两边判定基准始终一致
     dismissDuelInvite();
-    toast("对决成立 · 与 " + rec.oppNick + " 就这场比赛一决胜负");
+    toast("对决成立 · 与 " + rec.oppNick + " 一决胜负，对决记录里发送应战回执");
     if (!$("#view-profile").hidden) renderProfile();
     if (!$("#view-duels").hidden) renderDuels();
   }
@@ -3505,13 +3505,19 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     }).join(" · ");
   }
 
-  // 战报回传：把我的选择发给对手，补全他那边的发起方记录
+  // 回传链接（d:2）：应战方在应战成立后发「应战回执」，让发起方当场看到对决；
+  // 赛后再发就是「战报」（纯社交动作）。锁仓后两时点数据一致，发起方侧处理复用同一个入口。
   function sendDuelReport(d) {
     duelNick().then(function (nick) {
       return copyShareLink({ v: 1, d: 2, m: d.matchId, p: d.myPick, s: d.myStake, n: nick });
     }).then(function (err) {
-      if (!err) toast("战报链接已复制 · 发给 " + d.oppNick + " 即可让他记下这局");
-      else toast("复制链接失败，当前端不支持");
+      if (!err) {
+        toast(d.status === "pending"
+          ? "应战已复制 · 发给 " + d.oppNick + "，他就能看到这场对决"
+          : "战报链接已复制 · 发给 " + d.oppNick + " 即可让他记下这局");
+      } else {
+        toast("复制链接失败，当前端不支持");
+      }
     });
   }
 
@@ -3573,9 +3579,14 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var profit = d.status === "pending" ? "" :
         '<span class="duel-profit ' + (d.myProfit > 0 ? "pos" : d.myProfit < 0 ? "neg" : "") + '">' +
         (d.myProfit > 0 ? "+" : "") + fmtNum(d.myProfit) + " 沙粒</span>";
-      var report = d.status !== "pending"
-        ? '<button type="button" class="duel-report-btn" data-duel-report="' + esc(d.id) + '">把战报发给他</button>'
-        : "";
+      // 回传按钮：已结算=战报（社交）；待赛果只有应战方需要发回执——发起方收到回执才建记录，
+      // 记录存在即说明对手已知，无需再发
+      var report = "";
+      if (d.status !== "pending") {
+        report = '<button type="button" class="duel-report-btn" data-duel-report="' + esc(d.id) + '">把战报发给他</button>';
+      } else if (d.role === "challenger") {
+        report = '<button type="button" class="duel-report-btn" data-duel-report="' + esc(d.id) + '">把应战发给他</button>';
+      }
       return '<div class="duel-card">' +
         '<div class="duel-card-head"><span class="duel-badge ' + d.status + '">' + duelOutcomeText(d.status) +
           '</span><span class="duel-opp">vs ' + esc(d.oppNick) + "</span>" + profit + "</div>" +

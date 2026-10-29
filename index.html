@@ -48,6 +48,8 @@
           </button>
         </div>
 
+        <div class="duel-banner" id="duelBanner" hidden></div>
+
         <div class="notice-strip">
           <span class="dot"></span>
           <span id="openCount">正在加载赛程…</span>
@@ -182,11 +184,28 @@
           </div>
         </div>
 
+        <button class="duel-entry" id="duelEntry" type="button">
+          <span class="duel-entry-icon" aria-hidden="true">⚔</span>
+          <span class="duel-entry-main">
+            <b>对决记录</b>
+            <span id="duelEntrySub">还没有对决 · 竞猜面板可发起约战</span>
+          </span>
+          <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+
         <div class="section-head">
           <h2>竞猜记录</h2>
           <span id="historyCount" class="section-sub">0 条</span>
         </div>
         <div id="historyList" class="history-list"></div>
+      </section>
+
+      <!-- 对决记录（约战好友） -->
+      <section class="view" id="view-duels" hidden>
+        <h1 class="page-title">对决记录</h1>
+        <p class="duel-page-sub">和好友同场竞猜的胜负簿 · 竞猜面板「约战好友」发起，对方应战后自动结算</p>
+        <div class="duel-summary" id="duelSummary"></div>
+        <div id="duelList" class="duel-list"></div>
       </section>
 
       <!-- 排行榜 -->
@@ -593,7 +612,10 @@
       </div>
 
       <div class="preview" id="payoutPreview">猜对预计返还 <b>--</b> 沙粒</div>
-      <button class="primary-btn" id="confirmPrediction" type="button">确认预测</button>
+      <div class="sheet-actions">
+        <button class="duel-btn" id="duelBtn" type="button" title="把这场竞猜发给好友，同场比胜负">⚔ 约战好友</button>
+        <button class="primary-btn" id="confirmPrediction" type="button">确认预测</button>
+      </div>
       <p class="sheet-tip">开赛前 1 小时截止 · 沙粒为虚拟道具</p>
     </div>
   </div>

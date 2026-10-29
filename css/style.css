@@ -2283,3 +2283,5 @@ html[data-theme="light"] .duel-stat,
 html[data-theme="light"] .duel-card { background: rgba(24, 32, 45, .03); }
 html[data-theme="light"] .duel-badge { background: rgba(24, 32, 45, .06); }
 html[data-theme="light"] .duel-badge.drawn { color: #a8720a; background: rgba(201, 162, 106, .18); }
+.duel-btn[disabled] { opacity: .45; cursor: not-allowed; }
+.duel-btn[disabled]:active { transform: none; }

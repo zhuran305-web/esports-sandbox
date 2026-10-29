@@ -28,7 +28,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_net_block",
     "esports_sandbox_mock_cloud_v2",
     "esports_sandbox_duels_v1",
-    "esports_sandbox_duel_invite"
+    "esports_sandbox_duel_invite",
+    "esports_sandbox_duel_locks"
   ];
   var APP_VERSION = "1.2.1";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
@@ -1544,6 +1545,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     confirm.textContent = sheetMode === "withdraw" ? "确认撤回" : sheetMode === "add" ? "确认加注" : "确认预测";
     confirm.disabled = false;
 
+    // 约战按钮：对决按真实投入进行，先有预测才能约战
+    var duelBtn = $("#duelBtn");
+    duelBtn.disabled = !existing;
+    duelBtn.title = existing ? "把这场竞猜发给好友，同场比胜负（发出后该场投入锁定）" : "先下注才能约战";
+
     fixedBox.hidden = !limits.fixed;
     chips.style.display = limits.fixed ? "none" : "";
     $("#stakeRow").classList.toggle("is-readonly", !!limits.fixed);
@@ -1575,6 +1581,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   function openSheet(matchId, pick) {
     var m = matchById(matchId);
     if (!m || statusOf(m) !== "open") return;
+    if (isDuelLocked(matchId)) {
+      toast("这场已约战锁定投入 · 截止前不可加注/撤回");
+      return;
+    }
 
     sheetMatchId = matchId;
     var existing = predictionFor(matchId);
@@ -3262,9 +3272,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
    */
   var DUELS_KEY = "esports_sandbox_duels_v1";
   var DUEL_INVITE_KEY = "esports_sandbox_duel_invite";
+  var DUEL_LOCKS_KEY = "esports_sandbox_duel_locks";
   var DUEL_MAX = 200;
   var DUELS = [];
   var duelInvite = null; // 待应战的约战：{m,p,s,n,exp}
+  var duelLocks = {}; // 对决锁定的比赛：{matchId: lockedAt}。战书不可改——发出/应战后该场投入冻结到截止
   var pendingDuelLaunch = null; // 启动链接里的对决 extra，等比赛数据就绪后处理
 
   function loadDuels() {
@@ -3303,19 +3315,24 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
   }
 
-  // 发起约战：竞猜面板内点击，链接带上当前选择/投入/昵称
+  // 发起约战：竞猜面板内点击，链接带上当前选择/投入/昵称；发出即锁该场投入（战书不可改）
   function inviteDuel() {
     var m = matchById(sheetMatchId);
     if (!m || statusOf(m) !== "open") { toast("比赛已截止，无法约战"); return; }
     var existing = predictionFor(m.id);
+    if (!existing) { toast("先下注才能约战 · 对决按你的真实投入进行"); return; }
     duelNick().then(function (nick) {
       return copyShareLink({
         v: 1, d: 1, m: m.id, p: sheetPick,
-        s: existing ? existing.stake : 0, n: nick
+        s: existing.stake, n: nick
       });
     }).then(function (err) {
-      if (!err) toast("约战链接已复制 · 发给好友即可同场对决");
-      else toast("复制链接失败，当前端不支持");
+      if (!err) {
+        lockDuel(m.id);
+        toast("约战链接已复制 · 该场投入已锁定到竞猜截止");
+      } else {
+        toast("复制链接失败，当前端不支持");
+      }
     });
   }
 
@@ -3356,6 +3373,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       DUELS.unshift(rec);
     }
     saveDuels();
+    lockDuel(ex.m); // 应战成立同样锁仓：防赛后悄悄改边求平，两边判定基准始终一致
     dismissDuelInvite();
     toast("对决成立 · 与 " + rec.oppNick + " 就这场比赛一决胜负");
     if (!$("#view-profile").hidden) renderProfile();
@@ -3381,6 +3399,49 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         duelInvite = inv;
       }
     }).catch(function () {});
+  }
+
+  // ===== 对决锁：发出约战（发起方）/ 应战成立（应战方）后，该场投注冻结到竞猜截止。
+  // 没有跨用户通道，唯一能让两边判定一致的基准就是战书快照——锁住它，改投注的口子就不存在。
+  function loadDuelLocks() {
+    return storageGet(DUEL_LOCKS_KEY).then(function (v) {
+      var obj = typeof v === "string" ? JSON.parse(v) : v;
+      duelLocks = obj && typeof obj === "object" && !Array.isArray(obj) ? obj : {};
+      pruneDuelLocks();
+    }).catch(function () { duelLocks = {}; });
+  }
+
+  function pruneDuelLocks() {
+    // 比赛截止后本来就无法改投注，锁自然失效；数据被清理/过期出窗口的也一并丢弃
+    var changed = false;
+    Object.keys(duelLocks).forEach(function (id) {
+      var m = matchById(id);
+      if (!m || statusOf(m) !== "open") {
+        delete duelLocks[id];
+        changed = true;
+      }
+    });
+    if (changed) saveDuelLocks();
+  }
+
+  function saveDuelLocks() {
+    storageSet(DUEL_LOCKS_KEY, duelLocks).catch(function () { /* 锁丢失最坏情况=可改投注，不阻塞 */ });
+  }
+
+  function isDuelLocked(matchId) {
+    if (!duelLocks[matchId]) return false;
+    var m = matchById(matchId);
+    if (!m || statusOf(m) !== "open") {
+      delete duelLocks[matchId];
+      saveDuelLocks();
+      return false;
+    }
+    return true;
+  }
+
+  function lockDuel(matchId) {
+    duelLocks[matchId] = Date.now();
+    saveDuelLocks();
   }
 
   // 收到战报（d:2）：发起时不知道谁应战，靠对方回传补全这一侧的记录
@@ -3539,6 +3600,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     state = await loadState();
     await loadDuels();
     await loadDuelInvite();
+    await loadDuelLocks();
     var loadedSnapshot = stateSnapshot();
     validateLoadedState();
     persistedSnapshot = stateSnapshot();

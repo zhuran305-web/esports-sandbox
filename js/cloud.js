@@ -187,14 +187,22 @@ async function submitBoardWithNick(board, first, second, displayNick, avatar) {
   var curFirst = cur ? cur.first : 0;
   var curSecond = cur ? cur.second : 0;
   var curNick = (cur && cur.extra && cur.extra.nick) || "";
+  var curAvatar = (cur && cur.extra && cur.extra.avatar) || "";
   if (first > curFirst || (first === curFirst && second > curSecond)) {
     await realSubmit(board, first, second, displayNick, avatar);
     return;
   }
-  if (cur && displayNick && displayNick !== curNick) {
-    // 仅刷昵称/头像，1 沙粒触发 only-if-better。avatar 语义：undefined=沿用榜上旧值，
-    // 显式传空串=清除（如清除本地数据后不想再展示头像）
-    await realSubmit(board, curFirst, curSecond + 1, displayNick, avatar !== undefined ? avatar : (cur.extra && cur.extra.avatar));
+  // 昵称/头像变化但分数未变优：用「榜上 second+1」触发一次 extra 更新（only-if-better）。
+  // avatar 必须参与判定——否则旧条目（无 avatar 字段）在昵称已对、分数未变时永远不会补上头像。
+  // avatar 语义：undefined=沿用榜上旧值；字符串（含空串）=权威值，与榜上不同即刷新。
+  var nickChanged = !!(displayNick && displayNick !== curNick);
+  var avatarChanged = avatar !== undefined && avatar !== curAvatar;
+  if (cur && (nickChanged || avatarChanged)) {
+    await realSubmit(
+      board, curFirst, curSecond + 1,
+      displayNick || curNick,
+      avatar !== undefined ? avatar : curAvatar
+    );
   }
 }
 

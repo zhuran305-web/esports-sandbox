@@ -213,6 +213,7 @@
       <section class="view" id="view-duels" hidden>
         <h1 class="page-title">对决记录</h1>
         <p class="duel-page-sub">和好友同场竞猜的胜负簿 · 竞猜面板「约战好友」发起，对方应战后自动结算</p>
+        <button type="button" class="duel-help-link" id="duelHelpFromPage">约战流程怎么走？</button>
         <div id="duelSentBox" hidden></div>
         <div class="duel-summary" id="duelSummary"></div>
         <div id="duelList" class="duel-list"></div>
@@ -658,6 +659,34 @@
         <button class="primary-btn" id="duelDialogCopy" type="button">复制约战链接</button>
       </div>
       <p class="sheet-tip" id="duelDialogTip">链接发给好友，对方点开下注即成立对决</p>
+      <button type="button" class="duel-help-link" id="duelHelpFromDialog">约战流程怎么走？</button>
+    </div>
+  </div>
+
+  <!-- 约战流程说明 -->
+  <div class="sheet-backdrop" id="duelHelpBackdrop" hidden>
+    <div class="sheet duel-dialog" role="dialog" aria-modal="true" aria-labelledby="duelHelpTitle">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <h2 id="duelHelpTitle">约战流程</h2>
+          <p class="sheet-meta">一场比赛，两个人，比谁猜得准</p>
+        </div>
+        <button class="icon-btn" id="duelHelpClose" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="duel-help-steps">
+        <div class="duel-help-step"><b>1</b><div><strong>约战</strong><span>先在竞猜面板下注，再点「⚔ 约战好友」。确认后复制链接发给好友，该场投入锁定到竞猜截止。</span></div></div>
+        <div class="duel-help-step"><b>2</b><div><strong>应战</strong><span>好友点开链接 → 选边下注 → 对决成立；对方那场投入同样锁定。</span></div></div>
+        <div class="duel-help-step"><b>3</b><div><strong>应战回执</strong><span>好友应战后把「应战回执」发回给你（对决记录 → 把应战发给他）；收到后你的对决记录才会出现这场。</span></div></div>
+        <div class="duel-help-step"><b>4</b><div><strong>自动结算</strong><span>赛果出来自动判定：选边相同=平，猜中=胜，猜错=负；只看选择、不比投入。</span></div></div>
+        <div class="duel-help-step"><b>5</b><div><strong>赛后战报</strong><span>结算后可「把战报发给他」——纯社交动作，发不发都不影响记录。</span></div></div>
+      </div>
+      <p class="duel-help-note">一条链接可发给多人、各自独立成局；对决不涉及沙粒转移，双方沙粒各自按真实预测结算；发出即锁仓，战书不可改。</p>
+      <div class="sheet-actions">
+        <button class="primary-btn" id="duelHelpOk" type="button">知道了</button>
+      </div>
     </div>
   </div>
 

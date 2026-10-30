@@ -180,7 +180,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
     "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
-    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#duelDialogBackdrop"
+    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#duelDialogBackdrop", "#duelHelpBackdrop"
   ];
 
   function closeAllOverlays() {
@@ -2801,6 +2801,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#duelDialogClose").addEventListener("click", closeDuelDialog);
     $("#duelDialogBackdrop").addEventListener("click", function (e) {
       if (e.target === $("#duelDialogBackdrop")) closeDuelDialog();
+    });
+    // 约战流程说明：确认弹窗内 / 对决记录页各一个入口
+    var openDuelHelp = function () { $("#duelHelpBackdrop").hidden = false; };
+    var closeDuelHelp = function () { $("#duelHelpBackdrop").hidden = true; };
+    $("#duelHelpFromDialog").addEventListener("click", openDuelHelp);
+    $("#duelHelpFromPage").addEventListener("click", openDuelHelp);
+    $("#duelHelpOk").addEventListener("click", closeDuelHelp);
+    $("#duelHelpClose").addEventListener("click", closeDuelHelp);
+    $("#duelHelpBackdrop").addEventListener("click", function (e) {
+      if (e.target === $("#duelHelpBackdrop")) closeDuelHelp();
     });
     $("#duelSentBox").addEventListener("click", function (e) {
       var btn = e.target.closest("button[data-duel-recopy]");

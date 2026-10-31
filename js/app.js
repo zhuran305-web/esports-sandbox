@@ -36,7 +36,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.12";
+  var APP_VERSION = "1.2.14";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -1399,7 +1399,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         winProfit: s.winProfit,
         losses: s.losses,
         loseAmount: s.loseAmount
-      }, nick, avatar, state.title, state.mainTeam === "" ? "" : state.mainTeam,
+      }, nick, avatar, state.title,
+      // extra.mt 必须是纯队名（看榜端按名字查队标映射）——不能传图鉴键 "game:名字"，
+      // 否则队标查找落空回退首字，还会渲染出 "CS2T" 这类键名截断（1.2.13 用户实测抓到）
+      state.mainTeam === undefined ? undefined : state.mainTeam === "" ? "" : mainTeamName(),
       state.mainTeam === undefined ? undefined : mainTeamLevel(state.mainLevels[state.mainTeam] || 0));
       // mainTeam 传参：undefined（从未设置）沿用榜上旧值；""（取消过主队）权威清空
       // mtLevel 传参：主队等级 0-8（0=清空榜上 Lv；undefined=从未设置主队）
@@ -1556,6 +1559,22 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#profileGods").textContent = state.gods || 0;
     $("#profileBankrupts").textContent = state.bankrupts || 0;
     $("#profileTitle").textContent = state.title ? (achvTitle(state.title) || "未知称号") : "未装备";
+
+    // 余额卡右侧主队块（1.2.13）：队标 + 主队/等级，点击进资料页
+    var mtBtn = $("#profileMainTeam");
+    if (state.mainTeam) {
+      var mtName = mainTeamName();
+      var mtLv = mainTeamLevel(state.mainLevels[state.mainTeam] || 0);
+      mtBtn.hidden = false;
+      mtBtn.innerHTML =
+        avatarHTML({ name: mtName }) +
+        '<span class="balance-team-main">' +
+          '<span class="balance-team-lv">❤ 主队' + (mtLv >= 1 ? " · Lv." + mtLv : "") + "</span>" +
+          '<span class="balance-team-name">' + esc(mtName) + "</span>" +
+        "</span>";
+    } else {
+      mtBtn.hidden = true;
+    }
     var achvCount = 0;
     Object.keys(state.achv || {}).forEach(function (k) { if (state.achv[k]) achvCount++; });
     $("#achvEntrySub").textContent = "已解锁 " + achvCount + " / " + ACHV_DEFS.length;
@@ -3889,6 +3908,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       renderCodex();
     });
     $("#codexMainChip").addEventListener("click", function () {
+      if (state.mainTeam) openTeamPage(state.mainTeam, "profile");
+    });
+    $("#profileMainTeam").addEventListener("click", function () {
       if (state.mainTeam) openTeamPage(state.mainTeam, "profile");
     });
 

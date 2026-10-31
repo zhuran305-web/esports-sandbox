@@ -354,9 +354,10 @@ check("云链路静态：title 门控 + extra.title + pack 三字段",
 check("app 接线：saveState 内检测 + minBankroll 更新 + syncBoards 传 title",
   /if \(!achvChecking\)/.test(appSrc) && /state\.bankroll < state\.minBankroll/.test(appSrc) && /nick, avatar, state\.title/.test(appSrc));
 var cssSrc = rf(path.join(root, "css", "style.css"), "utf8");
-check("主队上榜链路：mt 门控 + extra.mt + getList 透出 + 榜单小队标",
+check("主队上榜链路：mt 门控 + extra.mt + getList 透出 + 榜单小队标（mt=纯队名非键）",
   /mtChanged/.test(cloudSrc) && /extra\.mt/.test(cloudSrc) && /mainTeam: typeof extra\.mt/.test(cloudSrc) &&
-  /state\.mainTeam === "" \? "" : state\.mainTeam/.test(appSrc) && /board-mt/.test(appSrc) && /board-mt \.avatar/.test(cssSrc));
+  /state\.mainTeam === "" \? "" : mainTeamName\(\)/.test(appSrc) && !/state\.mainTeam === "" \? "" : state\.mainTeam\b/.test(appSrc) &&
+  /board-mt/.test(appSrc) && /board-mt \.avatar/.test(cssSrc));
 check("成就页/入口/徽章 DOM 与渲染齐备",
   /id="view-achv"/.test(htmlSrc) && /id="achvEntry"/.test(htmlSrc) && /id="profileTitle"/.test(htmlSrc) &&
   /function renderAchv/.test(appSrc) && /function toggleTitle/.test(appSrc) && /title-chip/.test(appSrc));
@@ -438,6 +439,8 @@ check("等级链路静态：mainLevels 接线 + ml 门控 + extra.ml + 榜单/�
   /function trackMainLevelBet/.test(appSrc) && /trackMainLevelBet\(m, sheetPick, null\)/.test(appSrc) &&
   /mlChanged/.test(cloudSrc) && /extra\.ml/.test(cloudSrc) && /mtLevel: typeof extra\.ml/.test(cloudSrc) &&
   /mainLevels: mergeAchv/.test(appSrc) && /team-lv-badge/.test(appSrc) && /board-mt-lv/.test(appSrc));
+check("余额卡主队块（1.2.13）", /id="profileMainTeam"/.test(htmlSrc) && /balance-team-lv/.test(appSrc) &&
+  /profileMainTeam"\)\.addEventListener/.test(appSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

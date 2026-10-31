@@ -2,7 +2,7 @@ import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
 import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary } from "./collection.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
-import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
@@ -33,7 +33,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.5";
+  var APP_VERSION = "1.2.6";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
     try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }
@@ -2265,6 +2265,20 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   var sharePred = null;
 
+  /* dataURL → ArrayBuffer 视图的 Uint8Array（files.saveFile 的 writeBytes 契约要求） */
+  function dataUrlToBytes(dataUrl) {
+    var bin = atob(String(dataUrl).slice(String(dataUrl).indexOf(",") + 1));
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  /* 保存兜底（1.1.33 定稿）：卡片全屏展示 + 系统截屏——不依赖任何宿主能力 */
+  function openCardFullscreen(dataUrl) {
+    $("#cardFullImg").src = dataUrl;
+    $("#cardFullscreen").hidden = false;
+  }
+
   async function openShare(pred) {
     var img = await loadShareImage(myAvatarCache); // 失败/超时回退首字，不阻塞卡片打开太久
     drawShareCard(pred, img);
@@ -2962,7 +2976,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     {
       id: "share", icon: "🔗", title: "分享与链接", summary: "战报卡、深链与晒战绩",
       sections: [
-        { h: "战报卡", p: "每场已结算的竞猜都能生成战报卡。点「保存图片」进入全屏预览后<strong>用系统截屏</strong>（电源键 + 音量键）即可保存——卡片底部预留了分享水印区。" },
+        { h: "战报卡", p: "每场已结算的竞猜都能生成战报卡。点「保存图片」会弹出系统保存界面，直接<strong>存成图片文件</strong>（在文件管理里查看）；宿主不支持时自动改为全屏预览，<strong>用系统截屏</strong>（电源键 + 音量键）保存。卡片底部预留了分享水印区。" },
         { h: "转发与深链", p: "竞猜面板支持转发和复制链接，好友点开直达那场比赛并高亮。" },
         { h: "晒战绩", p: "「我的 → 晒战绩」生成对比链接，好友点开直接开比：已结算、猜对、总盈亏、封神、破产、<strong>跟队连击、图鉴队伍</strong>七项，优方高亮。" }
       ]
@@ -3124,15 +3138,25 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (e.target === $("#shareBackdrop")) closeShare();
     });
     $("#shareSave").addEventListener("click", function () {
-      // 保存兜底方案（2026-10-27）：宿主截图分享流程在实测中给不出相册入口，
-      // 改为卡片全屏展示，用户直接系统截屏保存——不依赖任何宿主能力，全平台可靠。
-      var canvas = $("#shareCanvas");
+      // 双路径保存（1.2.6）：主路径 = files.saveFile 系统「另存为」（真手势内第一时间调用，
+      // 需 manifest 声明 filesystem，android/ios ≥1.3.396 / ohos ≥1.3.390 / PC ≥1.0.0）；
+      // 其余一切失败/不支持回退全屏预览+系统截屏（1.1.33 定稿链路，不依赖宿主能力，全平台恒可用）。
+      var dataUrl;
       try {
-        $("#cardFullImg").src = canvas.toDataURL("image/png");
-        $("#cardFullscreen").hidden = false;
+        dataUrl = $("#shareCanvas").toDataURL("image/png");
       } catch (err) {
         toast("图片生成失败，可直接截屏分享卡");
+        return;
       }
+      var bytes = dataUrlToBytes(dataUrl);
+      var d = new Date();
+      var stamp = String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") +
+        "-" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0");
+      saveFileBytes("esports-sandbox-card-" + stamp + ".png", bytes).then(function (res) {
+        if (res.ok) { toast("已保存 · 可在文件管理里查看"); return; }
+        if (res.error === "FILE_PICKER_CANCELLED") { toast("已取消保存"); return; } // 用户取消：结束流程不打扰
+        openCardFullscreen(dataUrl); // 老客户端/未声明快照/宿主未开放/写失败 → 截屏兜底
+      });
     });
     $("#cardFullClose").addEventListener("click", function () {
       $("#cardFullscreen").hidden = true;

@@ -470,3 +470,22 @@ export async function authLogin() {
   }
 }
 
+/**
+ * files.saveFile + writeBytes：系统「另存为」写二进制（1.2.6 保存图片主路径）。
+ * 需 manifest 声明 filesystem；必须从真实用户手势回调里第一时间调用（官方契约：
+ * 不可先 await 握手/其他异步任务）。取消是正常结果（FILE_PICKER_CANCELLED）。
+ * 返回 { ok:true }；{ error: 稳定错误码 }（UNSUPPORTED/PERMISSION_NOT_IN_SNAPSHOT/
+ * METHOD_NOT_FOUND/FILE_ALREADY_EXISTS/…）——调用方按码决定回退兜底。
+ */
+export async function saveFileBytes(suggestedName, bytes) {
+  if (!sdk || !sdk.files || typeof sdk.files.saveFile !== "function") return { error: "UNSUPPORTED" };
+  try {
+    var handle = await sdk.files.saveFile({ suggestedName: suggestedName });
+    if (!handle || typeof handle.writeBytes !== "function") return { error: "UNSUPPORTED" };
+    await handle.writeBytes(bytes);
+    return { ok: true };
+  } catch (e) {
+    return { error: (e && (e.code || e.errorCode)) || "FAILED" };
+  }
+}
+

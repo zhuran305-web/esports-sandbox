@@ -258,6 +258,14 @@ check("对比页接收端解析 s/t", /clampStat\(extra\.s\)/.test(appSrc) && /c
 check("图鉴 DOM 齐备", /id="codexGrid"/.test(htmlSrc) && /id="codexToggle"/.test(htmlSrc) && /id="codexSub"/.test(htmlSrc));
 check("renderCodex 已挂进 renderProfile", /renderCodex\(\);/.test(appSrc) && /function renderCodex/.test(appSrc));
 check("玩法说明分类菜单齐备", /var RULES_TOPICS/.test(appSrc) && /id="rulesMenuList"/.test(htmlSrc) && /id="rulesDetail"/.test(htmlSrc) && /function openRulesTopic/.test(appSrc) && /function closeRulesTopic/.test(appSrc));
+check("保存图片双路径接线（saveFile 主路径 + 截屏兜底）",
+  /saveFileBytes\(/.test(appSrc) && /FILE_PICKER_CANCELLED/.test(appSrc) && /openCardFullscreen\(/.test(appSrc));
+var platformSrc = rf(path.join(root, "js", "platform.js"), "utf8");
+check("platform.js 有 saveFileBytes 包装", /files\.saveFile/.test(platformSrc) && /writeBytes/.test(platformSrc));
+var pkgJson = JSON.parse(rf(path.join(root, "package.json"), "utf8"));
+check("filesystem 权限已声明", !!(pkgJson.heybox && pkgJson.heybox.permissions && pkgJson.heybox.permissions.filesystem && pkgJson.heybox.permissions.filesystem.enabled === true));
+check("版本两处一致", pkgJson.version === (appSrc.match(/APP_VERSION = "([^"]+)"/) || [])[1],
+  pkgJson.version + " vs " + (appSrc.match(/APP_VERSION = "([^"]+)"/) || [])[1]);
 
 rmSync(tmp, { recursive: true, force: true });
 

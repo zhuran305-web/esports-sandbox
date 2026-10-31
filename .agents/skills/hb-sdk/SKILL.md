@@ -23,6 +23,10 @@ Before upgrading, verify both the page layout and the captured image. Do not onl
 
 核对项目已安装的 SDK 与公告中的版本门槛。当前和计划契约均以本次读取的 canonical 文档为准，不提前套用未来契约，不把不支持结果当作设置成功，也不依赖旧 Skill 快照。建议升级前验证支持和不支持两种 Host。
 
+## 游戏存档接入检查
+
+接入游戏存档前，通过 canonical 文档索引读取游戏存档指南与方法 Reference，核对当前支持游戏和参数签名。查询结构化数据时区分已有结果读取与同步、解析；按游戏的数据结构检查多槽位、默认槽位和大整数字符串，不假定所有游戏返回同一套字段。同步被近期已有存档限制时，按文档中的业务错误码使用已有存档，不循环触发同步。
+
 ## Canonical Documentation
 
 The only maintained hb-sdk guidance source is:
@@ -36,6 +40,8 @@ Before giving hb-sdk-specific guidance or changing hb-sdk consumer code:
 3. Use the index titles and summaries to select the smallest relevant set of linked pages; do not guess page URLs.
 4. Resolve relative links against `https://docs.xiaoheihe.cn/hb_sdk/`, fetch those Markdown pages, and verify their responses before acting.
 5. Check the project's installed `@heybox/hb-sdk` version. If it may differ from the live documentation, read the compatibility and changelog pages linked by the index before recommending an API or CLI command.
+6. For proactive SDK update reminders, read the single approved CDN notice at `https://activity.xiaoheihe.cn/u/hb-sdk/approved-notice.json`. The indexed `Release notices` document is manually authored; it is not approval status. Match notices to the installed version and APIs used; link the applicable Changelog details. An empty or unavailable CDN document must not be represented as an approved announcement. Changelog remains the source for API facts and compatibility checks.
+7. When the task upgrades the SDK, prepares a build, or deploys or publishes a mini-program, read the changelog entries for every stable version after the installed version up to the target version, and check each `必须操作` item first. Decide whether it applies from the APIs, permissions, platforms, and CLI workflows the project actually uses; read the linked guide or migration page before changing code, then verify the change. Report applicable items that remain unhandled instead of skipping them silently.
 
 Do not use copied package references, an installed Skill snapshot, registry contents, remembered API shapes, or HTML documentation as a fallback. If the index or any required linked Markdown page is unavailable or invalid, report that the canonical hb-sdk documentation is unavailable and stop the hb-sdk-specific part of the task.
 

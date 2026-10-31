@@ -33,7 +33,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.7";
+  var APP_VERSION = "1.2.8";
   /* 「去围观」映射：游戏 → 小黑盒 PC 游戏库 appid（与 manifest bindAppIds 同源，都有 test:cloud 校验）。
    * 无映射的游戏隐藏按钮。跳转走 navigation.openAppPage（免权限声明，1.2.7）。 */
   var WATCH_GAME_APPIDS = {
@@ -1177,6 +1177,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
           : st === "awaiting" ? "待赛果"
             : "已结算";
     var bottom = '<span class="status-chip ' + st + '">' + statusText + "</span>";
+    // 「去围观」只在进行中的卡片上（看比赛的欲望发生在比赛时，不在可竞猜时）；无映射的游戏不给入口
+    if (st === "live" && WATCH_GAME_APPIDS[m.game]) {
+      bottom += '<button type="button" class="watch-chip" data-watch="' + esc(m.game) + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M10 9.5l5 3-5 3z"/></svg>' +
+        "去围观</button>";
+    }
     bottom += "<span>" + esc(m.stage) + " · " + esc(m.format) + "</span>";
 
     if (pred) {
@@ -1693,9 +1699,6 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#pickNameB").textContent = m.teamB.name;
     paintAvatar($("#pickAvatarA"), m.teamA);
     paintAvatar($("#pickAvatarB"), m.teamB);
-
-    // 「去围观」：只在有游戏页映射（bindAppIds 五款）时显示
-    $("#watchGameBtn").hidden = !WATCH_GAME_APPIDS[m.game];
 
     $("#sheetBalance").textContent = fmtNum(state.bankroll);
     if (state.bankroll < 0) $("#sheetBalance").textContent = "-" + fmtNum(Math.abs(state.bankroll));
@@ -3074,6 +3077,18 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
 
     $("#matchList").addEventListener("click", function (e) {
+      // 「去围观」小徽标：直接跳游戏详情页，不进竞猜面板
+      var watch = e.target.closest(".watch-chip[data-watch]");
+      if (watch) {
+        var watchAppId = WATCH_GAME_APPIDS[watch.dataset.watch];
+        if (watchAppId) {
+          openAppPage({ target: "game_detail", appId: watchAppId, gameType: "pc", page: "game", hSrc: "miniprogram-esports-sandbox" })
+            .then(function (res) {
+              if (res && res.error) toast("当前客户端不支持跳转");
+            });
+        }
+        return;
+      }
       var row = e.target.closest(".team-row[data-match]");
       if (!row) return;
       openSheet(row.dataset.match, row.dataset.pick);
@@ -3081,17 +3096,6 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     // 对决：约战按钮（先确认）/ 邀请横幅 / 战报回传 / 已发约战再复制
     $("#duelBtn").addEventListener("click", openDuelConfirm);
-
-    // 「去围观」：跳小黑盒游戏详情页（navigation.openAppPage，免权限声明；仅 bindAppIds 五款游戏显示）
-    $("#watchGameBtn").addEventListener("click", function () {
-      var m = matchById(sheetMatchId);
-      var appId = m && WATCH_GAME_APPIDS[m.game];
-      if (!appId) return;
-      openAppPage({ target: "game_detail", appId: appId, gameType: "pc", page: "game", hSrc: "miniprogram-esports-sandbox" })
-        .then(function (res) {
-          if (res && res.error) toast("当前客户端不支持跳转");
-        });
-    });
 
     // 关注作者：点击内第一时间调 requestFollowAuthor（真手势契约，不可先 await）
     $("#followAuthorBtn").addEventListener("click", function () {

@@ -276,10 +276,10 @@ check("围观映射五款齐备且 ⊆ manifest bindAppIds", WATCH_IDS.every(fun
 }), watchBlock.slice(0, 120));
 check("platform 三包装齐备（openAppPage/关注状态/请求关注）",
   /navigation\.openAppPage/.test(platformSrc) && /user\.getFollowStatus/.test(platformSrc) && /user\.requestFollowAuthor/.test(platformSrc));
-check("app.js 已接线（game_detail 跳转/真手势关注/状态探测显隐）",
-  /openAppPage\(\{ target: "game_detail"/.test(appSrc) && /requestFollowAuthor\(\)/.test(appSrc) &&
-  /res\.status === "notFollowing"/.test(appSrc));
-check("围观/关注 DOM 齐备", /id="watchGameBtn"/.test(htmlSrc) && /id="followAuthorBtn"/.test(htmlSrc));
+check("app.js 已接线（live 卡片围观徽标/真手势关注/状态探测显隐）",
+  /st === "live" && WATCH_GAME_APPIDS\[m\.game\]/.test(appSrc) && /watch-chip" data-watch=/.test(appSrc) &&
+  /requestFollowAuthor\(\)/.test(appSrc) && /res\.status === "notFollowing"/.test(appSrc));
+check("围观徽标不在竞猜面板（1.2.8 修正）", !/id="watchGameBtn"/.test(htmlSrc) && /id="followAuthorBtn"/.test(htmlSrc));
 
 rmSync(tmp, { recursive: true, force: true });
 

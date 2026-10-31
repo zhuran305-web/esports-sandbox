@@ -2,7 +2,7 @@ import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
 import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary } from "./collection.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
-import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes } from "./platform.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 
 (function () {
@@ -33,7 +33,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.6";
+  var APP_VERSION = "1.2.7";
+  /* 「去围观」映射：游戏 → 小黑盒 PC 游戏库 appid（与 manifest bindAppIds 同源，都有 test:cloud 校验）。
+   * 无映射的游戏隐藏按钮。跳转走 navigation.openAppPage（免权限声明，1.2.7）。 */
+  var WATCH_GAME_APPIDS = {
+    lol: "900000045",
+    valorant: "900006125",
+    "starcraft-2": "900168298",
+    cs2: "900196328",
+    r6: "900217539"
+  };
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
     try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }
@@ -1685,6 +1694,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     paintAvatar($("#pickAvatarA"), m.teamA);
     paintAvatar($("#pickAvatarB"), m.teamB);
 
+    // 「去围观」：只在有游戏页映射（bindAppIds 五款）时显示
+    $("#watchGameBtn").hidden = !WATCH_GAME_APPIDS[m.game];
+
     $("#sheetBalance").textContent = fmtNum(state.bankroll);
     if (state.bankroll < 0) $("#sheetBalance").textContent = "-" + fmtNum(Math.abs(state.bankroll));
 
@@ -2683,6 +2695,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       return sourceNames[s] || s;
     }).join(" / ") || "—";
 
+    if (!$("#view-about").hidden) refreshFollowAuthor(); // 关注状态可变，每次进关于页重探（免弹框查询，代价低）
+
     Promise.all([
       loadNick(),
       loadHbProfile(),
@@ -2845,6 +2859,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "schedule") renderSchedule();
     currentView = name;
     if (!opts.fromHistory) syncHistory(prev, name);
+  }
+
+  /* ---------- 关注作者（1.2.7，user.getFollowStatus/requestFollowAuthor 免权限声明） ---------- */
+  function refreshFollowAuthor() {
+    var btn = $("#followAuthorBtn");
+    getFollowStatus().then(function (res) {
+      // 只有「未关注」才显示；已关注/本人/查询失败/旧宿主不支持一律隐藏
+      btn.hidden = !(res && res.status === "notFollowing");
+    }).catch(function () { btn.hidden = true; });
   }
 
   /* ============================== 玩法说明（分类菜单 → 二级详情） ============================== */
@@ -3058,6 +3081,30 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     // 对决：约战按钮（先确认）/ 邀请横幅 / 战报回传 / 已发约战再复制
     $("#duelBtn").addEventListener("click", openDuelConfirm);
+
+    // 「去围观」：跳小黑盒游戏详情页（navigation.openAppPage，免权限声明；仅 bindAppIds 五款游戏显示）
+    $("#watchGameBtn").addEventListener("click", function () {
+      var m = matchById(sheetMatchId);
+      var appId = m && WATCH_GAME_APPIDS[m.game];
+      if (!appId) return;
+      openAppPage({ target: "game_detail", appId: appId, gameType: "pc", page: "game", hSrc: "miniprogram-esports-sandbox" })
+        .then(function (res) {
+          if (res && res.error) toast("当前客户端不支持跳转");
+        });
+    });
+
+    // 关注作者：点击内第一时间调 requestFollowAuthor（真手势契约，不可先 await）
+    $("#followAuthorBtn").addEventListener("click", function () {
+      requestFollowAuthor().then(function (res) {
+        if (!res) return;
+        if (res.status) {
+          $("#followAuthorBtn").hidden = res.status !== "notFollowing";
+          if (res.status === "following") toast("感谢关注！");
+          else if (res.status === "self") toast("你就是作者本人 🙂");
+        }
+        // 用户取消 / 失败：静默结束（取消是正常结果）
+      });
+    });
     $("#duelEntry").addEventListener("click", function () { switchView("duels"); });
     $("#versusShareBtn").addEventListener("click", function () {
       var s = recordSummary();

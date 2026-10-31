@@ -267,6 +267,20 @@ check("filesystem 权限已声明", !!(pkgJson.heybox && pkgJson.heybox.permissi
 check("版本两处一致", pkgJson.version === (appSrc.match(/APP_VERSION = "([^"]+)"/) || [])[1],
   pkgJson.version + " vs " + (appSrc.match(/APP_VERSION = "([^"]+)"/) || [])[1]);
 
+/* ---------- 场景 M：去围观/关注作者（1.2.7，免权限声明能力） ---------- */
+console.log("M. 去围观/关注作者：");
+var watchBlock = (appSrc.match(/var WATCH_GAME_APPIDS = \{[\s\S]*?\};/) || [""])[0];
+var WATCH_IDS = ["900000045", "900006125", "900168298", "900196328", "900217539"];
+check("围观映射五款齐备且 ⊆ manifest bindAppIds", WATCH_IDS.every(function (id) {
+  return watchBlock.indexOf(id) >= 0 && pkgJson.heybox.bindAppIds.indexOf(id) >= 0;
+}), watchBlock.slice(0, 120));
+check("platform 三包装齐备（openAppPage/关注状态/请求关注）",
+  /navigation\.openAppPage/.test(platformSrc) && /user\.getFollowStatus/.test(platformSrc) && /user\.requestFollowAuthor/.test(platformSrc));
+check("app.js 已接线（game_detail 跳转/真手势关注/状态探测显隐）",
+  /openAppPage\(\{ target: "game_detail"/.test(appSrc) && /requestFollowAuthor\(\)/.test(appSrc) &&
+  /res\.status === "notFollowing"/.test(appSrc));
+check("围观/关注 DOM 齐备", /id="watchGameBtn"/.test(htmlSrc) && /id="followAuthorBtn"/.test(htmlSrc));
+
 rmSync(tmp, { recursive: true, force: true });
 
 console.log("");

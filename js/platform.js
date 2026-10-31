@@ -489,3 +489,38 @@ export async function saveFileBytes(suggestedName, bytes) {
   }
 }
 
+/**
+ * navigation.openAppPage：受控跳转宿主内页面（免权限声明）。
+ * 支持 game_detail（移动+PC）/ user_detail、post_detail（仅移动）/ mini_program（移动+PC）。
+ * 旧 Runtime 报 METHOD_NOT_FOUND——调用方按 { error } 决定隐藏入口或提示。
+ */
+export async function openAppPage(payload) {
+  if (!sdk || !sdk.navigation || typeof sdk.navigation.openAppPage !== "function") return { error: "UNSUPPORTED" };
+  try {
+    await sdk.navigation.openAppPage(payload);
+    return { ok: true };
+  } catch (e) {
+    return { error: (e && (e.code || e.errorCode)) || "FAILED" };
+  }
+}
+
+/** user.getFollowStatus：查询与作者的关注关系（notFollowing/following/self），不触发登录/弹框、不披露账号。 */
+export async function getFollowStatus() {
+  if (!sdk || !sdk.user || typeof sdk.user.getFollowStatus !== "function") return { error: "UNSUPPORTED" };
+  try {
+    return { status: await sdk.user.getFollowStatus() };
+  } catch (e) {
+    return { error: (e && (e.code || e.errorCode)) || "FAILED" };
+  }
+}
+
+/** user.requestFollowAuthor：拉起关注作者（0.9.5+，必须真实用户手势内第一时间调用；用户取消会 reject）。 */
+export async function requestFollowAuthor() {
+  if (!sdk || !sdk.user || typeof sdk.user.requestFollowAuthor !== "function") return { error: "UNSUPPORTED" };
+  try {
+    return { status: await sdk.user.requestFollowAuthor() };
+  } catch (e) {
+    return { error: (e && (e.code || e.errorCode)) || "FAILED" };
+  }
+}
+

@@ -1,6 +1,7 @@
 import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
-import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary } from "./collection.js";
+import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary, teamHistory } from "./collection.js";
+import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
@@ -13,6 +14,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var MATCHES = (DATA.matches || []).slice();
   // 队标：数据里只存相对路径（队名 → 路径），换自建 OSS 镜像时只改这一行
   var TEAM_LOGOS = DATA.teams || {};
+  // 队伍主题色（1.2.11）：{队名: [c1, c2, darkText]}——构建期从队标提取，runtime/内嵌切片携带
+  var TEAM_COLORS = DATA.teamColors || {};
   var LOGO_BASE = "https://cdn-api.pandascore.co/images/team/image/";
   var matchIndex = new Map();
   rebuildMatchIndex();
@@ -33,7 +36,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.8";
+  var APP_VERSION = "1.2.11";
   /* 「去围观」映射：游戏 → 小黑盒 PC 游戏库 appid（与 manifest bindAppIds 同源，都有 test:cloud 校验）。
    * 无映射的游戏隐藏按钮。跳转走 navigation.openAppPage（免权限声明，1.2.7）。 */
   var WATCH_GAME_APPIDS = {
@@ -99,7 +102,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   ];
 
   /* ============================== 状态 ============================== */
-  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {} };
+  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: "" };
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
@@ -219,7 +222,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {} };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: "" };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -235,6 +238,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         bankruptOffered: parsed.bankruptOffered === true,
         lastCeremonyAt: typeof parsed.lastCeremonyAt === "number" && parsed.lastCeremonyAt >= 0 ? parsed.lastCeremonyAt : 0,
         collection: normalizeCollection(parsed.collection),
+        achv: normalizeAchv(parsed.achv),
+        minBankroll: typeof parsed.minBankroll === "number" && isFinite(parsed.minBankroll) ? parsed.minBankroll : START_BALANCE,
+        title: typeof parsed.title === "string" ? parsed.title : undefined,
+        mainTeam: typeof parsed.mainTeam === "string" ? parsed.mainTeam : "",
         updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
@@ -244,18 +251,114 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   /* 战绩内容快照：只在内容真正变化时写存储/推云端，避免启动时把本地时间戳刷成最新 */
   var persistedSnapshot = "";
+  var achvChecking = false; // 成就检测重入防护（checkAchievements 在 saveState 内执行）
 
   function stateSnapshot() {
-    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection]);
+    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam]);
   }
 
   function saveState() {
+    // 历史最低余额：saveState 是唯一写闸，余额一切变化必经此处，一处更新全覆盖
+    if (state.bankroll < state.minBankroll) state.minBankroll = state.bankroll;
+    // 成就检测挂在写闸内（幂等锁存，重入由 achvChecking 防护）——任何状态变化路径都不会漏检
+    if (!achvChecking) {
+      achvChecking = true;
+      try { checkAchievements(); } finally { achvChecking = false; }
+    }
     var snap = stateSnapshot();
     if (snap === persistedSnapshot) return;
     persistedSnapshot = snap;
     state.updatedAt = Date.now();
     storageSet(STORAGE_KEY, state);
     scheduleCloudSync();
+  }
+
+  /* ---------- 成就殿堂（1.2.10；检测挂在 saveState 写闸内，任何状态变化路径都会经过） ---------- */
+  function buildAchvSnapshot() {
+    var settled = settledInOrder();
+    var wins = 0, curWin = 0, bestWin = 0, lossRun = 0, lossBest = 0;
+    for (var i = 0; i < settled.length; i++) {
+      if (settled[i].won) {
+        wins += 1;
+        curWin += 1;
+        if (curWin > bestWin) bestWin = curWin;
+        lossRun = 0;
+      } else {
+        lossRun += 1;
+        if (lossRun > lossBest) lossBest = lossRun;
+        curWin = 0;
+      }
+    }
+    var maxStake = 0, nightBets = 0;
+    for (var j = 0; j < state.predictions.length; j++) {
+      var p = state.predictions[j];
+      if (p.stake > maxStake) maxStake = p.stake;
+      var h = new Date(p.placedAt || 0).getHours();
+      if (h >= 2 && h < 5) nightBets += 1;
+    }
+    var codex = collectionSummary(state.collection);
+    var ds = duelStats();
+    return {
+      bets: state.predictions.length,
+      settled: settled.length,
+      wins: wins,
+      bestWinStreak: bestWin,
+      bankroll: state.bankroll,
+      minBankroll: state.minBankroll,
+      maxStake: maxStake,
+      nightBets: nightBets,
+      lossStreakBest: lossBest,
+      codexTeams: codex.teams,
+      codexFollowBest: codex.bestStreak,
+      duelsTotal: DUELS.length,
+      duelsWon: ds.won,
+      gods: state.gods || 0,
+      bankrupts: state.bankrupts || 0
+    };
+  }
+
+  function checkAchievements() {
+    var newly = evalAchievements(buildAchvSnapshot(), state.achv);
+    if (!newly.length) return;
+    newly.forEach(function (id) { state.achv[id] = Date.now(); });
+    var def = achvById(newly[newly.length - 1]);
+    toast("🏆 成就解锁：" + (def ? def.name : newly[newly.length - 1]));
+    if (!$("#view-profile").hidden) renderProfile();
+  }
+
+  /* ---------- 主队与主题换肤（1.2.11：色值来自数据切片，纯 CSS 变量，零网络） ---------- */
+  function mainTeamName() {
+    var k = state.mainTeam || "";
+    var sep = k.indexOf(":");
+    return sep > 0 ? k.slice(sep + 1) : "";
+  }
+
+  function applyTeamTheme() {
+    var root = document.documentElement;
+    var colors = state.mainTeam ? TEAM_COLORS[mainTeamName()] : null;
+    if (colors && colors[0] && colors[1]) {
+      root.dataset.teamTheme = "1";
+      root.style.setProperty("--accent", colors[0]);
+      root.style.setProperty("--accent-strong", colors[1]);
+      // 主色亮（白/黄系队标）→ 配深色文字，保证 accent 底上的可读性
+      root.style.setProperty("--accent-text", colors[2] ? "#1a0e04" : "#ffffff");
+    } else {
+      delete root.dataset.teamTheme;
+      root.style.removeProperty("--accent");
+      root.style.removeProperty("--accent-strong");
+      root.style.removeProperty("--accent-text");
+    }
+  }
+
+  function toggleMainTeam() {
+    if (!currentTeamKey) return;
+    var wasMain = state.mainTeam === currentTeamKey;
+    state.mainTeam = wasMain ? "" : currentTeamKey;
+    saveState();
+    applyTeamTheme();
+    renderTeamPage();
+    if (!$("#view-profile").hidden) renderProfile();
+    toast(wasMain ? "已取消主队" : "主队已设 · 主题色已换");
   }
 
   /* ============================== 战绩云同步 ============================== */
@@ -282,6 +385,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var s = rec.state;
     var localGods = state.gods || 0, localBankrupts = state.bankrupts || 0;
     var localCodex = state.collection;
+    var localAchv = state.achv, localMinBankroll = state.minBankroll;
     state = {
       bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
       predictions: Array.isArray(s.predictions) ? s.predictions : [],
@@ -292,6 +396,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       bankruptOffered: state.bankruptOffered === true || s.bankruptOffered === true,
       lastCeremonyAt: Math.max(state.lastCeremonyAt || 0, typeof s.lastCeremonyAt === "number" ? s.lastCeremonyAt : 0),
       collection: mergeCollection(localCodex, s.collection),
+      achv: mergeAchv(localAchv, s.achv),
+      minBankroll: Math.min(localMinBankroll, typeof s.minBankroll === "number" && isFinite(s.minBankroll) ? s.minBankroll : localMinBankroll),
+      title: typeof s.title === "string" ? s.title : state.title,
+      mainTeam: typeof s.mainTeam === "string" ? s.mainTeam : (state.mainTeam || ""),
       updatedAt: rec.updatedAt
     };
     validateLoadedState();
@@ -1167,7 +1275,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (st === "open") {
         rows += '<button type="button" class="' + cls.join(" ") + '" data-match="' + esc(m.id) + '" data-pick="' + side + '">' + inner + "</button>";
       } else {
-        rows += '<div class="' + cls.join(" ") + '">' + inner + "</div>";
+        // 非 open 状态的队伍行点击进战队资料页（open 行是选边按钮，不动）
+        rows += '<div class="' + cls.join(" ") + '" data-team-key="' + esc(m.game + ":" + team.name) + '">' + inner + "</div>";
       }
     });
 
@@ -1252,7 +1361,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         winProfit: s.winProfit,
         losses: s.losses,
         loseAmount: s.loseAmount
-      }, nick, avatar);
+      }, nick, avatar, state.title);
       // 魔神殿：有封神/破产记录才提交（0/0 用户不上榜）；honorQuote = 转生仪式感言
       if (state.gods > 0 || state.bankrupts > 0) {
         await Cloud.submitHonor(state.gods, state.bankrupts, nick, honorQuote);
@@ -1403,6 +1512,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     // 转生荣誉与本轮盈亏（上次封神/破产以来的已结算净变化，历史区保持累计）
     $("#profileGods").textContent = state.gods || 0;
     $("#profileBankrupts").textContent = state.bankrupts || 0;
+    $("#profileTitle").textContent = state.title ? (achvTitle(state.title) || "未知称号") : "未装备";
+    var achvCount = 0;
+    Object.keys(state.achv || {}).forEach(function (k) { if (state.achv[k]) achvCount++; });
+    $("#achvEntrySub").textContent = "已解锁 " + achvCount + " / " + ACHV_DEFS.length;
     var ds = duelStats();
     $("#duelEntrySub").textContent = DUELS.length
       ? ds.won + " 胜 " + ds.lost + " 负" + (ds.drawn ? " " + ds.drawn + " 平" : "") +
@@ -1466,18 +1579,27 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
   function codexEntryHTML(t) {
     var sub = (t.w + t.l) > 0 ? "胜率 " + t.rate + "%" : "押过 " + t.b + " 场";
+    var isMain = t.key === state.mainTeam;
     return (
-      '<div class="codex-cell">' +
+      '<button type="button" class="codex-cell' + (isMain ? " is-main" : "") + '" data-team-key="' + esc(t.key) + '">' +
         avatarHTML({ name: t.name }) +
-        '<span class="codex-name">' + esc(t.name) + "</span>" +
+        '<span class="codex-name">' + (isMain ? '<span class="codex-fav">❤</span>' : "") + esc(t.name) + "</span>" +
         '<span class="codex-meta">' + esc(gameMeta(t.game).label) + " · " + esc(sub) + "</span>" +
-      "</div>"
+      "</button>"
     );
   }
 
   function renderCodex() {
     var codex = collectionSummary(state.collection);
     $("#codexSub").textContent = "押过 " + codex.teams + " 支队 · 最佳跟队 " + codex.bestStreak + " 连";
+    var mainChip = $("#codexMainChip");
+    if (state.mainTeam) {
+      var mainEntry = codex.list.filter(function (t) { return t.key === state.mainTeam; })[0];
+      mainChip.hidden = false;
+      mainChip.textContent = "❤ 主队 · " + (mainEntry ? mainEntry.name : mainTeamName());
+    } else {
+      mainChip.hidden = true;
+    }
     var gridEl = $("#codexGrid");
     var toggleEl = $("#codexToggle");
     var topEl = $("#codexTop");
@@ -1492,17 +1614,172 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var badge = t.s > 0 ? t.s + " 连" : "最佳 " + t.bs + " 连";
       var meta = gameMeta(t.game).label + (t.rate != null ? " · 胜率 " + t.rate + "%" : "");
       return (
-        '<div class="codex-top-cell">' +
+        '<button type="button" class="codex-top-cell" data-team-key="' + esc(t.key) + '">' +
           "<b>" + badge + "</b>" +
           '<span class="codex-top-name">' + esc(t.name) + "</span>" +
           '<span class="codex-top-meta">' + esc(meta) + "</span>" +
         "</div>"
       );
     }).join("");
-    var shown = codexExpanded ? codex.list : codex.list.slice(0, CODEX_PREVIEW);
+    // 主队置顶，其余按最近互动
+    var listSorted = codex.list.slice().sort(function (x, y) {
+      var xm = x.key === state.mainTeam ? 1 : 0;
+      var ym = y.key === state.mainTeam ? 1 : 0;
+      return (ym - xm) || ((y.ls || 0) - (x.ls || 0));
+    });
+    var shown = codexExpanded ? listSorted : listSorted.slice(0, CODEX_PREVIEW);
     gridEl.innerHTML = shown.map(codexEntryHTML).join("");
     toggleEl.hidden = codex.list.length <= CODEX_PREVIEW;
     toggleEl.textContent = codexExpanded ? "收起" : "展开全部 " + codex.list.length + " 支";
+  }
+
+  /* ---------- 战队资料页（1.2.9：图鉴单元格/比赛卡片队伍行入口，全部现算零新存储） ---------- */
+  var currentTeamKey = "";
+  var teamFromView = "profile";
+
+  function openTeamPage(key, fromView) {
+    if (!key || key.indexOf(":") < 1) return;
+    currentTeamKey = key;
+    teamFromView = fromView || "profile";
+    switchView("team");
+  }
+
+  function teamStatCell(v, label) {
+    return '<div class="stat-cell"><span class="stat-value">' + esc(String(v)) + '</span><span class="stat-label">' + esc(label) + "</span></div>";
+  }
+
+  function renderTeamPage() {
+    var sep = currentTeamKey.indexOf(":");
+    var game = sep > 0 ? currentTeamKey.slice(0, sep) : "";
+    var name = sep > 0 ? currentTeamKey.slice(sep + 1) : currentTeamKey;
+    $("#teamPageTitle").textContent = name;
+
+    var isMain = state.mainTeam === currentTeamKey;
+    $("#teamHero").innerHTML =
+      '<div class="team-hero-card' + (isMain ? " is-main" : "") + '">' +
+        avatarHTML({ name: name }) +
+        '<span class="team-hero-main"><b>' + esc(name) + "</b>" +
+          '<span class="team-hero-sub">' + esc(gameMeta(game).label) + " · 数据窗口 45 天</span></span>" +
+        '<button type="button" class="team-main-btn' + (isMain ? " is-main" : "") + '" id="teamMainBtn">' +
+          (isMain ? "❤ 已是主队" : "❤ 设为主队") + "</button>" +
+      "</div>";
+
+    var hist = teamHistory(MATCHES, game, name, Date.now(), matchDurationMs);
+    var codex = state.collection[currentTeamKey];
+
+    var html = "";
+    if (codex) {
+      var settledN = codex.w + codex.l;
+      html += '<div class="section-head"><h2>我的跟队档案</h2></div>' +
+        '<div class="stat-grid">' +
+          teamStatCell(codex.b, "押过") +
+          teamStatCell(settledN ? Math.round((codex.w / settledN) * 100) + "%" : "--", "胜率") +
+          teamStatCell(codex.s, "当前连击") +
+          teamStatCell(codex.bs, "最佳连击") +
+        "</div>";
+    }
+
+    html += '<div class="section-head"><h2>近 45 天战绩</h2><span class="section-sub">' + hist.wins + " 胜 " + hist.losses + " 负</span></div>";
+    if (!hist.recent.length) {
+      html += '<div class="codex-empty">数据窗口内没有该队的比赛 · 它可能休赛，或已滚出 45 天窗口</div>';
+    } else {
+      html += '<div class="history-list">' + hist.recent.map(function (r) {
+        var badge = r.won === null
+          ? '<span class="history-badge pending">待</span>'
+          : '<span class="history-badge ' + (r.won ? "won" : "lost") + '">' + (r.won ? "W" : "L") + "</span>";
+        return (
+          '<div class="history-item">' + badge +
+            '<span class="history-main">' +
+              '<span class="history-title">vs ' + esc(r.opponentName) + (r.score ? " · " + esc(r.score) : "") + "</span>" +
+              '<span class="history-sub">' + esc(fmtTime(r.startAt)) + "</span>" +
+            "</span>" +
+          "</div>"
+        );
+      }).join("") + "</div>";
+    }
+
+    html += '<div class="section-head"><h2>未来赛程</h2><span class="section-sub">' + hist.upcoming.length + " 场</span></div>";
+    if (!hist.upcoming.length) {
+      html += '<div class="codex-empty">窗口内暂无该队的未来赛程</div>';
+    } else {
+      html += '<div class="history-list">' + hist.upcoming.map(function (u) {
+        var m = matchById(u.id);
+        var st = m ? statusOf(m) : "open";
+        var stText = st === "open" ? "可竞猜" : st === "locked" ? "已截止" : "正在比赛";
+        return (
+          '<div class="history-item team-upcoming-row"' + (st === "open" ? ' data-open-match="' + esc(u.id) + '"' : "") + ">" +
+            '<span class="status-chip ' + st + '">' + stText + "</span>" +
+            '<span class="history-main">' +
+              '<span class="history-title">vs ' + esc(u.opponentName) + "</span>" +
+              '<span class="history-sub">' + esc(u.stage || "") + " · " + esc(fmtTime(u.startAt)) + "</span>" +
+            "</span>" +
+            (st === "open" ? '<span class="history-amount won">去竞猜 ›</span>' : "") +
+          "</div>"
+        );
+      }).join("") + "</div>";
+    }
+
+    $("#teamBody").innerHTML = html;
+  }
+
+  /* ---------- 成就殿堂页（1.2.10：解锁卡片网格 + 称号装备） ---------- */
+  function renderAchv() {
+    var unlocked = state.achv || {};
+    var count = 0;
+    ACHV_DEFS.forEach(function (d) { if (unlocked[d.id]) count++; });
+    $("#achvProgress").textContent = "已解锁 " + count + " / " + ACHV_DEFS.length;
+
+    var groups = [];
+    ACHV_DEFS.forEach(function (d) {
+      var g = null;
+      for (var i = 0; i < groups.length; i++) {
+        if (groups[i].name === d.g) { g = groups[i]; break; }
+      }
+      if (!g) { g = { name: d.g, defs: [] }; groups.push(g); }
+      g.defs.push(d);
+    });
+
+    var html = "";
+    groups.forEach(function (g) {
+      var defs = g.defs.slice().sort(function (a, b) {
+        return (unlocked[b.id] || 0) - (unlocked[a.id] || 0); // 已解锁排前
+      });
+      html += '<div class="section-head"><h2>' + esc(g.name) + "</h2></div>";
+      html += '<div class="achv-grid">' + defs.map(function (d) {
+        var got = !!unlocked[d.id];
+        var hidden = d.hidden && !got; // 隐藏成就解锁前只显示 🔒
+        var equipped = state.title === d.id;
+        var cls = "achv-card" + (got ? " is-got" : " is-locked") + (equipped ? " is-equipped" : "");
+        var icon = hidden ? "🔒" : d.icon;
+        var name = hidden ? "神秘成就" : d.name;
+        var desc = hidden ? "继续探索沙盘，解锁它" : d.desc;
+        var meta = got
+          ? "已解锁 · " + new Date(unlocked[d.id]).toLocaleDateString() + (d.title ? " · 称号「" + d.title + "」" : "")
+          : (hidden ? "隐藏成就" : "未解锁");
+        return (
+          '<button type="button" class="' + cls + '"' + (got ? ' data-title-achv="' + esc(d.id) + '"' : "") + ">" +
+            '<span class="achv-icon">' + icon + "</span>" +
+            '<span class="achv-main">' +
+              "<b>" + esc(name) + (equipped ? '<span class="achv-equipped">已装备</span>' : "") + "</b>" +
+              '<span class="achv-desc">' + esc(desc) + "</span>" +
+              '<span class="achv-meta">' + esc(meta) + "</span>" +
+            "</span>" +
+          "</button>"
+        );
+      }).join("") + "</div>";
+    });
+    $("#achvList").innerHTML = html;
+  }
+
+  function toggleTitle(id) {
+    var def = achvById(id);
+    if (!def) return;
+    state.title = state.title === id ? "" : id; // 再点一次 = 卸下（""=权威清空，走门控清掉榜上字段）
+    saveState();
+    renderAchv();
+    if (!$("#view-profile").hidden) renderProfile();
+    syncBoards(); // 称号变化经 submitBoardWithNick 门控自动 second+1（低频动作，不随连击刷）
+    toast(state.title === id ? "已装备称号「" + def.title + "」" : "已卸下称号");
   }
 
   function renderAll() {
@@ -1936,7 +2213,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
           '<span class="board-rank">' + (e.rank <= 3 ? ["🥇", "🥈", "🥉"][e.rank - 1] : e.rank) + "</span>" +
           personAvatar(nick, e.avatar) +
-          '<span class="board-nick">' + esc(nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+          '<span class="board-nick">' + esc(nick) +
+            (e.title ? '<span class="title-chip">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
+            (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
           '<span class="board-detail">' +
             '<span class="board-first ' + (isWin ? "won" : "lost") + '">' + e.first + " 场</span>" +
             '<span class="board-second">' + (isWin ? "赚 " : "亏 ") + fmtNum(e.second) + " 沙粒</span>" +
@@ -2019,7 +2298,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
           '<span class="board-rank">' + (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1) + "</span>" +
           personAvatar(e.nick, e.avatar) +
-          '<span class="board-nick">' + esc(e.nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+          '<span class="board-nick">' + esc(e.nick) +
+            (e.title ? '<span class="title-chip">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
+            (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
           '<span class="board-detail">' + main + '<span class="board-second">' + sub + "</span></span>" +
         "</div>"
       );
@@ -2756,7 +3037,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus";
+    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus" || name === "team" || name === "achv";
   }
 
   function initHistory() {
@@ -2842,13 +3123,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
       closeRulesTopic();
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus", "team", "achv"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
-    // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页从「我的」侧进入返回回「我的」
+    // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页/成就殿堂从「我的」侧进入返回回「我的」；
+    // 战队资料页按来源高亮（图鉴进=我的，比赛卡进=赛事）
     var tabName = name === "temple" ? "board"
-      : name === "duels" || name === "versus" ? "profile"
-        : (isSubPage ? "settings" : name);
+      : name === "duels" || name === "versus" || name === "achv" ? "profile"
+        : name === "team" ? (teamFromView === "profile" ? "profile" : "matches")
+          : (isSubPage ? "settings" : name);
     document.querySelectorAll(".tab").forEach(function (t) {
       t.classList.toggle("is-active", t.dataset.view === tabName);
     });
@@ -2858,6 +3141,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "temple") renderTemple();
     if (name === "duels") renderDuels();
     if (name === "versus") renderVersus();
+    if (name === "team") renderTeamPage();
+    if (name === "achv") renderAchv();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -3087,6 +3372,12 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
               if (res && res.error) toast("当前客户端不支持跳转");
             });
         }
+        return;
+      }
+      // 非 open 卡片的队伍行 → 战队资料页
+      var teamCell = e.target.closest(".team-row[data-team-key]");
+      if (teamCell) {
+        openTeamPage(teamCell.dataset.teamKey, "matches");
         return;
       }
       var row = e.target.closest(".team-row[data-match]");
@@ -3533,6 +3824,36 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       codexExpanded = !codexExpanded;
       renderCodex();
     });
+    $("#codexMainChip").addEventListener("click", function () {
+      if (state.mainTeam) openTeamPage(state.mainTeam, "profile");
+    });
+
+    // 成就殿堂：入口/返回/称号装备
+    $("#achvEntry").addEventListener("click", function () { switchView("achv"); });
+    $("#achvBackBtn").addEventListener("click", function () { goBack("profile"); });
+    $("#achvList").addEventListener("click", function (e) {
+      var card = e.target.closest("[data-title-achv]");
+      if (card) toggleTitle(card.dataset.titleAchv);
+    });
+
+    // 图鉴单元格 → 战队资料页（网格 + top3 共用委托）
+    $("#codexGrid").addEventListener("click", function (e) {
+      var cell = e.target.closest("[data-team-key]");
+      if (cell) openTeamPage(cell.dataset.teamKey, "profile");
+    });
+    $("#codexTop").addEventListener("click", function (e) {
+      var cell = e.target.closest("[data-team-key]");
+      if (cell) openTeamPage(cell.dataset.teamKey, "profile");
+    });
+
+    // 战队资料页：返回 + 可竞猜场次直达竞猜面板
+    $("#teamBackBtn").addEventListener("click", function () { goBack(teamFromView); });
+    $("#view-team").addEventListener("click", function (e) {
+      var mainBtn = e.target.closest("#teamMainBtn");
+      if (mainBtn) { toggleMainTeam(); return; }
+      var row = e.target.closest("[data-open-match]");
+      if (row) openSheet(row.dataset.openMatch);
+    });
 
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
@@ -3545,7 +3866,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   /* ============================== 运行时数据 ============================== */
-  function applySnapshot(matches, meta, teams) {
+  function applySnapshot(matches, meta, teams, teamColors) {
     if (!matches || !matches.length) return;
 
     var map = {};
@@ -3564,6 +3885,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (teams) {
       Object.keys(teams).forEach(function (name) { TEAM_LOGOS[name] = teams[name]; });
     }
+    // 主题色同理只增不减
+    if (teamColors) {
+      Object.keys(teamColors).forEach(function (name) { TEAM_COLORS[name] = teamColors[name]; });
+    }
+    applyTeamTheme(); // 主队的新色到了可能要换肤
     rebuildMatchIndex();
     if (meta && meta.updatedAt) DATA_UPDATED_AT = meta.updatedAt;
     runtimeRefreshed = true;
@@ -3614,7 +3940,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var cached = await loadCachedSnapshot();
       if (cached && cached.meta && cached.meta.updatedAt &&
           cached.meta.updatedAt !== DATA_UPDATED_AT) {
-        applySnapshot(cached.matches, cached.meta, cached.teams);
+        applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors);
       }
 
       // 宿主明确拒绝服务端 API 时，24 小时内不再自动重试，避免每次启动弹原生错误框
@@ -3636,7 +3962,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         pollBackoffUntil = 0;
         await storageSet(NET_BLOCK_KEY, { at: 0, version: APP_VERSION });
         if (remote.meta.updatedAt && remote.meta.updatedAt !== DATA_UPDATED_AT) {
-          applySnapshot(remote.matches, remote.meta, remote.teams);
+          applySnapshot(remote.matches, remote.meta, remote.teams, remote.teamColors);
           if (manual) toast("赛程已更新");
         } else if (manual) {
           toast("赛程已是最新");
@@ -4369,6 +4695,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       new Promise(function (resolve) { setTimeout(resolve, 800); })
     ]);
     state = await loadState();
+    applyTeamTheme(); // 主队主题在首屏渲染前就位（色值来自内嵌数据，零网络）
     await loadDuels();
     await loadDuelInvite();
     await loadDuelLocks();

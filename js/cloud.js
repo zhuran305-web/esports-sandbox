@@ -119,6 +119,7 @@ function mockList(board, limit) {
       uid: e.uid,
       nick: e.nick,
       avatar: typeof extra.avatar === "string" ? extra.avatar : "",
+      title: typeof extra.title === "string" ? extra.title : "",
       first: typeof extra.first === "number" ? extra.first : d.first,
       second: typeof extra.second === "number" ? extra.second : d.second,
       isMe: e.uid === "me"
@@ -162,12 +163,13 @@ var myUid = null;
  * 1.1.17+ 真实昵称头像由授权换票获得（app.js#syncHbProfile，须用户手势）。
  */
 
-async function realSubmit(board, first, second, displayNick, avatar) {
+async function realSubmit(board, first, second, displayNick, avatar, title) {
   var sdk = getSDK();
   if (!sdk || !sdk.cloud) return;
   var extra = { first: first, second: second };
   if (displayNick) extra.nick = displayNick; // 自选/黑盒昵称（跨设备经 extra.nick 读回）
   if (avatar) extra.avatar = String(avatar).slice(0, 300); // 公开展示头像（extra 上限 2048 字节，实测余量充足）
+  if (title) extra.title = String(title).slice(0, 24); // 装备称号的成就 id（客户端字典还原，未知 id 不渲染）
   await sdk.cloud.leaderboard.submit({
     key: BOARD_KEYS[board],
     score: encode(first, second),
@@ -182,26 +184,29 @@ async function realSubmit(board, first, second, displayNick, avatar) {
  * 本地 0 胜 0 负（新用户/清除本地数据后榜上还有旧条目）同样要能刷昵称；
  * 榜上无条目且无分数时不新建（win 榜条目由 registerIdentity 保证，败榜输过才出现）。
  */
-async function submitBoardWithNick(board, first, second, displayNick, avatar) {
+async function submitBoardWithNick(board, first, second, displayNick, avatar, title) {
   var cur = await realMy(board).catch(function () { return null; });
   var curFirst = cur ? cur.first : 0;
   var curSecond = cur ? cur.second : 0;
   var curNick = (cur && cur.extra && cur.extra.nick) || "";
   var curAvatar = (cur && cur.extra && cur.extra.avatar) || "";
+  var curTitle = (cur && cur.extra && cur.extra.title) || "";
   if (first > curFirst || (first === curFirst && second > curSecond)) {
-    await realSubmit(board, first, second, displayNick, avatar);
+    await realSubmit(board, first, second, displayNick, avatar, title);
     return;
   }
-  // 昵称/头像变化但分数未变优：用「榜上 second+1」触发一次 extra 更新（only-if-better）。
-  // avatar 必须参与判定——否则旧条目（无 avatar 字段）在昵称已对、分数未变时永远不会补上头像。
-  // avatar 语义：undefined=沿用榜上旧值；字符串（含空串）=权威值，与榜上不同即刷新。
+  // 昵称/头像/称号变化但分数未变优：用「榜上 second+1」触发一次 extra 更新（only-if-better）。
+  // avatar/title 必须参与判定——否则旧条目在昵称已对、分数未变时永远补不上新字段（1.2.4 头像同款坑）。
+  // avatar/title 语义：undefined=沿用榜上旧值；字符串（含空串）=权威值，与榜上不同即刷新。
   var nickChanged = !!(displayNick && displayNick !== curNick);
   var avatarChanged = avatar !== undefined && avatar !== curAvatar;
-  if (cur && (nickChanged || avatarChanged)) {
+  var titleChanged = title !== undefined && title !== curTitle;
+  if (cur && (nickChanged || avatarChanged || titleChanged)) {
     await realSubmit(
       board, curFirst, curSecond + 1,
       displayNick || curNick,
-      avatar !== undefined ? avatar : curAvatar
+      avatar !== undefined ? avatar : curAvatar,
+      title !== undefined ? title : curTitle
     );
   }
 }
@@ -219,6 +224,7 @@ async function realList(board, limit) {
         uid: e.appUserId,
         nick: extra.nick || "盒友",
         avatar: typeof extra.avatar === "string" ? extra.avatar : "",
+        title: typeof extra.title === "string" ? extra.title : "",
         // 展示值优先读 extra（score 里的沙粒数已封顶，extra 存真实值；老条目两者一致）
         first: typeof extra.first === "number" ? extra.first : d.first,
         second: typeof extra.second === "number" ? extra.second : d.second,
@@ -284,7 +290,7 @@ export var Cloud = {
     return !isMiniProgram();
   },
 
-  submitStats: async function (stats, displayNick, avatar) {
+  submitStats: async function (stats, displayNick, avatar, title) {
     if (!isMiniProgram()) {
       var mockNick = displayNick || "我";
       var mockAvatar = avatar || "";
@@ -293,8 +299,8 @@ export var Cloud = {
       return;
     }
     // 0 胜/0 负也带昵称提交：新用户与「清除本地数据」后的用户，榜上旧条目才刷得出昵称
-    if (stats.wins > 0 || displayNick) await submitBoardWithNick("win", stats.wins, Math.max(0, stats.winProfit), displayNick, avatar);
-    if (stats.losses > 0 || displayNick) await submitBoardWithNick("lose", stats.losses, Math.max(0, stats.loseAmount), displayNick, avatar);
+    if (stats.wins > 0 || displayNick) await submitBoardWithNick("win", stats.wins, Math.max(0, stats.winProfit), displayNick, avatar, title);
+    if (stats.losses > 0 || displayNick) await submitBoardWithNick("lose", stats.losses, Math.max(0, stats.loseAmount), displayNick, avatar, title);
   },
 
   getBoard: async function (board, limit) {
@@ -363,6 +369,7 @@ export var Cloud = {
             uid: e.appUserId,
             nick: extra.nick || "赌徒",
             avatar: typeof extra.avatar === "string" ? extra.avatar : "",
+        title: typeof extra.title === "string" ? extra.title : "",
             quote: typeof extra.quote === "string" ? extra.quote : "",
             gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, isMe: myUid ? e.appUserId === myUid : false
           };
@@ -446,7 +453,11 @@ export var Sync = {
           gods: state.gods || 0, bankrupts: state.bankrupts || 0,
           godOffered: state.godOffered === true, bankruptOffered: state.bankruptOffered === true,
           lastCeremonyAt: state.lastCeremonyAt || 0,
-          collection: state.collection || {} // 战队图鉴（1.2.5）；条目上限 150 由 collection.js 兜住体积
+          collection: state.collection || {}, // 战队图鉴（1.2.5）；条目上限 150 由 collection.js 兜住体积
+          achv: state.achv || {},             // 成就锁存（1.2.10）；全解锁 ≈1KB
+          minBankroll: typeof state.minBankroll === "number" ? state.minBankroll : 0, // 历史最低余额（lifetime 极值）
+          title: typeof state.title === "string" ? state.title : undefined,          // 装备称号（undefined=未配置，沿用榜上旧值）
+          mainTeam: typeof state.mainTeam === "string" ? state.mainTeam : ""        // 主队（1.2.11，"game:队名" 键）
         }
       });
     }

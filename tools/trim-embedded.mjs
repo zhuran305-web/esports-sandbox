@@ -4,7 +4,7 @@
  * 完整的 30+30 天数据仍由运行时 OSS 拉取提供（js/data-source.js）。
  * 3375 场全量里约 77% 是 7 天前的历史赛果，打进包里只是压舱物。
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectTeamLogos, stripTeamLogos } from "./lib.mjs";
@@ -53,6 +53,21 @@ var out = {
   },
   // 只带窗口内队伍的队标（全量 902 支，窗口内约 400 支）
   teams: collectTeamLogos(matches),
+  // 窗口内队伍的主题色切片（extract-team-colors 的缓存；离线冷启动也能换肤）
+  teamColors: (function () {
+    var out = {};
+    var all = {};
+    var p = path.join(ROOT, "data", "team-colors.json");
+    if (existsSync(p)) {
+      try { all = JSON.parse(readFileSync(p, "utf8")) || {}; } catch (e) { all = {}; }
+    }
+    var logos = collectTeamLogos(matches);
+    Object.keys(logos).forEach(function (name) {
+      var e = all[name];
+      if (e && Array.isArray(e.c) && e.c.length >= 3) out[name] = e.c;
+    });
+    return out;
+  })(),
   matches: stripTeamLogos(matches)
 };
 

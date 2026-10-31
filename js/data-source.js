@@ -55,6 +55,26 @@ function normalizeTeams(raw) {
   return out;
 }
 
+// 队伍主题色（1.2.11）：{队名: [c1, c2, darkText]}。缺字段/老数据/非法色值一律当空
+var MAX_TEAM_COLORS = 1200;
+function normalizeTeamColors(raw) {
+  var src = raw && raw.teamColors;
+  if (!src || typeof src !== "object") return {};
+  var out = {};
+  var n = 0;
+  Object.keys(src).forEach(function (name) {
+    if (n >= MAX_TEAM_COLORS) return;
+    var v = src[name];
+    if (Array.isArray(v) && v.length >= 3 &&
+        typeof v[0] === "string" && /^#[0-9a-fA-F]{6}$/.test(v[0]) &&
+        typeof v[1] === "string" && /^#[0-9a-fA-F]{6}$/.test(v[1])) {
+      out[name] = [v[0], v[1], v[2] ? 1 : 0];
+      n++;
+    }
+  });
+  return out;
+}
+
 function baseUrl() {
   return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/";
 }
@@ -76,15 +96,17 @@ export async function loadCachedSnapshot() {
     meta: cached.meta,
     matches: matches,
     teams: normalizeTeams(cached),
+    teamColors: normalizeTeamColors(cached),
     checkedAt: typeof cached.checkedAt === "number" ? cached.checkedAt : 0
   };
 }
 
-async function saveCache(meta, matches, teams, checkedAt) {
+async function saveCache(meta, matches, teams, teamColors, checkedAt) {
   return storageSet(CACHE_KEY, {
     meta: meta,
     matches: matches,
     teams: teams,
+    teamColors: teamColors,
     checkedAt: checkedAt
   });
 }
@@ -108,6 +130,7 @@ export async function fetchRemoteSnapshot(options) {
       meta: cached.meta,
       matches: cached.matches,
       teams: cached.teams,
+      teamColors: cached.teamColors,
       checkedAt: cached.checkedAt,
       fromCache: true,
       skipped: true
@@ -125,11 +148,12 @@ export async function fetchRemoteSnapshot(options) {
   if (cached && cached.meta.hash === meta.hash && cached.meta.updatedAt === meta.updatedAt) {
     // 数据未变化：也刷新 checkedAt，让 maxAge 节流在下一轮生效（每轮轮询只花一次 meta 探测）
     cached.checkedAt = Date.now();
-    await saveCache(meta, cached.matches, cached.teams, cached.checkedAt);
+    await saveCache(meta, cached.matches, cached.teams, cached.teamColors, cached.checkedAt);
     return {
       meta: meta,
       matches: cached.matches,
       teams: cached.teams,
+      teamColors: cached.teamColors,
       checkedAt: cached.checkedAt,
       fromCache: true
     };
@@ -148,9 +172,10 @@ export async function fetchRemoteSnapshot(options) {
   var matches = normalizeMatches(raw);
   if (!matches) return { error: "INVALID_MATCHES" };
   var teams = normalizeTeams(raw);
+  var teamColors = normalizeTeamColors(raw);
 
   var checkedAt = Date.now();
-  var cachedOk = await saveCache(meta, matches, teams, checkedAt);
+  var cachedOk = await saveCache(meta, matches, teams, teamColors, checkedAt);
   if (!cachedOk) {
     // 整包约 1.2 MiB，宿主可能对单值设 UTF-8 字节配额；失败只影响下次启动需重下
     console.warn("[data] 快照缓存写入失败，下次启动会重新下载整包");
@@ -159,6 +184,7 @@ export async function fetchRemoteSnapshot(options) {
     meta: meta,
     matches: matches,
     teams: teams,
+    teamColors: teamColors,
     checkedAt: checkedAt,
     fromCache: false
   };

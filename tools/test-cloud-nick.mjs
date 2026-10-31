@@ -281,6 +281,110 @@ check("app.js 已接线（live 卡片围观徽标/真手势关注/状态探测�
   /requestFollowAuthor\(\)/.test(appSrc) && /res\.status === "notFollowing"/.test(appSrc));
 check("围观徽标不在竞猜面板（1.2.8 修正）", !/id="watchGameBtn"/.test(htmlSrc) && /id="followAuthorBtn"/.test(htmlSrc));
 
+/* ---------- 场景 N：战队资料页 teamHistory（1.2.9） ---------- */
+console.log("N. 战队资料页 teamHistory：");
+var NOW = 1700000000000;
+var dur = function () { return 2 * 3600000; }; // 统一估时 2h
+var histMatches = [
+  mkMatch("h1", "lol", "T1", "GEN", NOW - 10 * DAY), // T1 在 A 侧，胜者 A
+  mkMatch("h2", "lol", "GEN", "T1", NOW - 8 * DAY),  // T1 在 B 侧，胜者 A → T1 负
+  mkMatch("h3", "lol", "T1", "HLE", NOW - 6 * DAY),
+  mkMatch("h4", "lol", "T1", "DKT", NOW - 4 * DAY),
+  mkMatch("h5", "lol", "T1", "FOX", NOW - 3600000),
+  mkMatch("v1", "valorant", "T1", "GEN", NOW - 2 * DAY)
+];
+histMatches[0].result = { winner: "A", score: "2:0" };
+histMatches[1].result = { winner: "A", score: "1:2" };
+histMatches[2].result = { winner: "B", score: "0:2" };
+histMatches[3].result = { winner: "A", score: "2:1" };
+histMatches[4].stage = "决赛"; // 无胜者，开赛 1h < 估时 2h → 进行中 → upcoming
+var hn = Col.teamHistory(histMatches, "lol", "T1", NOW, dur);
+check("胜负统计（跨侧位正确）：2 胜 2 负", hn.total === 4 && hn.wins === 2 && hn.losses === 2, JSON.stringify({ t: hn.total, w: hn.wins, l: hn.losses }));
+check("跨游戏同名不分（valorant:T1 不混入）", hn.recent.every(function (r) { return r.id !== "v1"; }));
+check("recent 倒序且含对手/比分", hn.recent[0].id === "h4" && hn.recent[0].opponentName === "DKT" && hn.recent[0].score === "2:1",
+  JSON.stringify(hn.recent[0]));
+check("进行中归 upcoming 而非 recent", hn.recent.every(function (r) { return r.id !== "h5"; }) && hn.upcoming.length === 1 && hn.upcoming[0].id === "h5",
+  JSON.stringify(hn.upcoming));
+var ha = Col.teamHistory(histMatches, "lol", "T1", NOW + 5 * 3600000, dur); // 5h 后：h5 超估时无胜者 → recent 待赛果
+check("超估时无胜者 → recent 待赛果（won=null）", ha.recent[0].id === "h5" && ha.recent[0].won === null && ha.wins === 2 && ha.total === 5,
+  JSON.stringify(ha.recent[0]));
+check("upcoming 正序", hn.upcoming[0].startAt <= (hn.upcoming[1] ? hn.upcoming[1].startAt : Infinity));
+check("资料页接线静态检查", /id="view-team"/.test(htmlSrc) && /"team"/.test(appSrc.match(/function isSubView[\s\S]*?;/)[0]) &&
+  /function renderTeamPage/.test(appSrc) && /openTeamPage\(cell\.dataset\.teamKey, "profile"\)/.test(appSrc) &&
+  /openTeamPage\(teamCell\.dataset\.teamKey, "matches"\)/.test(appSrc));
+
+/* ---------- 场景 O：成就殿堂（1.2.10） ---------- */
+console.log("O. 成就殿堂：");
+var A = await import(pathToFileURL(path.join(root, "js", "achv.js")).href);
+var achvIds = A.ACHV_DEFS.map(function (d) { return d.id; });
+check("成就 defs：id 唯一、test/称号齐备、规模 ≥30",
+  new Set(achvIds).size === achvIds.length && achvIds.length >= 30 &&
+  A.ACHV_DEFS.every(function (d) { return typeof d.test === "function" && typeof d.title === "string" && d.title; }));
+function snapBase() {
+  return { bets: 1, settled: 1, wins: 1, bestWinStreak: 1, bankroll: 5000, minBankroll: 10000,
+    maxStake: 100, nightBets: 0, lossStreakBest: 0, codexTeams: 1, codexFollowBest: 0,
+    duelsTotal: 0, duelsWon: 0, gods: 0, bankrupts: 0 };
+}
+var gotO = A.evalAchievements(snapBase(), {});
+check("首胜快照解锁（first_bet/first_win/codex_1）",
+  gotO.indexOf("first_bet") >= 0 && gotO.indexOf("first_win") >= 0 && gotO.indexOf("codex_1") >= 0, JSON.stringify(gotO));
+check("锁存：已解锁不重复返回", A.evalAchievements(snapBase(), { first_bet: 1, first_win: 1, codex_1: 1 }).indexOf("first_win") < 0);
+var sO4 = snapBase(); sO4.settled = 5; sO4.wins = 5; sO4.bets = 5; sO4.bestWinStreak = 4;
+var sO5 = Object.assign({}, sO4, { bestWinStreak: 5 });
+check("边界：streak_5 需 ≥5", A.evalAchievements(sO4, {}).indexOf("streak_5") < 0 && A.evalAchievements(sO5, {}).indexOf("streak_5") >= 0);
+var deepO = snapBase(); deepO.bankroll = 2000; deepO.minBankroll = -60000; deepO.settled = 2; deepO.wins = 0; deepO.lossStreakBest = 2; deepO.bets = 2;
+check("深渊回望（minBankroll ≤ -5 万）", A.evalAchievements(deepO, {}).indexOf("debt_50k") >= 0);
+deepO.bankroll = -30000;
+check("绝地重生需回正（负余额不解锁）", A.evalAchievements(deepO, {}).indexOf("debt_recover") < 0);
+deepO.bankroll = 2000;
+check("绝地重生（回正后解锁）", A.evalAchievements(deepO, {}).indexOf("debt_recover") >= 0);
+check("隐藏成就存在且 hidden", A.achvById("loss_10") && A.achvById("loss_10").hidden === true && A.achvById("night_owl").hidden === true);
+check("称号取值：已知返回称号、未知返回空串",
+  typeof A.achvTitle("first_win") === "string" && A.achvTitle("first_win") !== "" && A.achvTitle("nonexistent") === "");
+var mgO = A.mergeAchv({ a: 5 }, { a: 9, b: 3 });
+check("mergeAchv 逐键取 max", mgO.a === 9 && mgO.b === 3);
+var nO = A.normalizeAchv({ x: "bad", y: 2.7 });
+check("normalizeAchv 容错", Object.keys(A.normalizeAchv(null)).length === 0 && nO.y === 3 && !nO.x);
+check("云链路静态：title 门控 + extra.title + pack 三字段",
+  /titleChanged/.test(cloudSrc) && /extra\.title/.test(cloudSrc) && /achv: state\.achv/.test(cloudSrc) && /minBankroll/.test(cloudSrc));
+check("app 接线：saveState 内检测 + minBankroll 更新 + syncBoards 传 title",
+  /if \(!achvChecking\)/.test(appSrc) && /state\.bankroll < state\.minBankroll/.test(appSrc) && /nick, avatar, state\.title/.test(appSrc));
+check("成就页/入口/徽章 DOM 与渲染齐备",
+  /id="view-achv"/.test(htmlSrc) && /id="achvEntry"/.test(htmlSrc) && /id="profileTitle"/.test(htmlSrc) &&
+  /function renderAchv/.test(appSrc) && /function toggleTitle/.test(appSrc) && /title-chip/.test(appSrc));
+
+/* ---------- 场景 P：主队主题/提色（1.2.11） ---------- */
+console.log("P. 主队主题/提色：");
+var C = await import(pathToFileURL(path.join(root, "tools", "extract-team-colors.mjs")).href);
+var PW = 32, pixels = Buffer.alloc(PW * PW * 3, 255); // 白底
+for (var py = 10; py < 22; py++) {
+  for (var pxx = 10; pxx < 22; pxx++) {
+    var po = (py * PW + pxx) * 3;
+    pixels[po] = 200; pixels[po + 1] = 30; pixels[po + 2] = 40; // 中心红块
+  }
+}
+var pal = C.pickPalette(pixels);
+check("红标白底 → 提出红色主色 + 白字（lum≤150）", !!pal && pal[0] === "#c81e28" && pal[2] === 0, JSON.stringify(pal));
+var grayPx = Buffer.alloc(PW * PW * 3, 128);
+check("纯灰 logo → 无可提色返回 null", C.pickPalette(grayPx) === null);
+var yPx = Buffer.alloc(PW * PW * 3);
+for (var yi = 0; yi < yPx.length; yi += 3) { yPx[yi] = 255; yPx[yi + 1] = 230; yPx[yi + 2] = 60; }
+var palY = C.pickPalette(yPx);
+check("亮黄主色 → darkText=1（配深字保对比度）", !!palY && palY[2] === 1, JSON.stringify(palY));
+var bigCache = {};
+for (var ci = 0; ci < 3050; ci++) bigCache["t" + ci] = { c: ["#000000", "#111111", 0], t: ci };
+var capped = C.capColors(bigCache, 3000);
+check("缓存 LRU 封顶 3000 且淘汰最旧", Object.keys(capped).length === 3000 && !capped.t0 && !!capped.t3049);
+check("主队接线静态：state/主题/数据管线齐备",
+  /mainTeam/.test(appSrc) && /function applyTeamTheme/.test(appSrc) && /var TEAM_COLORS = DATA\.teamColors/.test(appSrc) &&
+  /normalizeTeamColors/.test(readIfDs()) && /teamColors/.test(readIfBuild()) && /teamColors/.test(readIfTrim()));
+var wfSrc = rf(path.join(root, ".github", "workflows", "update-matches.yml"), "utf8");
+check("workflow 已加提色步骤", /Extract team colors/.test(wfSrc) && /extract-team-colors\.mjs --oss/.test(wfSrc));
+
+function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
+function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
+function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }
+
 rmSync(tmp, { recursive: true, force: true });
 
 console.log("");

@@ -172,3 +172,53 @@ export function collectionSummary(coll) {
   Object.keys(c).forEach(function (k) { if (c[k].bs > bestStreak) bestStreak = c[k].bs; });
   return { teams: list.length, bestStreak: bestStreak, top: top, list: list };
 }
+
+/**
+ * 战队资料页数据（1.2.9）：纯聚合，零 DOM 依赖，可被 tools/test-cloud-nick.mjs 直跑。
+ * 匹配规则与图鉴同源（game + 队名精确相等，teamSideIn 判侧位）。
+ * durationMsFn(m)：单场预计时长毫秒（估时逻辑在 app.js，注入保持本函数零业务依赖）；
+ * nowTs：当前时间戳（测试可注入固定值）。
+ * 返回：
+ *   total/wins/losses —— 数据窗口内已出胜者场次的胜负
+ *   recent —— 已开赛（含待赛果）场次倒序至多 12 条；won=true/false/null(null=待赛果)
+ *   upcoming —— 未开赛且未超估时的场次正序（可竞猜/已截止/进行中，status 由 app 层 statusOf 判）
+ */
+export function teamHistory(matches, game, name, nowTs, durationMsFn) {
+  var finished = [];
+  var upcoming = [];
+  var list = matches || [];
+  var now = nowTs || 0;
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i];
+    if (!m || m.game !== game) continue;
+    var side = teamSideIn(m, name);
+    if (side === "") continue;
+    var opp = side === "A" ? m.teamB : m.teamA;
+    var oppName = opp && opp.name ? opp.name : "?";
+    var t = startTs(m);
+    var hasWinner = !!(m.result && (m.result.winner === "A" || m.result.winner === "B"));
+    if (hasWinner) {
+      finished.push({
+        id: m.id, opponentName: oppName,
+        score: String((m.result && m.result.score) || ""),
+        won: m.result.winner === side, startAt: t
+      });
+    } else if (now && t + (durationMsFn ? durationMsFn(m) : 0) <= now) {
+      // 超过预计时长仍无胜者 → 待赛果，归入 recent（won=null），不冒充未来场次
+      finished.push({ id: m.id, opponentName: oppName, score: "", won: null, startAt: t });
+    } else {
+      upcoming.push({ id: m.id, opponentName: oppName, stage: m.stage || "", startAt: t });
+    }
+  }
+  finished.sort(function (a, b) { return b.startAt - a.startAt; });
+  upcoming.sort(function (a, b) { return a.startAt - b.startAt; });
+  var wins = 0;
+  for (var j = 0; j < finished.length; j++) if (finished[j].won === true) wins++;
+  return {
+    total: finished.length,
+    wins: wins,
+    losses: finished.length - wins,
+    recent: finished.slice(0, 12),
+    upcoming: upcoming
+  };
+}

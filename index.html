@@ -155,6 +155,9 @@
           <span>破产 <b id="profileBankrupts">0</b> 次</span>
           <span>本轮 <b id="profileEpoch">+0</b> 沙粒</span>
         </div>
+        <div class="honor-line honor-line-title">
+          <span>称号 <b id="profileTitle">未装备</b></span>
+        </div>
 
         <div class="pnl-card" id="pnlCard">
           <div class="pnl-head">
@@ -187,12 +190,22 @@
         <div class="codex-card">
           <div class="codex-head">
             <span class="codex-title">战队图鉴</span>
+            <button class="codex-main-chip" id="codexMainChip" type="button" hidden></button>
             <span class="codex-sub" id="codexSub">押过 0 支队 · 最佳跟队 0 连</span>
           </div>
           <div class="codex-top" id="codexTop" hidden></div>
           <div class="codex-grid" id="codexGrid"></div>
           <button class="codex-toggle" id="codexToggle" type="button" hidden>展开全部</button>
         </div>
+
+        <button class="duel-entry" id="achvEntry" type="button">
+          <span class="duel-entry-icon" aria-hidden="true">🏅</span>
+          <span class="duel-entry-main">
+            <b>成就殿堂</b>
+            <span id="achvEntrySub">已解锁 0 / 33</span>
+          </span>
+          <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
 
         <button class="duel-entry" id="duelEntry" type="button">
           <span class="duel-entry-icon" aria-hidden="true">⚔</span>
@@ -236,6 +249,30 @@
         <div class="versus-head" id="versusHead"></div>
         <div class="versus-grid" id="versusGrid"></div>
         <p class="duel-page-sub">不服？竞猜面板「约战好友」，正面刚一场</p>
+      </section>
+
+      <!-- 战队资料页（图鉴单元格/比赛卡片队伍行入口，1.2.9） -->
+      <section class="view" id="view-team" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="teamBackBtn" type="button" aria-label="返回">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title" id="teamPageTitle">战队资料</h1>
+        </div>
+        <div class="team-hero" id="teamHero"></div>
+        <div id="teamBody"></div>
+      </section>
+
+      <!-- 成就殿堂（我的页入口，1.2.10） -->
+      <section class="view" id="view-achv" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="achvBackBtn" type="button" aria-label="返回我的">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">成就殿堂</h1>
+          <span class="section-sub" id="achvProgress">已解锁 0 / 33</span>
+        </div>
+        <div id="achvList"></div>
       </section>
 
       <!-- 排行榜 -->

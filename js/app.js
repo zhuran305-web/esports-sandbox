@@ -1,6 +1,6 @@
 import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
-import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary, teamHistory } from "./collection.js";
+import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary, teamHistory, pickedTeamOf, mainTeamLevel, MAIN_LEVEL_THRESHOLDS } from "./collection.js";
 import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
@@ -36,15 +36,24 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.11";
-  /* 「去围观」映射：游戏 → 小黑盒 PC 游戏库 appid（与 manifest bindAppIds 同源，都有 test:cloud 校验）。
-   * 无映射的游戏隐藏按钮。跳转走 navigation.openAppPage（免权限声明，1.2.7）。 */
+  var APP_VERSION = "1.2.12";
+  /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
+   * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
+   * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
+   * cs2 特例：900196328 是国服「Counter-Strike: GO」条目（版号名），真实 CS2 页 = Steam 730。
+   * 全部 appid 均经 remote games search 核对名称（test:cloud 场景 M 有逐对防回归）。 */
   var WATCH_GAME_APPIDS = {
-    lol: "900000045",
-    valorant: "900006125",
-    "starcraft-2": "900168298",
-    cs2: "900196328",
-    r6: "900217539"
+    cs2: "730",           // CS2（Counter-Strike 2；非国服 CS:GO 条目）
+    dota2: "570",         // 刀塔2
+    lol: "900000045",     // 英雄联盟（腾讯国服）
+    valorant: "900006125", // 无畏契约（腾讯国服）
+    "starcraft-2": "900168298", // 星际争霸2
+    r6: "900217539",      // 彩虹六号：攻势（国服围攻；如需国际围攻页换 359550）
+    pubg: "578080",       // 绝地求生
+    ow: "2357570",        // 守望先锋
+    rl: "252950",         // 火箭联盟
+    kpl: "99900051",      // 王者荣耀
+    mlbb: "99928389"      // 无尽对决
   };
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
@@ -102,7 +111,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   ];
 
   /* ============================== 状态 ============================== */
-  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: "" };
+  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {} };
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
@@ -222,7 +231,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: "" };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {} };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -241,7 +250,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         achv: normalizeAchv(parsed.achv),
         minBankroll: typeof parsed.minBankroll === "number" && isFinite(parsed.minBankroll) ? parsed.minBankroll : START_BALANCE,
         title: typeof parsed.title === "string" ? parsed.title : undefined,
-        mainTeam: typeof parsed.mainTeam === "string" ? parsed.mainTeam : "",
+        mainTeam: typeof parsed.mainTeam === "string" ? parsed.mainTeam : undefined, // 三态：undefined=从未设置、""=已取消
+        mainLevels: normalizeAchv(parsed.mainLevels), // {键: 累计押过场次}——复用同构校验（正数、取整、上限）
         updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
@@ -254,7 +264,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var achvChecking = false; // 成就检测重入防护（checkAchievements 在 saveState 内执行）
 
   function stateSnapshot() {
-    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam]);
+    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam, state.mainLevels]);
   }
 
   function saveState() {
@@ -271,6 +281,21 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     state.updatedAt = Date.now();
     storageSet(STORAGE_KEY, state);
     scheduleCloudSync();
+  }
+
+  /* ---------- 主队等级计数（1.2.12：与 collection 口径镜像——新押 +1、改选迁移 -1/+1；
+     只记「设为主队过的队伍」（mainLevels 有键的），不随图鉴 150 队 LRU 淘汰丢失 ---------- */
+  function trackMainLevelBet(match, pick, prevPick) {
+    var picked = pickedTeamOf(match, pick);
+    if (picked && state.mainLevels[picked.key] !== undefined) {
+      state.mainLevels[picked.key] += 1;
+    }
+    if (prevPick && prevPick !== pick) {
+      var old = pickedTeamOf(match, prevPick);
+      if (old && state.mainLevels[old.key] !== undefined) {
+        state.mainLevels[old.key] = Math.max(0, state.mainLevels[old.key] - 1);
+      }
+    }
   }
 
   /* ---------- 成就殿堂（1.2.10；检测挂在 saveState 写闸内，任何状态变化路径都会经过） ---------- */
@@ -354,11 +379,22 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!currentTeamKey) return;
     var wasMain = state.mainTeam === currentTeamKey;
     state.mainTeam = wasMain ? "" : currentTeamKey;
+    var lvText = "";
+    if (!wasMain) {
+      // 播种：以图鉴累计押过场次起算——独立于图鉴 150 队 LRU，等级永不因换主队清零
+      var seedBets = (state.collection[currentTeamKey] && state.collection[currentTeamKey].b) || 0;
+      var prev = state.mainLevels[currentTeamKey] || 0;
+      if (Math.max(prev, seedBets) >= 1) state.mainLevels[currentTeamKey] = Math.max(prev, seedBets);
+      var seededLv = mainTeamLevel(state.mainLevels[currentTeamKey] || 0);
+      lvText = seededLv >= 1 ? " · Lv." + seededLv : " · 跟它竞猜 1 场即达 Lv.1";
+    }
     saveState();
     applyTeamTheme();
     renderTeamPage();
     if (!$("#view-profile").hidden) renderProfile();
-    toast(wasMain ? "已取消主队" : "主队已设 · 主题色已换");
+    if (!$("#view-codex").hidden) renderCodex(); // 主队置顶/角标随设随变
+    syncBoards(); // 主队/等级变化经榜单门控自动 second+1（低频动作），榜上小队标与 Lv 随之更新
+    toast(wasMain ? "已取消主队" : "主队已设 · 主题色已换" + lvText);
   }
 
   /* ============================== 战绩云同步 ============================== */
@@ -386,6 +422,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var localGods = state.gods || 0, localBankrupts = state.bankrupts || 0;
     var localCodex = state.collection;
     var localAchv = state.achv, localMinBankroll = state.minBankroll;
+    var localMainLevels = state.mainLevels;
     state = {
       bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
       predictions: Array.isArray(s.predictions) ? s.predictions : [],
@@ -399,7 +436,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       achv: mergeAchv(localAchv, s.achv),
       minBankroll: Math.min(localMinBankroll, typeof s.minBankroll === "number" && isFinite(s.minBankroll) ? s.minBankroll : localMinBankroll),
       title: typeof s.title === "string" ? s.title : state.title,
-      mainTeam: typeof s.mainTeam === "string" ? s.mainTeam : (state.mainTeam || ""),
+      mainTeam: typeof s.mainTeam === "string" ? s.mainTeam : state.mainTeam,
+      mainLevels: mergeAchv(localMainLevels, s.mainLevels),
       updatedAt: rec.updatedAt
     };
     validateLoadedState();
@@ -1361,7 +1399,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         winProfit: s.winProfit,
         losses: s.losses,
         loseAmount: s.loseAmount
-      }, nick, avatar, state.title);
+      }, nick, avatar, state.title, state.mainTeam === "" ? "" : state.mainTeam,
+      state.mainTeam === undefined ? undefined : mainTeamLevel(state.mainLevels[state.mainTeam] || 0));
+      // mainTeam 传参：undefined（从未设置）沿用榜上旧值；""（取消过主队）权威清空
+      // mtLevel 传参：主队等级 0-8（0=清空榜上 Lv；undefined=从未设置主队）
       // 魔神殿：有封神/破产记录才提交（0/0 用户不上榜）；honorQuote = 转生仪式感言
       if (state.gods > 0 || state.bankrupts > 0) {
         await Cloud.submitHonor(state.gods, state.bankrupts, nick, honorQuote);
@@ -1507,7 +1548,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#recBestWin").textContent = bestWin ? "+" + fmtNum(bestWin.profit) : "--";
     $("#recWorstLoss").textContent = worstLoss ? "-" + fmtNum(Math.abs(worstLoss.profit)) : "--";
 
-    renderCodex();
+    // 快捷行摘要（图鉴内容已升级为二级页，这里只刷数字）
+    var codexQuick = collectionSummary(state.collection);
+    $("#quickCodexSub").textContent = codexQuick.teams + " 队 · " + codexQuick.bestStreak + " 连";
 
     // 转生荣誉与本轮盈亏（上次封神/破产以来的已结算净变化，历史区保持累计）
     $("#profileGods").textContent = state.gods || 0;
@@ -1518,9 +1561,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#achvEntrySub").textContent = "已解锁 " + achvCount + " / " + ACHV_DEFS.length;
     var ds = duelStats();
     $("#duelEntrySub").textContent = DUELS.length
-      ? ds.won + " 胜 " + ds.lost + " 负" + (ds.drawn ? " " + ds.drawn + " 平" : "") +
-        " · 对手 " + ds.opponents + " 人"
-      : "还没有对决 · 竞猜面板可发起约战";
+      ? ds.won + " 胜 " + ds.lost + " 负" + (ds.drawn ? " " + ds.drawn + " 平" : "")
+      : "还没有对决";
     var epoch = 0;
     var since = state.lastCeremonyAt || 0;
     for (var k = 0; k < settled.length; k++) {
@@ -1655,11 +1697,21 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#teamPageTitle").textContent = name;
 
     var isMain = state.mainTeam === currentTeamKey;
+    var mlv = state.mainLevels[currentTeamKey] || 0;
+    var lv = mainTeamLevel(mlv);
+    var lvLine = "";
+    if (mlv >= 1) {
+      lvLine = (isMain ? "主队" : "曾主队") + " Lv." + lv +
+        (lv >= MAIN_LEVEL_THRESHOLDS.length ? " · 满级 🏆" : " · 距 Lv." + (lv + 1) + " 还差 " + (MAIN_LEVEL_THRESHOLDS[lv] - mlv) + " 场");
+    }
     $("#teamHero").innerHTML =
       '<div class="team-hero-card' + (isMain ? " is-main" : "") + '">' +
         avatarHTML({ name: name }) +
         '<span class="team-hero-main"><b>' + esc(name) + "</b>" +
-          '<span class="team-hero-sub">' + esc(gameMeta(game).label) + " · 数据窗口 45 天</span></span>" +
+          '<span class="team-hero-sub">' + esc(gameMeta(game).label) + " · 数据窗口 45 天</span>" +
+          (lvLine ? '<span class="team-hero-lv">' + esc(lvLine) + "</span>" : "") +
+        "</span>" +
+        (lv >= 1 ? '<span class="team-lv-badge">Lv.' + lv + "</span>" : "") +
         '<button type="button" class="team-main-btn' + (isMain ? " is-main" : "") + '" id="teamMainBtn">' +
           (isMain ? "❤ 已是主队" : "❤ 设为主队") + "</button>" +
       "</div>";
@@ -2072,10 +2124,13 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         state.predictions = state.predictions.filter(function (p) { return p.matchId !== m.id; });
         toast("已撤回全部投入 · 退回 " + fmtNum(refund) + " 沙粒");
       } else {
-        existing.pick = sheetPick;
-        if (sheetPick !== prevPick) state.collection = onBet(state.collection, m, sheetPick, prevPick, MATCHES, predictionFor); // 改选：旧队断签、迁移收录
-        existing.updatedAt = Date.now();
-        toast("已撤回 " + fmtNum(refund) + " 沙粒 · 剩余投入 " + fmtNum(existing.stake) + " 沙粒");
+      existing.pick = sheetPick;
+      if (sheetPick !== prevPick) {
+        state.collection = onBet(state.collection, m, sheetPick, prevPick, MATCHES, predictionFor); // 改选：旧队断签、迁移收录
+        trackMainLevelBet(m, sheetPick, prevPick); // 主队等级镜像迁移
+      }
+      existing.updatedAt = Date.now();
+      toast("已撤回 " + fmtNum(refund) + " 沙粒 · 剩余投入 " + fmtNum(existing.stake) + " 沙粒");
       }
       saveState();
       closeSheet();
@@ -2095,7 +2150,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       state.bankroll -= amount;
       existing.stake += amount;
       existing.pick = sheetPick;
-      if (sheetPick !== prevPick) state.collection = onBet(state.collection, m, sheetPick, prevPick, MATCHES, predictionFor); // 改选：旧队断签、迁移收录
+      if (sheetPick !== prevPick) {
+        state.collection = onBet(state.collection, m, sheetPick, prevPick, MATCHES, predictionFor); // 改选：旧队断签、迁移收录
+        trackMainLevelBet(m, sheetPick, prevPick); // 主队等级镜像迁移
+      }
       existing.updatedAt = Date.now();
       saveState();
       closeSheet();
@@ -2125,6 +2183,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       settled: false
     });
     state.collection = onBet(state.collection, m, sheetPick, null, MATCHES, predictionFor); // 图鉴收录 + 跟队连击检测
+    trackMainLevelBet(m, sheetPick, null); // 主队等级：新押 +1（仅曾为主队的队伍在册）
     saveState();
     closeSheet();
     renderAll();
@@ -2213,6 +2272,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
           '<span class="board-rank">' + (e.rank <= 3 ? ["🥇", "🥈", "🥉"][e.rank - 1] : e.rank) + "</span>" +
           personAvatar(nick, e.avatar) +
+          (e.mainTeam ? '<span class="board-mt">' + avatarHTML({ name: e.mainTeam }) +
+            (e.mtLevel >= 1 ? '<span class="board-mt-lv">Lv' + e.mtLevel + "</span>" : "") + "</span>" : "") +
           '<span class="board-nick">' + esc(nick) +
             (e.title ? '<span class="title-chip">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
             (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
@@ -2298,6 +2359,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         '<div class="board-row' + (e.isMe ? " is-me" : "") + '">' +
           '<span class="board-rank">' + (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1) + "</span>" +
           personAvatar(e.nick, e.avatar) +
+          (e.mainTeam ? '<span class="board-mt">' + avatarHTML({ name: e.mainTeam }) +
+            (e.mtLevel >= 1 ? '<span class="board-mt-lv">Lv' + e.mtLevel + "</span>" : "") + "</span>" : "") +
           '<span class="board-nick">' + esc(e.nick) +
             (e.title ? '<span class="title-chip">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
             (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
@@ -3037,7 +3100,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus" || name === "team" || name === "achv";
+    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex";
   }
 
   function initHistory() {
@@ -3123,13 +3186,13 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
       closeRulesTopic();
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus", "team", "achv"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus", "team", "achv", "codex"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
-    // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页/成就殿堂从「我的」侧进入返回回「我的」；
+    // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页/成就殿堂/战队图鉴从「我的」侧进入返回回「我的」；
     // 战队资料页按来源高亮（图鉴进=我的，比赛卡进=赛事）
     var tabName = name === "temple" ? "board"
-      : name === "duels" || name === "versus" || name === "achv" ? "profile"
+      : name === "duels" || name === "versus" || name === "achv" || name === "codex" ? "profile"
         : name === "team" ? (teamFromView === "profile" ? "profile" : "matches")
           : (isSubPage ? "settings" : name);
     document.querySelectorAll(".tab").forEach(function (t) {
@@ -3143,6 +3206,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "versus") renderVersus();
     if (name === "team") renderTeamPage();
     if (name === "achv") renderAchv();
+    if (name === "codex") renderCodex();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -3835,6 +3899,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var card = e.target.closest("[data-title-achv]");
       if (card) toggleTitle(card.dataset.titleAchv);
     });
+
+    // 战队图鉴：快捷入口 → 二级页
+    $("#codexEntry").addEventListener("click", function () { switchView("codex"); });
+    $("#codexBackBtn").addEventListener("click", function () { goBack("profile"); });
 
     // 图鉴单元格 → 战队资料页（网格 + top3 共用委托）
     $("#codexGrid").addEventListener("click", function (e) {

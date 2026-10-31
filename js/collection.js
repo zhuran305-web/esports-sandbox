@@ -148,6 +148,21 @@ export function capCollection(coll, max) {
   return coll;
 }
 
+/* ---------- 主队等级（1.2.12）：等比阈值 Lv1=1 场起、×2 递增、Lv8=128 场 ---------- */
+
+export var MAIN_LEVEL_THRESHOLDS = [1, 2, 4, 8, 16, 32, 64, 128];
+
+/** 累计押过场次 → 主队等级（0 = 未入级）；纯查表，bets 非法按 0 处理 */
+export function mainTeamLevel(bets) {
+  var n = typeof bets === "number" && isFinite(bets) && bets > 0 ? Math.floor(bets) : 0;
+  var lv = 0;
+  for (var i = 0; i < MAIN_LEVEL_THRESHOLDS.length; i++) {
+    if (n >= MAIN_LEVEL_THRESHOLDS[i]) lv = i + 1;
+    else break;
+  }
+  return lv;
+}
+
 /** 汇总：我的页图鉴区/分享卡/对比链接共用。list 按 ls 新→旧；top 按当前连击取 3；rate = 押该队胜率(%)，无结算为 null */
 export function collectionSummary(coll) {
   var c = normalizeCollection(coll);

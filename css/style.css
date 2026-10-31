@@ -11,6 +11,7 @@
   --text-faint: #6c788d;
   --accent: #ff8a3d;
   --accent-strong: #ff6a13;
+  --accent-text: #1a0e04;
   --cs2: #ff8a3d;
   --valorant: #ff4655;
   --win: #35d39a;
@@ -1149,6 +1150,53 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   font-weight: 700;
   vertical-align: 1px;
   max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-mt { flex: 0 0 auto; margin-left: -2px; display: inline-flex; align-items: center; }
+.board-mt .avatar { width: 22px; height: 22px; border-radius: 6px; font-size: 8px; padding: 0 1px; }
+.board-mt-lv { margin-left: 3px; font-size: 9px; font-weight: 800; color: var(--accent); white-space: nowrap; }
+.team-hero-lv { font-size: 11px; color: var(--accent); font-weight: 700; }
+.team-lv-badge {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* ---------- 我的页快捷三联入口（1.2.12：图鉴/对决/晒战绩收进一行） ---------- */
+.quick-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+.quick-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.quick-btn:active { background: var(--surface-2); border-color: var(--border); }
+.quick-icon { font-size: 20px; line-height: 1.2; }
+.quick-btn b { font-size: 13px; font-weight: 800; white-space: nowrap; }
+.quick-sub {
+  max-width: 100%;
+  font-size: 10px;
+  color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

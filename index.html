@@ -187,15 +187,22 @@
           </div>
         </div>
 
-        <div class="codex-card">
-          <div class="codex-head">
-            <span class="codex-title">战队图鉴</span>
-            <button class="codex-main-chip" id="codexMainChip" type="button" hidden></button>
-            <span class="codex-sub" id="codexSub">押过 0 支队 · 最佳跟队 0 连</span>
-          </div>
-          <div class="codex-top" id="codexTop" hidden></div>
-          <div class="codex-grid" id="codexGrid"></div>
-          <button class="codex-toggle" id="codexToggle" type="button" hidden>展开全部</button>
+        <div class="quick-row">
+          <button class="quick-btn" id="codexEntry" type="button">
+            <span class="quick-icon" aria-hidden="true">📖</span>
+            <b>战队图鉴</b>
+            <span class="quick-sub" id="quickCodexSub">0 队 · 0 连</span>
+          </button>
+          <button class="quick-btn" id="duelEntry" type="button">
+            <span class="quick-icon" aria-hidden="true">⚔</span>
+            <b>对决记录</b>
+            <span class="quick-sub" id="duelEntrySub">还没有对决</span>
+          </button>
+          <button class="quick-btn" id="versusShareBtn" type="button">
+            <span class="quick-icon" aria-hidden="true">📊</span>
+            <b>晒战绩</b>
+            <span class="quick-sub">发给好友开比</span>
+          </button>
         </div>
 
         <button class="duel-entry" id="achvEntry" type="button">
@@ -203,24 +210,6 @@
           <span class="duel-entry-main">
             <b>成就殿堂</b>
             <span id="achvEntrySub">已解锁 0 / 33</span>
-          </span>
-          <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-        </button>
-
-        <button class="duel-entry" id="duelEntry" type="button">
-          <span class="duel-entry-icon" aria-hidden="true">⚔</span>
-          <span class="duel-entry-main">
-            <b>对决记录</b>
-            <span id="duelEntrySub">还没有对决 · 竞猜面板可发起约战</span>
-          </span>
-          <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-        </button>
-
-        <button class="duel-entry" id="versusShareBtn" type="button">
-          <span class="duel-entry-icon" aria-hidden="true">📊</span>
-          <span class="duel-entry-main">
-            <b>晒战绩</b>
-            <span>生成对比链接 · 好友点开直接比</span>
           </span>
           <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </button>
@@ -273,6 +262,25 @@
           <span class="section-sub" id="achvProgress">已解锁 0 / 33</span>
         </div>
         <div id="achvList"></div>
+      </section>
+
+      <!-- 战队图鉴（我的页快捷入口，1.2.12 由内嵌卡升级为二级页） -->
+      <section class="view" id="view-codex" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="codexBackBtn" type="button" aria-label="返回我的">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">战队图鉴</h1>
+        </div>
+        <div class="codex-card">
+          <div class="codex-head">
+            <span class="codex-sub" id="codexSub">押过 0 支队 · 最佳跟队 0 连</span>
+            <button class="codex-main-chip" id="codexMainChip" type="button" hidden></button>
+          </div>
+          <div class="codex-top" id="codexTop" hidden></div>
+          <div class="codex-grid" id="codexGrid"></div>
+          <button class="codex-toggle" id="codexToggle" type="button" hidden>展开全部</button>
+        </div>
       </section>
 
       <!-- 排行榜 -->

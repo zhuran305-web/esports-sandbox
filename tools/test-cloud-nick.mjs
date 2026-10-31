@@ -270,10 +270,14 @@ check("版本两处一致", pkgJson.version === (appSrc.match(/APP_VERSION = "([
 /* ---------- 场景 M：去围观/关注作者（1.2.7，免权限声明能力） ---------- */
 console.log("M. 去围观/关注作者：");
 var watchBlock = (appSrc.match(/var WATCH_GAME_APPIDS = \{[\s\S]*?\};/) || [""])[0];
-var WATCH_IDS = ["900000045", "900006125", "900168298", "900196328", "900217539"];
-check("围观映射五款齐备且 ⊆ manifest bindAppIds", WATCH_IDS.every(function (id) {
-  return watchBlock.indexOf(id) >= 0 && pkgJson.heybox.bindAppIds.indexOf(id) >= 0;
-}), watchBlock.slice(0, 120));
+var WATCH_PAIRS = [
+  ["cs2", "730"], ["dota2", "570"], ["lol", "900000045"], ["valorant", "900006125"],
+  ["\"starcraft-2\"", "900168298"], ["r6", "900217539"], ["pubg", "578080"],
+  ["ow", "2357570"], ["rl", "252950"], ["kpl", "99900051"], ["mlbb", "99928389"]
+];
+check("围观映射 11 款逐对齐备（appid 经 games search 核对，不限于 bindAppIds 池）",
+  WATCH_PAIRS.every(function (p) { return watchBlock.indexOf(p[0] + ": \"" + p[1] + "\"") >= 0; }),
+  watchBlock.slice(0, 200));
 check("platform 三包装齐备（openAppPage/关注状态/请求关注）",
   /navigation\.openAppPage/.test(platformSrc) && /user\.getFollowStatus/.test(platformSrc) && /user\.requestFollowAuthor/.test(platformSrc));
 check("app.js 已接线（live 卡片围观徽标/真手势关注/状态探测显隐）",
@@ -349,9 +353,16 @@ check("云链路静态：title 门控 + extra.title + pack 三字段",
   /titleChanged/.test(cloudSrc) && /extra\.title/.test(cloudSrc) && /achv: state\.achv/.test(cloudSrc) && /minBankroll/.test(cloudSrc));
 check("app 接线：saveState 内检测 + minBankroll 更新 + syncBoards 传 title",
   /if \(!achvChecking\)/.test(appSrc) && /state\.bankroll < state\.minBankroll/.test(appSrc) && /nick, avatar, state\.title/.test(appSrc));
+var cssSrc = rf(path.join(root, "css", "style.css"), "utf8");
+check("主队上榜链路：mt 门控 + extra.mt + getList 透出 + 榜单小队标",
+  /mtChanged/.test(cloudSrc) && /extra\.mt/.test(cloudSrc) && /mainTeam: typeof extra\.mt/.test(cloudSrc) &&
+  /state\.mainTeam === "" \? "" : state\.mainTeam/.test(appSrc) && /board-mt/.test(appSrc) && /board-mt \.avatar/.test(cssSrc));
 check("成就页/入口/徽章 DOM 与渲染齐备",
   /id="view-achv"/.test(htmlSrc) && /id="achvEntry"/.test(htmlSrc) && /id="profileTitle"/.test(htmlSrc) &&
   /function renderAchv/.test(appSrc) && /function toggleTitle/.test(appSrc) && /title-chip/.test(appSrc));
+check("我的页快捷三联 + 图鉴二级页（1.2.12 瘦身）",
+  /id="quick-row"|class="quick-row"/.test(htmlSrc) && /id="codexEntry"/.test(htmlSrc) && /id="view-codex"/.test(htmlSrc) &&
+  /id="codexBackBtn"/.test(htmlSrc) && /quickCodexSub/.test(appSrc) && /name === "codex"\) renderCodex/.test(appSrc));
 
 /* ---------- 场景 P：主队主题/提色（1.2.11） ---------- */
 console.log("P. 主队主题/提色：");
@@ -367,6 +378,40 @@ var pal = C.pickPalette(pixels);
 check("红标白底 → 提出红色主色 + 白字（lum≤150）", !!pal && pal[0] === "#c81e28" && pal[2] === 0, JSON.stringify(pal));
 var grayPx = Buffer.alloc(PW * PW * 3, 128);
 check("纯灰 logo → 无可提色返回 null", C.pickPalette(grayPx) === null);
+// 黑白 logo + JPEG 色度噪边复现（1.2.12 修复）：饱和噪边 <4% 判消色差，不许提出假红
+var bwPx = Buffer.alloc(PW * PW * 3, 255); // 白底
+for (var by = 8; by < 24; by++) {
+  for (var bx = 8; bx < 24; bx++) {
+    var bo = (by * PW + bx) * 3;
+    bwPx[bo] = 20; bwPx[bo + 1] = 20; bwPx[bo + 2] = 20; // 黑色字形
+  }
+}
+for (var ni = 0; ni < 20; ni++) { // 字形边缘撒 20 个红噪点（≈2%，典型 JPEG 色度残留）
+  var no = (8 * PW + 8 + ni) * 3;
+  bwPx[no] = 220; bwPx[no + 1] = 40; bwPx[no + 2] = 50;
+}
+var bwPal = C.pickPalette(bwPx);
+check("黑白 logo + 2% 红噪边 → 不出假红，出石墨（暗部主导，白字）",
+  !!bwPal && bwPal[2] === 0 && lumOf(bwPal[0]) <= 72 && bwPal[0] !== "#dc2832" && bwPal[0][1] !== "d",
+  JSON.stringify(bwPal));
+// 石墨主题增强（1.2.12）：黑字形白底 → 暗部主导，提出石墨对（深底白字），不再是 null
+var bwPx2 = Buffer.alloc(PW * PW * 3, 255);
+for (var by2 = 6; by2 < 26; by2++) {
+  for (var bx2 = 6; bx2 < 26; bx2++) {
+    var bo2 = (by2 * PW + bx2) * 3;
+    bwPx2[bo2] = 15; bwPx2[bo2 + 1] = 18; bwPx2[bo2 + 2] = 24; // 大块黑字形（400px ≈ 39%）
+  }
+}
+var graphite = C.pickPalette(bwPx2);
+function lumOf(hex6) {
+  var n = parseInt(hex6.slice(1), 16);
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+}
+check("黑白 logo（暗部 39%）→ 石墨主题：主色亮度钳 28-72 + 白字",
+  !!graphite && lumOf(graphite[0]) >= 28 && lumOf(graphite[0]) <= 72 && graphite[2] === 0 && lumOf(graphite[1]) > lumOf(graphite[0]),
+  JSON.stringify(graphite));
+var whitePx = Buffer.alloc(PW * PW * 3, 255);
+check("白亮 logo（flatten 后全白）→ 仍回退默认（null）", C.pickPalette(whitePx) === null);
 var yPx = Buffer.alloc(PW * PW * 3);
 for (var yi = 0; yi < yPx.length; yi += 3) { yPx[yi] = 255; yPx[yi + 1] = 230; yPx[yi + 2] = 60; }
 var palY = C.pickPalette(yPx);
@@ -380,6 +425,19 @@ check("主队接线静态：state/主题/数据管线齐备",
   /normalizeTeamColors/.test(readIfDs()) && /teamColors/.test(readIfBuild()) && /teamColors/.test(readIfTrim()));
 var wfSrc = rf(path.join(root, ".github", "workflows", "update-matches.yml"), "utf8");
 check("workflow 已加提色步骤", /Extract team colors/.test(wfSrc) && /extract-team-colors\.mjs --oss/.test(wfSrc));
+
+/* ---------- 场景 Q：主队等级（1.2.12） ---------- */
+console.log("Q. 主队等级：");
+check("阈值表等比 ×2、Lv8=128",
+  Col.MAIN_LEVEL_THRESHOLDS.length === 8 &&
+  Col.MAIN_LEVEL_THRESHOLDS.every(function (v, i) { return v === Math.pow(2, i); }));
+var lvCases = [[0, 0], [1, 1], [2, 2], [3, 2], [4, 3], [7, 3], [8, 4], [127, 7], [128, 8], [9999, 8], [-5, 0], [1.9, 1]];
+check("mainTeamLevel 查表全对", lvCases.every(function (c) { return Col.mainTeamLevel(c[0]) === c[1]; }),
+  JSON.stringify(lvCases.map(function (c) { return Col.mainTeamLevel(c[0]); })));
+check("等级链路静态：mainLevels 接线 + ml 门控 + extra.ml + 榜单/资料页展示",
+  /function trackMainLevelBet/.test(appSrc) && /trackMainLevelBet\(m, sheetPick, null\)/.test(appSrc) &&
+  /mlChanged/.test(cloudSrc) && /extra\.ml/.test(cloudSrc) && /mtLevel: typeof extra\.ml/.test(cloudSrc) &&
+  /mainLevels: mergeAchv/.test(appSrc) && /team-lv-badge/.test(appSrc) && /board-mt-lv/.test(appSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

@@ -40,19 +40,38 @@ function toHex(c) {
 /**
  * pixels：RGB 三通道 Buffer（sharp raw 输出，已 flatten 到白底）。
  * 桶量化 4bit/通道；滤低饱和/近白/近黑（队标底色），得分 = 像素数 × 平均饱和度；
- * 次色与主色的通道距离 ≥90，避免取到同色系邻近桶。返回 [c1, c2, darkText] 或 null（无可提色）。
+ * 次色与主色的通道距离 ≥90，避免取到同色系邻近桶。
+ * 消色差防线（1.2.12 修复）：黑白 logo 的 JPEG 色度噪边（饱和度 30-60、偏暖偏红）能穿过
+ * 饱和度过滤且占满幸存像素——幸存占比 <4% 即判消色差。
+ * 消色差去向（1.2.12 增强）：暗部主导（lum≤120 像素 ≥8%）→ 提炼石墨主题（暗部均值钳到
+ * 亮度 28-72 带，白字可读）；白亮主导（flatten 后近乎全白/细线条）→ null 回退默认主题。
  */
 export function pickPalette(pixels) {
+  var total = pixels.length / 3;
   var buckets = {};
+  var survived = 0;
+  var darkN = 0, darkR = 0, darkG = 0, darkB = 0;
   for (var i = 0; i + 2 < pixels.length; i += 3) {
     var r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
     var max = Math.max(r, g, b), min = Math.min(r, g, b);
     var lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (lum <= 120) { darkN += 1; darkR += r; darkG += g; darkB += b; } // 暗部统计（含黑字形/深灰）
     if (max - min < 28) continue; // 灰底/白底/黑底
     if (lum > 235 || lum < 20) continue;
+    survived += 1;
     var key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
     var e = buckets[key] || (buckets[key] = { n: 0, r: 0, g: 0, b: 0, sat: 0 });
     e.n += 1; e.r += r; e.g += g; e.b += b; e.sat += (max - min);
+  }
+  if (!survived || survived < total * 0.04) {
+    // 消色差：黑/深灰主导 → 石墨主题；白亮/细线条 → 回退默认
+    if (!darkN || darkN < total * 0.08) return null;
+    var m1 = darkR / darkN, m2 = darkG / darkN, m3 = darkB / darkN;
+    var ml = 0.299 * m1 + 0.587 * m2 + 0.114 * m3;
+    var k = ml > 72 ? 72 / ml : ml < 30 ? 30 / Math.max(ml, 1) : 1; // 钳进石墨带（下沿留取整余量），白字恒可读
+    var g1 = { r: m1 * k, g: m2 * k, b: m3 * k };
+    var g2 = { r: g1.r + (255 - g1.r) * 0.3, g: g1.g + (255 - g1.g) * 0.3, b: g1.b + (255 - g1.b) * 0.3 };
+    return [toHex(g1), toHex(g2), 0]; // 深底恒配白字
   }
   var list = Object.keys(buckets).map(function (k) {
     var e = buckets[k];

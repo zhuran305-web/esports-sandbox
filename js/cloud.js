@@ -445,7 +445,8 @@ export var Sync = {
           bankroll: state.bankroll, digs: state.digs, predictions: list,
           gods: state.gods || 0, bankrupts: state.bankrupts || 0,
           godOffered: state.godOffered === true, bankruptOffered: state.bankruptOffered === true,
-          lastCeremonyAt: state.lastCeremonyAt || 0
+          lastCeremonyAt: state.lastCeremonyAt || 0,
+          collection: state.collection || {} // 战队图鉴（1.2.5）；条目上限 150 由 collection.js 兜住体积
         }
       });
     }

@@ -1,5 +1,6 @@
 import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
+import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary } from "./collection.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
@@ -32,7 +33,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.4";
+  var APP_VERSION = "1.2.5";
   // 轻量诊断通道：全局错误写 html dataset（调试台主 world 可读），长期保留、无 UI 影响
   window.addEventListener("error", function (e) {
     try { document.documentElement.dataset.jsErr = ((e.message || "") + " @" + String(e.filename || "").slice(-14) + ":" + e.lineno).slice(0, 220); } catch (x) { /* 忽略 */ }
@@ -89,7 +90,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   ];
 
   /* ============================== 状态 ============================== */
-  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0 };
+  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {} };
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
@@ -209,7 +210,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0 };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {} };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -224,6 +225,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         godOffered: parsed.godOffered === true,
         bankruptOffered: parsed.bankruptOffered === true,
         lastCeremonyAt: typeof parsed.lastCeremonyAt === "number" && parsed.lastCeremonyAt >= 0 ? parsed.lastCeremonyAt : 0,
+        collection: normalizeCollection(parsed.collection),
         updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
@@ -235,7 +237,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var persistedSnapshot = "";
 
   function stateSnapshot() {
-    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt]);
+    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection]);
   }
 
   function saveState() {
@@ -270,6 +272,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!rec || !(rec.updatedAt > (state.updatedAt || 0))) return;
     var s = rec.state;
     var localGods = state.gods || 0, localBankrupts = state.bankrupts || 0;
+    var localCodex = state.collection;
     state = {
       bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
       predictions: Array.isArray(s.predictions) ? s.predictions : [],
@@ -279,6 +282,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       godOffered: state.godOffered === true || s.godOffered === true,
       bankruptOffered: state.bankruptOffered === true || s.bankruptOffered === true,
       lastCeremonyAt: Math.max(state.lastCeremonyAt || 0, typeof s.lastCeremonyAt === "number" ? s.lastCeremonyAt : 0),
+      collection: mergeCollection(localCodex, s.collection),
       updatedAt: rec.updatedAt
     };
     validateLoadedState();
@@ -511,6 +515,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       p.payout = won ? payout : 0;
       p.profit = won ? payout - p.stake : -p.stake;
       p.settledAt = Date.now();
+      state.collection = onSettle(state.collection, m, p.pick, won); // 图鉴胜负（p.settled 门控保证只计一次）
       events.push({ match: m, pred: p, bonus: bonus });
     }
 
@@ -1335,7 +1340,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       wins: wins,
       losses: settled.length - wins,
       profit: profit,
-      hitRate: settled.length ? Math.round((wins / settled.length) * 100) + "%" : "--"
+      hitRate: settled.length ? Math.round((wins / settled.length) * 100) + "%" : "--",
+      streak: collectionSummary(state.collection).bestStreak,
+      teams: collectionSummary(state.collection).teams
     };
   }
 
@@ -1375,6 +1382,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#recLosses").textContent = settled.length - wins;
     $("#recBestWin").textContent = bestWin ? "+" + fmtNum(bestWin.profit) : "--";
     $("#recWorstLoss").textContent = worstLoss ? "-" + fmtNum(Math.abs(worstLoss.profit)) : "--";
+
+    renderCodex();
 
     // 转生荣誉与本轮盈亏（上次封神/破产以来的已结算净变化，历史区保持累计）
     $("#profileGods").textContent = state.gods || 0;
@@ -1434,6 +1443,51 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       .join("");
 
     listEl.innerHTML = html || '<div class="empty-state"><strong>还没有已结算的预测</strong>去「赛事」页挑一场比赛试试手气</div>';
+  }
+
+  /* ---------- 战队图鉴（押过的队伍 + 跟队连击；纯本地养成，随战绩云同步跨设备） ---------- */
+  var codexExpanded = false;
+  var CODEX_PREVIEW = 24; // 网格默认展示数，其余折叠进「展开全部」
+
+  function codexEntryHTML(t) {
+    var sub = (t.w + t.l) > 0 ? "胜率 " + t.rate + "%" : "押过 " + t.b + " 场";
+    return (
+      '<div class="codex-cell">' +
+        avatarHTML({ name: t.name }) +
+        '<span class="codex-name">' + esc(t.name) + "</span>" +
+        '<span class="codex-meta">' + esc(gameMeta(t.game).label) + " · " + esc(sub) + "</span>" +
+      "</div>"
+    );
+  }
+
+  function renderCodex() {
+    var codex = collectionSummary(state.collection);
+    $("#codexSub").textContent = "押过 " + codex.teams + " 支队 · 最佳跟队 " + codex.bestStreak + " 连";
+    var gridEl = $("#codexGrid");
+    var toggleEl = $("#codexToggle");
+    var topEl = $("#codexTop");
+    if (!codex.teams) {
+      topEl.hidden = true;
+      gridEl.innerHTML = '<div class="codex-empty">押过一支队伍就会在这里点亮 · 连续跟同一支队连胜场还会记「跟队连击」</div>';
+      toggleEl.hidden = true;
+      return;
+    }
+    topEl.hidden = codex.top.length === 0;
+    topEl.innerHTML = codex.top.map(function (t) {
+      var badge = t.s > 0 ? t.s + " 连" : "最佳 " + t.bs + " 连";
+      var meta = gameMeta(t.game).label + (t.rate != null ? " · 胜率 " + t.rate + "%" : "");
+      return (
+        '<div class="codex-top-cell">' +
+          "<b>" + badge + "</b>" +
+          '<span class="codex-top-name">' + esc(t.name) + "</span>" +
+          '<span class="codex-top-meta">' + esc(meta) + "</span>" +
+        "</div>"
+      );
+    }).join("");
+    var shown = codexExpanded ? codex.list : codex.list.slice(0, CODEX_PREVIEW);
+    gridEl.innerHTML = shown.map(codexEntryHTML).join("");
+    toggleEl.hidden = codex.list.length <= CODEX_PREVIEW;
+    toggleEl.textContent = codexExpanded ? "收起" : "展开全部 " + codex.list.length + " 支";
   }
 
   function renderAll() {
@@ -1713,6 +1767,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     var amount = parseInt($("#stakeInput").value, 10);
     var existing = predictionFor(m.id);
+    var prevPick = existing ? existing.pick : null; // 图鉴改选迁移用：下注面板内的改选发生在 add/撤回分支
     var limits = stakeLimits(sheetMode, existing);
 
     if (sheetMode === "withdraw") {
@@ -1726,6 +1781,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         toast("已撤回全部投入 · 退回 " + fmtNum(refund) + " 沙粒");
       } else {
         existing.pick = sheetPick;
+        if (sheetPick !== prevPick) state.collection = onBet(state.collection, m, sheetPick, prevPick, MATCHES, predictionFor); // 改选：旧队断签、迁移收录
         existing.updatedAt = Date.now();
         toast("已撤回 " + fmtNum(refund) + " 沙粒 · 剩余投入 " + fmtNum(existing.stake) + " 沙粒");
       }
@@ -1747,6 +1803,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       state.bankroll -= amount;
       existing.stake += amount;
       existing.pick = sheetPick;
+      if (sheetPick !== prevPick) state.collection = onBet(state.collection, m, sheetPick, prevPick, MATCHES, predictionFor); // 改选：旧队断签、迁移收录
       existing.updatedAt = Date.now();
       saveState();
       closeSheet();
@@ -1775,6 +1832,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       placedAt: Date.now(),
       settled: false
     });
+    state.collection = onBet(state.collection, m, sheetPick, null, MATCHES, predictionFor); // 图鉴收录 + 跟队连击检测
     saveState();
     closeSheet();
     renderAll();
@@ -1975,13 +2033,18 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       { label: "猜对", mine: my.wins, theirs: versusData.w, better: "more" },
       { label: "总盈亏", mine: my.profit, theirs: versusData.p, better: "more" },
       { label: "封神", mine: state.gods || 0, theirs: versusData.g, better: "more" },
-      { label: "破产", mine: state.bankrupts || 0, theirs: versusData.b, better: "less" }
+      { label: "破产", mine: state.bankrupts || 0, theirs: versusData.b, better: "less" },
+      // s/t 为 1.2.5 新增；旧版链接缺失时显示 --，不参与胜负
+      { label: "跟队连击", mine: my.streak, theirs: versusData.s, better: "more" },
+      { label: "图鉴队伍", mine: my.teams, theirs: versusData.t, better: "more" }
     ];
     $("#versusGrid").innerHTML = rows.map(function (r) {
+      var comparable = r.mine != null && r.theirs != null;
       var mineWin = false, theirsWin = false;
-      if (r.better === "more") { mineWin = r.mine > r.theirs; theirsWin = r.theirs > r.mine; }
-      else if (r.better === "less") { mineWin = r.mine < r.theirs; theirsWin = r.theirs < r.mine; }
+      if (comparable && r.better === "more") { mineWin = r.mine > r.theirs; theirsWin = r.theirs > r.mine; }
+      else if (comparable && r.better === "less") { mineWin = r.mine < r.theirs; theirsWin = r.theirs < r.mine; }
       var fmt = function (v) {
+        if (v == null) return "--";
         return r.label === "总盈亏" ? (v > 0 ? "+" : "") + fmtNum(v) + " 沙粒" : fmtNum(v);
       };
       return '<div class="versus-row">' +
@@ -2190,6 +2253,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     ctx.fillStyle = "#6c788d";
     ctx.font = "500 24px -apple-system, 'PingFang SC', sans-serif";
     var metaLine = "累计猜对 " + stats.wins + " 场 · 猜错 " + stats.losses + " 场";
+    var codex = collectionSummary(state.collection);
+    if (codex.teams) {
+      metaLine += " · 押过 " + codex.teams + " 队 · 最长跟队 " + codex.bestStreak + " 连";
+    }
     if (state.gods > 0 || state.bankrupts > 0) {
       metaLine += " · 封神 " + (state.gods || 0) + " · 破产 " + (state.bankrupts || 0);
     }
@@ -2740,6 +2807,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       var schedList = $("#scheduleList");
       if (schedList) schedList.innerHTML = "";
     }
+    if (name === "rules" && prev !== "rules") {
+      // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
+      closeRulesTopic();
+    }
     ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
@@ -2760,6 +2831,197 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "schedule") renderSchedule();
     currentView = name;
     if (!opts.fromHistory) syncHistory(prev, name);
+  }
+
+  /* ============================== 玩法说明（分类菜单 → 二级详情） ============================== */
+  /* sections 里的 p/li 为撰写受信内容，可含 <strong>；dataNote=true 的分类在文末追加数据来源署名 */
+  var RULES_TOPICS = [
+    {
+      id: "intro", icon: "🚀", title: "新手入门", summary: "三步开始你的第一次竞猜",
+      sections: [
+        { h: "这是什么", p: "「赛事沙盘」是一个面向 CS2、瓦罗兰特、英雄联盟、Dota 2、王者荣耀、无畏契约、彩虹六号等主流电竞赛事胜负预测的<strong>娱乐模拟盘</strong>。用虚拟的「沙粒」对真实比赛的胜负进行竞猜，验证自己的赛况判断力。" },
+        { h: "三步上手", ul: [
+          "在「赛事」页挑一场<strong>可竞猜</strong>的比赛，点开竞猜面板",
+          "选边站队、确定投入（初始沙粒 <strong>10,000</strong>）",
+          "等比赛结束自动结算——猜对净赚一倍，猜错投入不退"
+        ] },
+        { h: "沙粒是什么", p: "沙粒是虚拟道具，无任何现实价值，不可充值、不可兑换、不可转让。输光了可以「采沙」补足，随时从头再来。" }
+      ]
+    },
+    {
+      id: "bet", icon: "🎯", title: "竞猜与投注", summary: "沙粒、杠杆、加注撤回与连对加成",
+      sections: [
+        { h: "基本规则", ul: [
+          "初始 <strong>10,000 沙粒</strong>；每场比赛同时只持有一个预测",
+          "开赛前 <strong>1 小时</strong>停止竞猜与修改（22:00 开赛的场次 21:00 截止）",
+          "投入时立即扣除；猜对返还 <strong>2 倍投入</strong>（净赚 1 倍），猜错投入不退"
+        ] },
+        { h: "杠杆与负债", ul: [
+          "沙粒为正时，单场最多投入<strong>当前沙粒的 2 倍</strong>（投入后可能立即负债）",
+          "沙粒可以<strong>为负数</strong>，负债不影响继续竞猜",
+          "归零或负债时只能选 <strong>10 / 100 / 1000 / 负债额</strong> 四档定额投入"
+        ] },
+        { h: "投入 / 加注 / 撤回", p: "同一场比赛的预测可以随时<strong>加注</strong>追加投入，或<strong>撤回</strong>部分投入（全撤等于取消预测）。想换队伍：把投入全部撤回后重新选择，或在加注/撤回时改选。" },
+        { h: "连对加成", p: "连续猜对第 2 场起获得加成：<strong>+10% / +20% / +30% / +50%</strong>（封顶）。加成只作用于盈利部分，中断后从零重计。" }
+      ]
+    },
+    {
+      id: "dig", icon: "⛏", title: "采沙", summary: "少于 10,000 免费补足",
+      sections: [
+        { h: "补足机制", ul: [
+          "沙粒少于 10,000 时（含负债），采沙会<strong>补足到 10,000</strong>",
+          "沙粒不少于 10,000 时无需采沙，不会额外增加",
+          "采沙只补足、不会清空任何预测；已采沙次数会被记录"
+        ] },
+        { h: "", warn: "沙盘里的沙粒永远可以再采，现实中没有「采沙」按钮。请理性看待赛事预测。" }
+      ]
+    },
+    {
+      id: "settle", icon: "🏁", title: "赛果与结算", summary: "什么时候结算、为什么显示待赛果", dataNote: true,
+      sections: [
+        { h: "自动结算", p: "比赛结束、赛果录入后，打开小程序会自动结算，无需手动操作。连对加成也在结算时一并计入。" },
+        { h: "预计时长", p: "赛果按比赛赛制估算时长：BO1 约 1 小时、BO3 约 2.5 小时、BO5 约 4 小时、BO7 约 5.5 小时。超过预计时长还没出结果的场次会显示「待赛果」，赛果录入后照常结算。" },
+        { h: "以官方为准", p: "赛果来自公开赛事数据，最终以赛事官方公布为准。" }
+      ]
+    },
+    {
+      id: "data", icon: "📅", title: "赛程与数据", summary: "数据多久更新、断网会怎样", dataNote: true,
+      sections: [
+        { h: "自动更新", p: "小程序每 <strong>5 分钟</strong>自动检查一次赛程更新，有变化才下载新数据；也可以在设置页手动「刷新数据」。" },
+        { h: "断网兜底", p: "拉取失败时自动回退到最近一次缓存，再退到内置赛程快照——<strong>离线也能看赛程</strong>，恢复后自动续上。" },
+        { h: "赛程表", p: "「设置 → 赛程表」收录过去与未来各 30 天的场次，支持按游戏筛选、搜索、只看大型赛事（S/A 级）。" }
+      ]
+    },
+    {
+      id: "board", icon: "🏆", title: "排行榜", summary: "胜败榜怎么排、谁能上榜",
+      sections: [
+        { h: "两块榜", p: "<strong>胜榜</strong>比猜对的次数，次数相同比净赚的沙粒；<strong>败榜</strong>正好相反，比谁猜错的次数多。" },
+        { h: "展示口径", ul: [
+          "只展示<strong>有战绩</strong>的玩家（0 战绩不出现在榜上）",
+          "榜单数据约 5 分钟刷新一次",
+          "单项净赚超过 10 亿时按 10 亿封顶展示，防止数字失真"
+        ] },
+        { h: "昵称与头像", p: "同步黑盒资料或自选昵称后，榜上昵称即时更新；头像同样会显示在榜单上。" }
+      ]
+    },
+    {
+      id: "temple", icon: "⛩", title: "转生与魔神殿", summary: "±10 亿的重来机制与荣誉殿",
+      sections: [
+        { h: "转生仪式", ul: [
+          "沙粒余额涨到 <strong>+10 亿</strong>或跌到 <strong>-10 亿</strong>时，可以举行转生仪式",
+          "效果：对应次数 +1、沙粒余额重置 10,000——<strong>累计战绩和图鉴永不重置</strong>",
+          "仪式前置：需要没有未结算的竞猜（先等赛果或撤回）"
+        ] },
+        { h: "庆祝与感言", p: "首次达标会自动弹出全屏庆祝页（每轮一次）；错过也可以从魔神殿再办。仪式时可以留下<strong>24 字以内</strong>的感言，随荣誉载入魔神殿。" },
+        { h: "功成身退", p: "转生者会离开胜败榜，入驻<strong>魔神殿</strong>——封神者与破产者同殿展示，各自按次数排序。新一轮再冲上榜也欢迎回来。" }
+      ]
+    },
+    {
+      id: "duel", icon: "⚔", title: "好友对决", summary: "约战、锁仓与战报回传",
+      sections: [
+        { h: "怎么约", ul: [
+          "先对某场比赛下注，再点竞猜面板的「<strong>⚔ 约战好友</strong>」生成约战链接（没有预测不能约战）",
+          "把链接发给好友（微信/QQ 等任意渠道），对方点开、下注应战即成立",
+          "对方应战后会自动回传战报，你这边同步建立这场对决"
+        ] },
+        { h: "锁仓", p: "约战发出或应战成立后，该场投入<strong>锁定到竞猜截止</strong>，期间不可加注、不可撤回——保证双方判定基准唯一（以战书快照为准：同边算平、猜中者胜）。已发约战无法撤回，发出前确认弹窗会再次提醒。" },
+        { h: "判定与沙粒", p: "对决只比<strong>预测对错</strong>：同边平、猜中胜、猜错负。双方沙粒各自按自己的预测正常结算，<strong>玩家之间没有任何沙粒转移</strong>。" },
+        { h: "多人与重名", ul: [
+          "同一条约战链接被多人点开 = 1 v N，各自独立成局",
+          "每条链接带 4 位随机码，重名玩家（比如都叫「盒友」）不会互相覆盖",
+          "路人打开回执且押过同一场，会按公开挑战在他们自己的记录里建账"
+        ] },
+        { h: "记录管理", p: "「我的 → 对决记录」查看全部对决：已发出的约战可再复制链接；败局有「再战一场」一键开新约战。对决记录只保存在本机。" }
+      ]
+    },
+    {
+      id: "codex", icon: "📖", title: "战队图鉴", summary: "押过的队伍、跟队连击与胜率",
+      sections: [
+        { h: "收录规则", p: "押过哪支队伍就点亮哪支，按游戏区分（同名战队在不同游戏各算一支）。每支队伍记录<strong>押过场次</strong>与<strong>已结算胜率</strong>（押它的场次的胜率）。" },
+        { h: "跟队连击", p: "连续押中同一支队伍（按它的比赛顺序）会累积<strong>跟队连击</strong>：漏看一场、押了对手或改投都算中断；队伍休赛不断签。最佳连击永久留档，图鉴页展示你的跟队 top3。" },
+        { h: "上限与同步", p: "图鉴上限 <strong>150 支</strong>，超出后按最久未跟的队伍淘汰。图鉴随战绩云同步跨设备，也出现在分享卡与战绩对比里。" }
+      ]
+    },
+    {
+      id: "sync", icon: "☁", title: "战绩云同步", summary: "多台设备保持一致",
+      sections: [
+        { h: "同步范围", p: "登录同一小黑盒账号的多台设备自动同步：沙粒、竞猜记录、战队图鉴、转生荣誉。本地变化约 2.5 秒后推送到云端。" },
+        { h: "冲突处理", p: "两台设备同时变化时以<strong>较新的一方</strong>为准，冲突自动恢复，无需手动处理。云端空间不足时优先丢最旧的已结算记录，<strong>未结算的竞猜永不丢</strong>。" },
+        { h: "不支持的客户端", p: "个别客户端不支持云同步时，设置页会显示「当前客户端暂不支持」——本地功能完全不受影响。<strong>对决记录只存本机，不同步</strong>。" }
+      ]
+    },
+    {
+      id: "account", icon: "👤", title: "账号与设置", summary: "昵称头像、主题与清除数据",
+      sections: [
+        { h: "身份", p: "无需任何授权即可开始游戏（自动获得隔离的榜单身份）。想展示小黑盒昵称和头像，用设置页的「<strong>同步黑盒资料</strong>」一次性授权完成；已同步过的账号不会重复请求授权。" },
+        { h: "昵称与头像", p: "「展示昵称」随时可改，修改后榜单即时更新；同步拿到的头像会显示在榜单、对决卡、图鉴与战报卡。" },
+        { h: "外观主题", p: "设置页可切换<strong>深色 / 浅色 / 跟随系统</strong>，选择会记住。" },
+        { h: "清除本地数据", p: "「关于小程序」里的「清除本地数据」会重置本机所有记录（含引导与图鉴）。云端数据不受影响——下次打开会自动拉回。" }
+      ]
+    },
+    {
+      id: "share", icon: "🔗", title: "分享与链接", summary: "战报卡、深链与晒战绩",
+      sections: [
+        { h: "战报卡", p: "每场已结算的竞猜都能生成战报卡。点「保存图片」进入全屏预览后<strong>用系统截屏</strong>（电源键 + 音量键）即可保存——卡片底部预留了分享水印区。" },
+        { h: "转发与深链", p: "竞猜面板支持转发和复制链接，好友点开直达那场比赛并高亮。" },
+        { h: "晒战绩", p: "「我的 → 晒战绩」生成对比链接，好友点开直接开比：已结算、猜对、总盈亏、封神、破产、<strong>跟队连击、图鉴队伍</strong>七项，优方高亮。" }
+      ]
+    },
+    {
+      id: "safety", icon: "🛡", title: "安全与合规", summary: "虚拟道具声明与理性娱乐", dataNote: true,
+      sections: [
+        { h: "虚拟道具声明", safe: true, p: "沙粒为虚拟道具，无任何现实价值，<strong>不可充值、不可兑换、不可转让</strong>，不涉及真实货币。" },
+        { h: "服务边界", p: "本应用仅提供赛事胜负预测的娱乐与练习功能，<strong>不提供任何形式的赌博或博彩服务</strong>；玩家之间没有任何资金或道具往来。" },
+        { h: "数据来源", p: "赛程与赛果来自公开赛事数据平台（PandaScore 等），仅供娱乐参考，最终以赛事官方公布为准。" }
+      ]
+    }
+  ];
+
+  var rulesTopic = "";
+
+  function renderRulesMenu() {
+    $("#rulesMenuList").innerHTML = RULES_TOPICS.map(function (t) {
+      return (
+        '<button class="rules-menu-item" type="button" data-topic="' + t.id + '">' +
+          '<span class="rules-menu-icon" aria-hidden="true">' + t.icon + "</span>" +
+          '<span class="rules-menu-main"><b>' + esc(t.title) + "</b><span>" + esc(t.summary) + "</span></span>" +
+          '<svg class="rules-menu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' +
+        "</button>"
+      );
+    }).join("");
+  }
+
+  function openRulesTopic(id) {
+    var t = null;
+    for (var i = 0; i < RULES_TOPICS.length; i++) {
+      if (RULES_TOPICS[i].id === id) { t = RULES_TOPICS[i]; break; }
+    }
+    if (!t) return;
+    rulesTopic = id;
+    $("#rulesTitle").textContent = t.title;
+    $("#rulesMenu").hidden = true;
+    var detail = $("#rulesDetail");
+    detail.innerHTML = t.sections.map(function (sec) {
+      var html = '<div class="rule-block' + (sec.safe ? " rule-safe" : "") + '">';
+      if (sec.h) html += "<h2>" + esc(sec.h) + "</h2>";
+      if (sec.p) html += "<p>" + sec.p + "</p>";
+      if (sec.ul) html += "<ul>" + sec.ul.map(function (li) { return "<li>" + li + "</li>"; }).join("") + "</ul>";
+      if (sec.warn) html += '<p class="rule-warn">' + sec.warn + "</p>";
+      return html + "</div>";
+    }).join("") +
+      (t.dataNote ? '<p class="data-note">赛事数据来自公开赛果平台（PandaScore 等），仅供娱乐参考，以官方公布为准。</p>' : "");
+    detail.hidden = false;
+    window.scrollTo(0, 0);
+  }
+
+  function closeRulesTopic() {
+    if (!rulesTopic) return;
+    rulesTopic = "";
+    $("#rulesTitle").textContent = "玩法说明";
+    $("#rulesMenu").hidden = false;
+    var detail = $("#rulesDetail");
+    detail.hidden = true;
+    detail.innerHTML = ""; // 详情内容即时丢弃，避免长文档滞留 DOM
   }
 
   /* ============================== 事件绑定 ============================== */
@@ -2789,7 +3051,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         return copyShareLink({
           v: 1, c: 1, n: nick,
           w: s.wins, l: s.losses, p: s.profit,
-          g: state.gods || 0, b: state.bankrupts || 0
+          g: state.gods || 0, b: state.bankrupts || 0,
+          s: s.streak || 0, t: s.teams || 0 // 1.2.5 起：跟队连击/图鉴队伍（旧版收到的链接无此字段，对比页显示 --）
         });
       }).then(function (err) {
         if (!err) toast("对比链接已复制 · 发给好友即可开比");
@@ -3046,7 +3309,15 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#goRulesFromMatches").addEventListener("click", function () { switchView("rules"); });
 
     $("#openRulesBtn").addEventListener("click", function () { switchView("rules"); });
-    $("#rulesBackBtn").addEventListener("click", function () { goBack("settings"); });
+    $("#rulesBackBtn").addEventListener("click", function () {
+      if (rulesTopic) { closeRulesTopic(); window.scrollTo(0, 0); return; } // 详情态先回菜单，菜单态才退页
+      goBack("settings");
+    });
+    $("#rulesMenuList").addEventListener("click", function (e) {
+      var item = e.target.closest("[data-topic]");
+      if (item) openRulesTopic(item.dataset.topic);
+    });
+    renderRulesMenu();
     $("#aboutBackBtn").addEventListener("click", function () { goBack("settings"); });
     $("#openAboutBtn").addEventListener("click", function () { switchView("about"); });
     $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
@@ -3183,6 +3454,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#confirmPrediction").addEventListener("click", placePrediction);
     $("#digBtn").addEventListener("click", digSand);
     $("#digBtnProfile").addEventListener("click", digSand);
+    $("#codexToggle").addEventListener("click", function () {
+      codexExpanded = !codexExpanded;
+      renderCodex();
+    });
 
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
@@ -3351,7 +3626,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         l: clampStat(extra.l),
         p: typeof extra.p === "number" && isFinite(extra.p) ? Math.max(-1e12, Math.min(1e12, Math.round(extra.p))) : 0,
         g: clampStat(extra.g),
-        b: clampStat(extra.b)
+        b: clampStat(extra.b),
+        // s/t 为 1.2.5 新增字段，旧版链接缺失时保持 null（对比页显示 --，不计胜负）
+        s: typeof extra.s === "number" && isFinite(extra.s) && extra.s >= 0 ? clampStat(extra.s) : null,
+        t: typeof extra.t === "number" && isFinite(extra.t) && extra.t >= 0 ? clampStat(extra.t) : null
       };
       return;
     }

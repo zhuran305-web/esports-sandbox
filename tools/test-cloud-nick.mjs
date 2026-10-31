@@ -186,6 +186,79 @@ var htmlSrc = rf(path.join(root, "index.html"), "utf8");
 check("魔神殿视图/庆祝页/入口齐备", /id="view-temple"/.test(htmlSrc) && /id="templeCeremony"/.test(htmlSrc) && /id="openTemple"/.test(htmlSrc));
 check("转生逻辑齐备", /function performCeremony/.test(appSrc) && /function renderTemple/.test(appSrc) && /function checkHonorPopup/.test(appSrc));
 
+/* ---------- 场景 L：战队图鉴与跟队连击（js/collection.js 纯函数直跑） ---------- */
+console.log("L. 战队图鉴/跟队连击：");
+var Col = await import(pathToFileURL(path.join(root, "js", "collection.js")).href);
+
+function mkMatch(id, game, nameA, nameB, startAt) {
+  return { id: id, game: game, startAt: startAt, teamA: { name: nameA }, teamB: { name: nameB } };
+}
+var T0 = 1700000000000;
+var DAY = 86400000;
+var preds = {};
+var pFor = function (id) { return preds[id] || null; };
+
+console.log("   下注收录与连击检测：");
+var c1 = Col.onBet({}, mkMatch("m1", "lol", "T1", "GEN", T0), "A", null, [], pFor);
+check("收录：键=game:队名，b=1", !!c1["lol:T1"] && c1["lol:T1"].b === 1, JSON.stringify(c1));
+check("首押即 1 连（s/bs/ls 正确）", c1["lol:T1"].s === 1 && c1["lol:T1"].bs === 1 && c1["lol:T1"].ls === T0);
+preds["m1"] = { pick: "A" };
+var c2 = Col.onBet(c1, mkMatch("m2", "lol", "T1", "HLE", T0 + 20 * DAY), "A", null, [mkMatch("m1", "lol", "T1", "GEN", T0)], pFor);
+check("休赛续连：s=2", c2["lol:T1"].s === 2 && c2["lol:T1"].bs === 2, JSON.stringify(c2["lol:T1"]));
+preds["m2"] = { pick: "A" };
+var c3 = Col.onBet(c2, mkMatch("m3", "lol", "T1", "DKT", T0 + 40 * DAY), "A", null,
+  [mkMatch("mX", "lol", "T1", "KT", T0 + 30 * DAY)], pFor); // mX 落在检测窗口 (ls=T0+20d, ms=T0+40d) 内
+check("间隔漏看一场断签：s=1，bs 留档 2", c3["lol:T1"].s === 1 && c3["lol:T1"].bs === 2, JSON.stringify(c3["lol:T1"]));
+preds["m3"] = { pick: "A" };
+var c4 = Col.onBet(c3, mkMatch("m4", "lol", "T1", "FOX", T0 + 50 * DAY), "A", null,
+  [mkMatch("mY", "lol", "T1", "NS", T0 + 45 * DAY)], function () { return { pick: "B" }; });
+check("间隔押了对手断签：s=1", c4["lol:T1"].s === 1, JSON.stringify(c4["lol:T1"]));
+check("押对手不收 T1（b 只数押它的场次）", c4["lol:T1"].b === 4, String(c4["lol:T1"].b));
+var c11 = Col.onBet(c4, mkMatch("m5", "lol", "T1", "GAM", T0 + 120 * DAY), "A", null, [], pFor);
+check("间隔超出可验证窗口（>40 天）保守断签", c11["lol:T1"].s === 1, JSON.stringify(c11["lol:T1"]));
+var c5 = Col.onBet({}, mkMatch("v1", "valorant", "T1", "GEN", T0), "A", null, [], pFor);
+check("跨游戏同名分键（valorant:T1 ≠ lol:T1）", !!c5["valorant:T1"] && !c5["lol:T1"], JSON.stringify(Object.keys(c5)));
+
+console.log("   改选迁移：");
+var c6 = Col.onBet({}, mkMatch("m1", "lol", "T1", "GEN", T0), "A", null, [], pFor);
+c6 = Col.onBet(c6, mkMatch("m1", "lol", "T1", "GEN", T0), "B", "A", [], pFor);
+check("旧队 b-1 且连击清零", c6["lol:T1"].b === 0 && c6["lol:T1"].s === 0, JSON.stringify(c6["lol:T1"]));
+check("新队正常收录 1 连", !!c6["lol:GEN"] && c6["lol:GEN"].b === 1 && c6["lol:GEN"].s === 1, JSON.stringify(c6["lol:GEN"]));
+
+console.log("   结算与云合并：");
+var c7 = Col.onSettle({}, mkMatch("m1", "lol", "T1", "GEN", T0), "A", true);
+check("结算 w=1，旧注 b 回补", c7["lol:T1"].w === 1 && c7["lol:T1"].b === 1, JSON.stringify(c7));
+c7 = Col.onSettle(c7, mkMatch("m2", "lol", "T1", "HLE", T0 + DAY), "A", false);
+check("结算 l=1（胜率分母 w+l=2）", c7["lol:T1"].l === 1 && c7["lol:T1"].w + c7["lol:T1"].l === 2, JSON.stringify(c7));
+var c8 = Col.mergeCollection(
+  { "lol:T1": { b: 5, w: 3, l: 1, s: 2, bs: 4, ls: T0 } },
+  { "lol:T1": { b: 3, w: 2, l: 2, s: 1, bs: 3, ls: T0 + DAY } }
+);
+check("合并：计数取 max", c8["lol:T1"].b === 5 && c8["lol:T1"].w === 3 && c8["lol:T1"].l === 2 && c8["lol:T1"].bs === 4, JSON.stringify(c8));
+check("合并：s/ls 归 ls 较新一方", c8["lol:T1"].s === 1 && c8["lol:T1"].ls === T0 + DAY, JSON.stringify(c8));
+var c8b = Col.mergeCollection({ "lol:T1": { b: 2, w: 1, l: 0, s: 1, bs: 1, ls: T0 } }, {});
+check("合并：云端缺字段不覆盖本地", c8b["lol:T1"].b === 2, JSON.stringify(c8b));
+
+console.log("   上限与汇总：");
+var big = {};
+for (var bi = 0; bi < 151; bi++) big["g:t" + bi] = { b: 1, w: 0, l: 0, s: 0, bs: 0, ls: bi };
+var c9 = Col.capCollection(big);
+check("151 → 150 且淘汰 ls 最旧", Object.keys(c9).length === 150 && !c9["g:t0"] && !!c9["g:t150"], String(Object.keys(c9).length));
+var c10 = Col.collectionSummary({ "lol:T1": { b: 10, w: 3, l: 7, s: 2, bs: 5, ls: 99 }, "val:T1": { b: 2, w: 2, l: 0, s: 0, bs: 2, ls: 50 } });
+check("汇总：队伍数/最佳连击", c10.teams === 2 && c10.bestStreak === 5, JSON.stringify({ t: c10.teams, b: c10.bestStreak }));
+check("汇总：game/name 解析与胜率", c10.list[0].game === "lol" && c10.list[0].name === "T1" && c10.list[0].rate === 30, JSON.stringify(c10.list[0]));
+
+console.log("   接线静态检查：");
+check("Sync.pack 已带 collection", /collection:\s*state\.collection/.test(cloudSrc));
+check("app.js 已接线（onBet/onSettle/merge/collectionSummary）",
+  /onBet\(state\.collection/.test(appSrc) && /onSettle\(state\.collection/.test(appSrc) &&
+  /mergeCollection\(localCodex/.test(appSrc) && /collectionSummary\(state\.collection\)/.test(appSrc));
+check("对比链接带 s/t 字段", /s: s\.streak/.test(appSrc) && /t: s\.teams/.test(appSrc));
+check("对比页接收端解析 s/t", /clampStat\(extra\.s\)/.test(appSrc) && /clampStat\(extra\.t\)/.test(appSrc));
+check("图鉴 DOM 齐备", /id="codexGrid"/.test(htmlSrc) && /id="codexToggle"/.test(htmlSrc) && /id="codexSub"/.test(htmlSrc));
+check("renderCodex 已挂进 renderProfile", /renderCodex\(\);/.test(appSrc) && /function renderCodex/.test(appSrc));
+check("玩法说明分类菜单齐备", /var RULES_TOPICS/.test(appSrc) && /id="rulesMenuList"/.test(htmlSrc) && /id="rulesDetail"/.test(htmlSrc) && /function openRulesTopic/.test(appSrc) && /function closeRulesTopic/.test(appSrc));
+
 rmSync(tmp, { recursive: true, force: true });
 
 console.log("");

@@ -1,6 +1,6 @@
 {
   "name": "esports-sandbox",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "private": true,
   "type": "module",
   "description": "赛事沙盘 · 电竞赛事预测模拟盘（小黑盒小程序）+ 赛事数据采集器",

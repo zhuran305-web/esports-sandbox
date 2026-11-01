@@ -5,6 +5,7 @@ import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTi
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
+import { fitDuelExtra } from "./duel-extra.mjs";
 
 (function () {
   "use strict";
@@ -3601,6 +3602,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       sections: [
         { h: "怎么约", ul: [
           "先对某场比赛下注，再点竞猜面板的「<strong>⚔ 约战好友</strong>」生成约战链接（没有预测不能约战）",
+          "确认弹窗里可以放一句<strong>狠话</strong>（12 字以内、可不填），它会随战书出现在对方的约战卡片上",
           "把链接发给好友（微信/QQ 等任意渠道），对方点开、下注应战即成立",
           "对方应战后会自动回传战报，你这边同步建立这场对决"
         ] },
@@ -4440,17 +4442,19 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (typeof extra.m !== "string" || !extra.m) return;
     pendingDeepLink = extra.m;
     // 对决链接：d:1 约战 / d:2 战报，参数合法性在接收端逐项校验
-    if ((extra.d === 1 || extra.d === 2) &&
-        (extra.p === "A" || extra.p === "B") &&
-        typeof extra.n === "string" && extra.n.trim() &&
-        typeof extra.s === "number" && isFinite(extra.s) && extra.s >= 0) {
-      pendingDuelLaunch = {
-        d: extra.d, m: extra.m, p: extra.p,
-        s: Math.min(Math.round(extra.s), 1e12),
-        n: extra.n.trim().slice(0, 24),
-        r: typeof extra.r === "string" && /^[A-Za-z0-9]{2,8}$/.test(extra.r) ? extra.r : ""
-      };
-    }
+      if ((extra.d === 1 || extra.d === 2) &&
+          (extra.p === "A" || extra.p === "B") &&
+          typeof extra.n === "string" && extra.n.trim() &&
+          typeof extra.s === "number" && isFinite(extra.s) && extra.s >= 0) {
+        pendingDuelLaunch = {
+          d: extra.d, m: extra.m, p: extra.p,
+          s: Math.min(Math.round(extra.s), 1e12),
+          n: extra.n.trim().slice(0, 24),
+          r: typeof extra.r === "string" && /^[A-Za-z0-9]{2,8}$/.test(extra.r) ? extra.r : "",
+          // 狠话（1.2.16，仅 d:1 挑战书携带）：可选，截 24 字防脏数据
+          g: extra.d === 1 && typeof extra.g === "string" ? extra.g.trim().slice(0, 24) : ""
+        };
+      }
   }
 
   function deepLinkSelector(scope, matchId) {
@@ -4635,6 +4639,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
   }
 
+  /* ---------- 狠话（1.2.16，可选）：随 d:1 战书送达，extra 预算硬闸 ---------- */
+  // 估算与截断的纯函数在 js/duel-extra.mjs（test:cloud 场景 T 与 @msgpack/msgpack 对拍）；
+  // 这里只负责提示
+  function fitDuelExtraWithToast(extra) {
+    var res = fitDuelExtra(extra);
+    if (res.dropped) toast("链接空间不足，狠话本次未带上");
+    else if (res.trimmed) toast("狠话过长，已截断发送");
+    return res.extra;
+  }
+
   // 昵称 → 头像 反查表：对决卡/对比页里只有对方昵称，头像从榜单 extra 反查（榜单读取带 5 分钟缓存）
   function ensureDuelAvatars() {
     if (Cloud.isMock()) return Promise.resolve({});
@@ -4673,6 +4687,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       "<b>发出后该场投入锁定到竞猜截止，不可加注/撤回。</b>";
     $("#duelDialogTip").textContent = "对方应战后会回传应战，你这边才会出现对决记录";
     $("#duelDialogCopy").textContent = "复制约战链接";
+    if ($("#duelDialogMsg")) $("#duelDialogMsg").value = "";
     $("#duelDialogBackdrop").hidden = false;
   }
 
@@ -4688,6 +4703,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     $("#duelDialogText").innerHTML = "这场已发出约战，投入锁定到竞猜截止。对手点开链接下注即成立对决，可复制链接发给更多好友。";
     $("#duelDialogTip").textContent = "重复复制的是同一条链接，已应战的好友不会重复建账";
     $("#duelDialogCopy").textContent = "复制约战链接";
+    var sent = findSentInvite(matchId);
+    if ($("#duelDialogMsg")) $("#duelDialogMsg").value = sent && sent.msg ? sent.msg : "";
     $("#duelDialogBackdrop").hidden = false;
   }
 
@@ -4698,19 +4715,31 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   function copyDuelInvite(rec) {
-    // rec 缺字段（老数据/兜底重建）时按当前预测重造；随机码必须复用，否则已应战者会重复建账
+    // rec 缺字段（老数据/兜底重建）时按当前预测重造；随机码必须复用，否则已应战者会重复建账；
+    // 狠话（msg）随同复用——同码重发 = 同一条战书（含狠话）幂等
     return duelNick().then(function (nick) {
       var extra = {
         v: 1, d: 1, m: rec.m, p: rec.p, s: rec.s,
         n: rec.n || nick, r: rec.r || duelCode()
       };
+      if (rec.msg) extra.g = rec.msg;
+      extra = fitDuelExtraWithToast(extra);
       return copyShareLink(extra).then(function (err) {
-        if (!err && !findSentInvite(rec.m)) saveSentInvite({
-          m: rec.m, p: extra.p, s: extra.s, n: extra.n, r: extra.r,
-          label: (matchById(rec.m) ? matchLabel(matchById(rec.m)) : rec.label) || "",
-          startAt: (matchById(rec.m) || {}).startAt || rec.startAt || "",
-          at: Date.now()
-        });
+        if (!err) {
+          var prev = findSentInvite(rec.m);
+          if (!prev) {
+            saveSentInvite({
+              m: rec.m, p: extra.p, s: extra.s, n: extra.n, r: extra.r, msg: extra.g || "",
+              label: (matchById(rec.m) ? matchLabel(matchById(rec.m)) : rec.label) || "",
+              startAt: (matchById(rec.m) || {}).startAt || rec.startAt || "",
+              at: Date.now()
+            });
+          } else if ((prev.msg || "") !== (extra.g || "")) {
+            prev.msg = extra.g || ""; // relock 改狠话：同码建账幂等，但狠话以最新一次为准
+            saveDuelSent();
+            if (!$("#view-duels").hidden) renderDuelSent();
+          }
+        }
         return err;
       });
     });
@@ -4725,6 +4754,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         var my = predictionFor(m.id);
         return { m: m.id, p: my ? my.pick : "A", s: my ? my.stake : 0, r: duelCode() };
       })();
+      // relock 可改狠话：同码幂等只约束建账，狠话以最新一次复制为准
+      if ($("#duelDialogMsg")) rec = Object.assign({}, rec, { msg: $("#duelDialogMsg").value.trim().slice(0, 12) });
       copyDuelInvite(rec).then(function (err) {
         if (!err) { closeDuelDialog(); toast("约战链接已复制 · 发给好友即可应战"); }
         else toast("复制链接失败，当前端不支持");
@@ -4735,13 +4766,14 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!existing) { toast("本场预测已不存在"); closeDuelDialog(); return; }
     duelNick().then(function (nick) {
       var r = duelCode();
-      return copyShareLink({
-        v: 1, d: 1, m: m.id, p: duelDialogPick,
-        s: existing.stake, n: nick, r: r
-      }).then(function (err) {
+      var extra = { v: 1, d: 1, m: m.id, p: duelDialogPick, s: existing.stake, n: nick, r: r };
+      var words = $("#duelDialogMsg") ? $("#duelDialogMsg").value.trim().slice(0, 12) : "";
+      if (words) extra.g = words;
+      extra = fitDuelExtraWithToast(extra);
+      return copyShareLink(extra).then(function (err) {
         if (!err) {
           saveSentInvite({
-            m: m.id, p: duelDialogPick, s: existing.stake, n: nick, r: r,
+            m: m.id, p: duelDialogPick, s: existing.stake, n: nick, r: r, msg: extra.g || "",
             label: matchLabel(m), startAt: m.startAt, at: Date.now()
           });
           lockDuel(m.id);
@@ -4755,13 +4787,13 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
   }
 
-  // 收到约战（d:1）：已有预测直接成立，否则挂横幅等下注
+  // 收到约战（d:1）：已有预测直接成立，否则挂挑战卡等下注
   function handleDuelInvite(ex) {
     var m = matchById(ex.m);
     if (!m) { toast("约战的比赛不在当前数据范围内"); return; }
     if (statusOf(m) !== "open") { toast("这场比赛已截止，无法应战"); return; }
     if (predictionFor(m.id)) { acceptDuel(ex); return; }
-    duelInvite = { m: ex.m, p: ex.p, s: ex.s, n: ex.n, r: ex.r || "", exp: matchLockTime(m) };
+    duelInvite = { m: ex.m, p: ex.p, s: ex.s, n: ex.n, r: ex.r || "", msg: ex.g || ex.msg || "", exp: matchLockTime(m) };
     storageSet(DUEL_INVITE_KEY, duelInvite).catch(function () {});
     renderDuelBanner();
   }
@@ -4779,6 +4811,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       oppNick: ex.n, oppPick: ex.p, oppPickName: pickName(m, ex.p), oppStake: ex.s,
       myPick: my.pick, myPickName: pickName(m, my.pick), myStake: my.stake,
       label: matchLabel(m), startAt: m.startAt, createdAt: Date.now(),
+      msg: ex.msg || ex.g || "", // 对手的狠话：随战书送达，对决卡展示
       rc: duelCode(), // 应战方随机码：回执/战报携带，发起方据此建账防同昵称覆盖
       status: "pending", settledAt: 0, myProfit: 0
     };
@@ -5006,21 +5039,29 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (!duelInvite || !m || statusOf(m) !== "open" || Date.now() >= duelInvite.exp) {
       if (duelInvite && (!m || Date.now() >= duelInvite.exp)) {
         duelInvite = null;
-        storageSet(DUEL_INVITE_KEY, "").catch(function () {});
+        storageSet(DUEL_INVITE_KEY, "").catch(function () {});   // exp 失效清理
       }
       el.hidden = true;
       el.innerHTML = "";
       return;
     }
     el.hidden = false;
+    // 挑战卡（1.2.16）：对战双方队标 + 对方押边（高亮）/投入 + 狠话（可选）+ 赛程时间
     el.innerHTML =
-      '<div class="duel-banner-main">' +
-        "<div><b>" + esc(duelInvite.n) + "</b> 约你竞猜这场比赛</div>" +
-        '<div class="duel-banner-sub">' + esc(m.teamA.short + " vs " + m.teamB.short) +
-        " · 对方押 <b>" + esc(pickName(m, duelInvite.p)) + "</b>" +
-        (duelInvite.s > 0 ? " · 投入 " + fmtNum(duelInvite.s) + " 沙粒" : "") + "</div></div>" +
+      '<div class="duel-banner-head"><b>⚔ ' + esc(duelInvite.n) + "</b> 向你发起约战</div>" +
+      '<div class="duel-banner-vs">' +
+        '<span class="duel-vs-side' + (duelInvite.p === "A" ? " is-pick" : "") + '">' +
+          avatarHTML(m.teamA) + "<b>" + esc(m.teamA.short || m.teamA.name) + "</b></span>" +
+        '<span class="duel-vs-mark">VS</span>' +
+        '<span class="duel-vs-side' + (duelInvite.p === "B" ? " is-pick" : "") + '">' +
+          avatarHTML(m.teamB) + "<b>" + esc(m.teamB.short || m.teamB.name) + "</b></span>" +
+      "</div>" +
+      '<div class="duel-banner-sub">他押 <b>' + esc(pickName(m, duelInvite.p)) + "</b>" +
+        (duelInvite.s > 0 ? " · 投入 <b>" + fmtNum(duelInvite.s) + "</b> 沙粒" : "") + "</div>" +
+      (duelInvite.msg ? '<div class="duel-msg">「' + esc(duelInvite.msg) + "」</div>" : "") +
+      '<div class="duel-banner-meta">' + esc(m.tournament) + " · " + esc(fmtTime(m.startAt)) + " 开赛</div>" +
       '<div class="duel-banner-acts">' +
-        '<button type="button" class="duel-accept" data-duel-act="accept">去应战</button>' +
+        '<button type="button" class="duel-accept" data-duel-act="accept">接受应战</button>' +
         '<button type="button" class="duel-ignore" data-duel-act="ignore">忽略</button></div>';
   }
 
@@ -5081,6 +5122,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
         '<div class="duel-match">' + esc(d.label) + "</div>" +
         '<div class="duel-picks">我押 <b>' + esc(d.myPickName || "?") + "</b> " + fmtNum(d.myStake) +
           " 沙粒 · 对方押 <b>" + esc(d.oppPickName || "?") + "</b> " + fmtNum(d.oppStake) + " 沙粒</div>" +
+        (d.msg ? '<div class="duel-quote">「' + esc(d.msg) + "」</div>" : "") +
         '<div class="duel-foot"><span>' + fmtMonthDay(d.startAt) + " " + fmtClock(d.startAt) + "</span>" +
           (rematch || report ? '<span class="duel-foot-acts">' + rematch + report + "</span>" : "") + "</div>" +
         "</div>";

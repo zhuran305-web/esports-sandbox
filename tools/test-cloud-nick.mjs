@@ -491,6 +491,42 @@ check("玩法说明：比赛详情 topic + 1.2.15 三处新 section",
   /id: "detail", icon: "🔍"/.test(appSrc) && /称号展示/.test(appSrc) &&
   /主队主题色/.test(appSrc) && /全部竞猜记录", p:/.test(appSrc));
 
+/* ---------- 场景 T：1.2.16 约战卡片化 + 狠话（extra 硬闸对拍） ---------- */
+console.log("T. 约战卡片/狠话：");
+var { createRequire } = await import("node:module");
+var { encode } = createRequire(path.join(root, "package.json"))("@msgpack/msgpack");
+var DEX = await import(pathToFileURL(path.join(root, "js", "duel-extra.mjs")).href);
+
+var extraCases = [
+  { v: 1, d: 1, m: "auto-cs2-20261101-fly-ae", p: "A", s: 10000, n: "赤色之晨", r: "ab3x" },
+  { v: 1, d: 1, m: "auto-lol-wild-rift-20261101-abcdefgh-ijkl-2", p: "B", s: 1000000, n: "一二三四五六七八九十十一十", r: "ab3x" },
+  { v: 1, d: 1, m: "auto-cs2-20261101-fly-ae", p: "A", s: 100, n: "盒友", r: "z9z9", g: "晚上八点决战到天亮" },
+  { v: 1, d: 1, m: "auto-kpl-20261107-ag-sgp-3", p: "B", s: 0, n: "ABCDEFGH", r: "q1w2", g: "GG-ez-ar" },
+  { v: 1, d: 1, m: "auto-cs2-20261101-fly-ae", p: "A", s: 1000000, n: "盒友", r: "ab3x", g: "狠🔥话" } // emoji 代理对 4B
+];
+check("狠话硬闸对拍：duelExtraBytes 与 @msgpack/msgpack 逐字节一致",
+  extraCases.every(function (x) { return DEX.duelExtraBytes(x) === encode(x).length; }),
+  JSON.stringify(extraCases.map(function (x) { return [DEX.duelExtraBytes(x), encode(x).length]; })));
+console.log("  体积参考（估算=编码）：" +
+  extraCases.map(function (x) { return DEX.duelExtraBytes(x); }).join("/") + " B");
+
+var worst = { v: 1, d: 1, m: "auto-lol-wild-rift-20261101-abcdefgh-ijkl-2", p: "A", s: 1000000, n: "一二三四五六七八九十十一十", r: "ab3x", g: "一二三四五六七八九十十一十" };
+check("硬闸截断：最坏组合（超长 id + 12 字昵称 + 12 字狠话）自动截到 ≤128B",
+  encode(DEX.fitDuelExtra(worst).extra).length <= 128 && DEX.fitDuelExtra(worst).trimmed &&
+  encode(DEX.fitDuelExtra(extraCases[2]).extra).length <= 128 && !DEX.fitDuelExtra(extraCases[2]).trimmed,
+  "worst: " + encode(worst).length + "B → " + encode(DEX.fitDuelExtra(worst).extra).length + "B（g=" +
+  (DEX.fitDuelExtra(worst).extra.g || "(无)") + "）");
+check("硬闸丢弃：上限压到放不下整句时整体去掉 g",
+  !DEX.fitDuelExtra({ v: 1, d: 1, m: "auto-lol-wild-rift-20261101-abcdefgh-ijkl-2", p: "A", s: 1000000, n: "一二三四五六七八九十十一十", r: "ab3x", g: "狠话" }, 50).extra.g);
+check("约战狠话接线：输入框 + g 三处透传 + 挑战卡 + 对决卡狠话行",
+  /id="duelDialogMsg"/.test(htmlSrc) && /maxlength="12"/.test(htmlSrc) &&
+  /function fitDuelExtraWithToast/.test(appSrc) && /extra\.g = words/.test(appSrc) && /extra\.g = rec\.msg/.test(appSrc) &&
+  /g: extra\.d === 1 && typeof extra\.g === "string"/.test(appSrc) &&
+  /msg: ex\.msg \|\| ex\.g \|\| ""/.test(appSrc) &&
+  /duel-banner-vs/.test(appSrc) && /avatarHTML\(m\.teamA\)/.test(appSrc) && /avatarHTML\(m\.teamB\)/.test(appSrc) &&
+  /duel-msg/.test(appSrc) && /duel-quote/.test(appSrc) &&
+  /duel-vs-side/.test(cssSrc) && /duel-dialog-msg/.test(cssSrc) && /duel-msg/.test(cssSrc));
+
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
 function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }

@@ -721,11 +721,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
-      <p class="duel-dialog-text" id="duelDialogText"></p>
-      <div class="sheet-actions">
-        <button class="duel-btn" id="duelDialogDismiss" type="button">先不了</button>
-        <button class="primary-btn" id="duelDialogCopy" type="button">复制约战链接</button>
-      </div>
+        <p class="duel-dialog-text" id="duelDialogText"></p>
+        <input class="duel-dialog-msg" id="duelDialogMsg" type="text" maxlength="12" placeholder="放句狠话（可不填，随战书送达）" autocomplete="off">
+        <div class="sheet-actions">
+          <button class="duel-btn" id="duelDialogDismiss" type="button">先不了</button>
+          <button class="primary-btn" id="duelDialogCopy" type="button">复制约战链接</button>
+        </div>
       <p class="sheet-tip" id="duelDialogTip">链接发给好友，对方点开下注即成立对决</p>
       <button type="button" class="duel-help-link" id="duelHelpFromDialog">约战流程怎么走？</button>
     </div>
@@ -745,8 +746,8 @@
         </button>
       </div>
       <div class="duel-help-steps">
-        <div class="duel-help-step"><b>1</b><div><strong>约战</strong><span>先在竞猜面板下注，再点「⚔ 约战好友」。确认后复制链接发给好友，该场投入锁定到竞猜截止。</span></div></div>
-        <div class="duel-help-step"><b>2</b><div><strong>应战</strong><span>好友点开链接 → 选边下注 → 对决成立；对方那场投入同样锁定。</span></div></div>
+        <div class="duel-help-step"><b>1</b><div><strong>约战</strong><span>先在竞猜面板下注，再点「⚔ 约战好友」，可放一句狠话（可不填）。确认后复制链接发给好友，该场投入锁定到竞猜截止。</span></div></div>
+        <div class="duel-help-step"><b>2</b><div><strong>应战</strong><span>好友点开链接 → 看到约战卡片 → 选边下注 → 对决成立；对方那场投入同样锁定。</span></div></div>
         <div class="duel-help-step"><b>3</b><div><strong>应战回执</strong><span>好友应战后把「应战回执」发回给你（对决记录 → 把应战发给他）；收到后你的对决记录才会出现这场。</span></div></div>
         <div class="duel-help-step"><b>4</b><div><strong>自动结算</strong><span>赛果出来自动判定：选边相同=平，猜中=胜，猜错=负；只看选择、不比投入。</span></div></div>
         <div class="duel-help-step"><b>5</b><div><strong>赛后战报</strong><span>结算后可「把战报发给他」——纯社交动作，发不发都不影响记录。</span></div></div>

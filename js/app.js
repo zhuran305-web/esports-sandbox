@@ -37,7 +37,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.0";
+  var APP_VERSION = "1.3.1";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -142,6 +142,15 @@ import { fitDuelExtra } from "./duel-extra.mjs";
 
   function fmtNum(n) {
     return Number(n || 0).toLocaleString("zh-CN");
+  }
+
+  // 榜单专用大数缩写（1.3.1）：≥1亿 → x.x亿、≥100万 → xxx.x万，其余全量——
+  // 防止「赚 999,999,999 沙粒」这类长数字把昵称列挤没
+  function fmtCompact(n) {
+    n = Math.max(0, Math.round(Number(n) || 0));
+    if (n >= 1e8) return (Math.round(n / 1e7) / 10) + "亿";
+    if (n >= 1e6) return (Math.round(n / 1e5) / 10) + "万";
+    return fmtNum(n);
   }
 
   /* ============================== 主题 ============================== */
@@ -2527,7 +2536,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
           "</span>" +
           '<span class="board-detail">' +
             '<span class="board-first ' + (isWin ? "won" : "lost") + '">' + e.first + " 场</span>" +
-            '<span class="board-second">' + (isWin ? "赚 " : "亏 ") + fmtNum(e.second) + " 沙粒</span>" +
+            '<span class="board-second">' + (isWin ? "赚 " : "亏 ") + fmtCompact(e.second) + " 沙粒</span>" +
           "</span>" +
         "</div>"
       );

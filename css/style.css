@@ -1195,6 +1195,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
 /* 榜单/魔神殿中列：昵称一行 + 称号小字一行（同行 chip 会被 nowrap+ellipsis 截断） */
 .board-nick-wrap {
   min-width: 0;
+  flex: 1 1 auto; /* 弹性占位：数字再长昵称列也保有剩余空间（1.3.1） */
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1503,15 +1504,18 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
 
 .board-detail {
   margin-left: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46%; /* 数字列封顶：与昵称列互不干扰（1.3.1） */
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
 }
-.board-first { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.board-first { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .board-first.won { color: var(--win); }
 .board-first.lost { color: var(--lose); }
-.board-second { font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.board-second { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 
 /* ---------- 分享卡片 ---------- */
 .share-sheet {

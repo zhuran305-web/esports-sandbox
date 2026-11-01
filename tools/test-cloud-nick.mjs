@@ -526,6 +526,10 @@ check("约战狠话接线：输入框 + g 三处透传 + 挑战卡 + 对决卡�
   /duel-banner-vs/.test(appSrc) && /avatarHTML\(m\.teamA\)/.test(appSrc) && /avatarHTML\(m\.teamB\)/.test(appSrc) &&
   /duel-msg/.test(appSrc) && /duel-quote/.test(appSrc) &&
   /duel-vs-side/.test(cssSrc) && /duel-dialog-msg/.test(cssSrc) && /duel-msg/.test(cssSrc));
+check("榜单布局防挤压（1.3.1）：fmtCompact 大数缩写 + 数字列封顶 46% + 昵称列弹性占位",
+  /function fmtCompact/.test(appSrc) && /fmtCompact\(e\.second\)/.test(appSrc) &&
+  /max-width: 46%/.test(cssSrc) && /flex: 1 1 auto; \/\* 弹性占位/.test(cssSrc) &&
+  /board-second \{ max-width: 100%; overflow: hidden/.test(cssSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

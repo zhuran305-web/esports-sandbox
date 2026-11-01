@@ -96,12 +96,20 @@ export function normalizeMatch(raw, source) {
   var now = Date.now();
   var status = result ? "finished" : raw.status === "locked" || start.getTime() <= now ? "locked" : "open";
 
+  // 实际结束时间（PandaScore end_at；缺失/非法存空串）
+  var endAt = "";
+  if (raw.endAt) {
+    var end = new Date(raw.endAt);
+    if (!isNaN(end.getTime())) endAt = end.toISOString();
+  }
+
   return {
     id: String(raw.id || "").trim(),
     game: String(raw.game).toLowerCase(),
     tournament: String(raw.tournament || "未知赛事").trim(),
     stage: String(raw.stage || "赛程").trim(),
     startAt: start.toISOString(),
+    endAt: endAt,
     format: format,
     tier: raw.tier ? String(raw.tier).toLowerCase() : "",
     teamA: teamA,
@@ -188,11 +196,16 @@ export function mergeMatches(existing, incoming, options) {
       var merged = Object.assign({}, cur, m);
       merged.id = cur.id || m.id || makeId(m, usedIds);
       merged.note = m.note || cur.note || "";
+      merged.endAt = m.endAt || cur.endAt || ""; // 新采集缺失时不丢旧值
       merged.source = newP >= curP ? m.source : cur.source;
       // 手工条目没有队标：沿用已有条目的，避免覆盖时丢图
       ["teamA", "teamB"].forEach(function (side) {
         if (merged[side] && cur[side] && !merged[side].logo && cur[side].logo) {
           merged[side] = Object.assign({}, merged[side], { logo: cur[side].logo });
+        }
+        // 同理：赛区（location 偶发缺失时不被空串覆盖）
+        if (merged[side] && cur[side] && !merged[side].region && cur[side].region) {
+          merged[side] = Object.assign({}, merged[side], { region: cur[side].region });
         }
       });
       map.set(key, merged);

@@ -360,7 +360,8 @@ check("主队上榜链路：mt 门控 + extra.mt + getList 透出 + 榜单小队
   /board-mt/.test(appSrc) && /board-mt \.avatar/.test(cssSrc));
 check("成就页/入口/徽章 DOM 与渲染齐备",
   /id="view-achv"/.test(htmlSrc) && /id="achvEntry"/.test(htmlSrc) && /id="profileTitle"/.test(htmlSrc) &&
-  /function renderAchv/.test(appSrc) && /function toggleTitle/.test(appSrc) && /title-chip/.test(appSrc));
+  /function renderAchv/.test(appSrc) && /function toggleTitle/.test(appSrc) &&
+  /board-title/.test(appSrc) && !/title-chip/.test(appSrc) && /board-title/.test(cssSrc)); // 1.2.15 称号=昵称下方小字（chip 已废）
 check("我的页快捷三联 + 图鉴二级页（1.2.12 瘦身）",
   /id="quick-row"|class="quick-row"/.test(htmlSrc) && /id="codexEntry"/.test(htmlSrc) && /id="view-codex"/.test(htmlSrc) &&
   /id="codexBackBtn"/.test(htmlSrc) && /quickCodexSub/.test(appSrc) && /name === "codex"\) renderCodex/.test(appSrc));
@@ -441,6 +442,54 @@ check("等级链路静态：mainLevels 接线 + ml 门控 + extra.ml + 榜单/�
   /mainLevels: mergeAchv/.test(appSrc) && /team-lv-badge/.test(appSrc) && /board-mt-lv/.test(appSrc));
 check("余额卡主队块（1.2.13）", /id="profileMainTeam"/.test(htmlSrc) && /balance-team-lv/.test(appSrc) &&
   /profileMainTeam"\)\.addEventListener/.test(appSrc));
+
+/* ---------- 场景 R：1.2.15 称号下移 + 主题色全面扩散 + 全部竞猜记录 ---------- */
+console.log("R. 称号小字/主题扩散/全部记录：");
+check("称号渲染为昵称下方小字（榜单+魔神殿，无 chip）",
+  /board-nick-wrap/.test(appSrc) && /board-title/.test(cssSrc) &&
+  (appSrc.match(/board-title/g) || []).length >= 2);
+check("主题色扩散：衍生变量默认值齐备 + applyTeamTheme 内联覆盖 + CSS 走 var 引用",
+  /--accent-rgb: 255, 138, 61/.test(cssSrc) && /--accent-rgb: 232, 98, 15/.test(cssSrc) &&
+  /--accent-hi: #ffd08a/.test(cssSrc) && /--accent-hi-mid: #ffb066/.test(cssSrc) && /--accent-glow/.test(cssSrc) &&
+  /TEAM_THEME_VARS/.test(appSrc) && /--accent-rgb", rgb/.test(appSrc) &&
+  (cssSrc.match(/var\(--accent-rgb\)/g) || []).length >= 40 && (cssSrc.match(/var\(--accent-hi/g) || []).length >= 8);
+check("主题色扩散：取消主队时全部衍生变量移除（防残留换肤）",
+  /TEAM_THEME_VARS\.forEach\(function \(v\) \{ root\.style\.removeProperty\(v\); \}\)/.test(appSrc));
+check("分享卡跟队色：shareThemeColors 提亮防线 + 三处应用",
+  /function shareThemeColors/.test(appSrc) && /lum >= 110/.test(appSrc) &&
+  /drawPersonAvatar\(ctx, 60, 652, 52, myNickCache \|\| "我", avatarImg, theme\)/.test(appSrc) &&
+  /theme \? "rgba\(" \+ theme\.rgb \+ ", \.3\)" : "rgba\(255,255,255,\.07\)"/.test(appSrc));
+check("全部竞猜记录页：DOM + 视图接线 + 渲染与分享委托",
+  /id="view-history"/.test(htmlSrc) && /id="historyAllBtn"/.test(htmlSrc) && /id="historyBackBtn"/.test(htmlSrc) &&
+  /name === "codex" \|\| name === "history" \|\| name === "match"/.test(appSrc) && /"history", "match"\]\.forEach/.test(appSrc) &&
+  /function renderHistoryFull/.test(appSrc) && /name === "history"\) renderHistoryFull/.test(appSrc) &&
+  /historySettledList"\)\.addEventListener/.test(appSrc));
+check("竞猜快照：下注落账冗余存队名/赛事 + 归档降级渲染",
+  /n1: m\.teamA\.name,/.test(appSrc) && /n2: m\.teamB\.name,/.test(appSrc) && /tn: m\.tournament/.test(appSrc) &&
+  /比赛已归档/.test(appSrc) && /filter\(function \(p\) \{ return matchById\(p\.matchId\); \}\)/.test(appSrc));
+
+/* ---------- 场景 S：1.2.16 比赛详情页 + 采集器 region/endAt + 玩法说明 ---------- */
+console.log("S. 比赛详情/采集字段/玩法说明：");
+var libSrc = rf(path.join(root, "tools", "lib.mjs"), "utf8");
+var pandasSrc = rf(path.join(root, "tools", "adapters", "pandascore.mjs"), "utf8");
+check("采集器：location→region + end_at 采集 + normalize 白名单放行 + 合并保底",
+  /op1\.location \|\| ""/.test(pandasSrc) && /item\.end_at \|\| ""/.test(pandasSrc) &&
+  /endAt: endAt/.test(libSrc) && /merged\.endAt = m\.endAt \|\| cur\.endAt/.test(libSrc) &&
+  /region: cur\[side\]\.region/.test(libSrc));
+check("比赛详情页：DOM + 视图接线 + 渲染与操作委托",
+  /id="view-match"/.test(htmlSrc) && /id="matchBackBtn"/.test(htmlSrc) && /id="matchDetailBody"/.test(htmlSrc) &&
+  /name === "codex" \|\| name === "history" \|\| name === "match"/.test(appSrc) &&
+  /"history", "match"\]\.forEach/.test(appSrc) &&
+  /function renderMatchDetail/.test(appSrc) && /name === "match"\) renderMatchDetail/.test(appSrc) &&
+  /scheduleList"\)\.addEventListener/.test(appSrc) && /view-match"\)\.addEventListener/.test(appSrc) &&
+  /matchBackBtn"\)\.addEventListener/.test(appSrc) && /goBack\("schedule"\)/.test(appSrc));
+check("详情页数据面：region 展示 + endAt + 状态/赛制/等级/预测/围观/分享齐备",
+  /function regionLabel/.test(appSrc) && /m\.endAt/.test(appSrc) && /matchDetailInfoRow\("等级"/.test(appSrc) &&
+  /data-match-bet/.test(appSrc) && /data-match-watch/.test(appSrc) && /data-match-share/.test(appSrc) &&
+  /schedule-row \{/.test(cssSrc) && /cursor: pointer; \/\* 1\.2\.16 行点击进比赛详情 \*\//.test(cssSrc) && /match-hero/.test(cssSrc));
+check("玩法说明：比赛详情 topic + 1.2.15 三处新 section",
+  /id: "detail", icon: "🔍"/.test(appSrc) && /称号展示/.test(appSrc) &&
+  /主队主题色/.test(appSrc) && /全部竞猜记录", p:/.test(appSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

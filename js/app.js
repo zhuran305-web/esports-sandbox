@@ -36,7 +36,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.14";
+  var APP_VERSION = "1.2.16";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -358,20 +358,50 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     return sep > 0 ? k.slice(sep + 1) : "";
   }
 
+  /* ---------- 队色衍生小工具（1.2.15 主题色全面扩散） ---------- */
+  function hexToRgb(hex) {
+    var m = String(hex || "").match(/^#?([0-9a-f]{6})$/i);
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function rgbStr(hex) {
+    var c = hexToRgb(hex);
+    return c ? c.r + ", " + c.g + ", " + c.b : "";
+  }
+  function mixHex(hex, other, ratio) {
+    var a = hexToRgb(hex), b = hexToRgb(other);
+    if (!a || !b) return "";
+    var ch = function (x, y) { return Math.round(x + (y - x) * ratio); };
+    return "#" + [ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b)]
+      .map(function (v) { return ("0" + v.toString(16)).slice(-2); }).join("");
+  }
+
+  /* 设了主队时要内联覆盖的全部变量（取消主队时逐一移除，回落 CSS 默认值） */
+  var TEAM_THEME_VARS = [
+    "--accent", "--accent-strong", "--accent-text",
+    "--accent-rgb", "--accent-hi", "--accent-hi-mid", "--accent-glow"
+  ];
+
   function applyTeamTheme() {
     var root = document.documentElement;
     var colors = state.mainTeam ? TEAM_COLORS[mainTeamName()] : null;
-    if (colors && colors[0] && colors[1]) {
+    var rgb = colors ? rgbStr(colors[0]) : "";
+    if (colors && colors[0] && colors[1] && rgb) {
       root.dataset.teamTheme = "1";
       root.style.setProperty("--accent", colors[0]);
       root.style.setProperty("--accent-strong", colors[1]);
       // 主色亮（白/黄系队标）→ 配深色文字，保证 accent 底上的可读性
       root.style.setProperty("--accent-text", colors[2] ? "#1a0e04" : "#ffffff");
+      // 衍生色：CSS 端用 rgba(var(--accent-rgb), α) 引用（α 逐处保留），
+      // 渐变起始/光晕由 c1 与白混色派生，默认（无主队）外观由 :root 变量保证与旧版一致
+      root.style.setProperty("--accent-rgb", rgb);
+      root.style.setProperty("--accent-hi", mixHex(colors[0], "#ffffff", .55) || colors[0]);
+      root.style.setProperty("--accent-hi-mid", mixHex(colors[0], "#ffffff", .3) || colors[0]);
+      root.style.setProperty("--accent-glow", "rgba(" + rgb + ", .28)");
     } else {
       delete root.dataset.teamTheme;
-      root.style.removeProperty("--accent");
-      root.style.removeProperty("--accent-strong");
-      root.style.removeProperty("--accent-text");
+      TEAM_THEME_VARS.forEach(function (v) { root.style.removeProperty(v); });
     }
   }
 
@@ -1606,32 +1636,224 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       return;
     }
 
+    // 滑出数据窗口的比赛在「全部竞猜记录」页可见（1.2.15），这里只渲染窗口内条目
     var html = settled
       .slice()
       .sort(function (a, b) { return (b.settledAt || 0) - (a.settledAt || 0); })
-      .map(function (p) {
-        var m = matchById(p.matchId);
-        if (!m) return "";
-        var pickName = p.pick === "A" ? m.teamA.name : m.teamB.name;
-        return (
-          '<div class="history-item">' +
-            '<span class="history-badge ' + (p.won ? "won" : "lost") + '">' + (p.won ? "W" : "L") + "</span>" +
-            '<span class="history-main">' +
-              '<span class="history-title">' + esc(m.teamA.short) + " vs " + esc(m.teamB.short) + " · " + esc(m.result.score) + "</span>" +
-              '<span class="history-sub">' + esc(m.tournament) + " · 预测 " + esc(pickName) + " · 投入 " + fmtNum(p.stake) + "沙粒</span>" +
-            "</span>" +
-            '<span class="history-amount ' + (p.won ? "won" : "lost") + '">' +
-              (p.profit > 0 ? "+" : "") + fmtNum(p.profit) + "沙粒" +
-            "</span>" +
-            '<button type="button" class="history-share" data-share="' + esc(p.matchId) + '" aria-label="分享这场竞猜">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg>' +
-            "</button>" +
-          "</div>"
-        );
-      })
+      .filter(function (p) { return matchById(p.matchId); })
+      .map(historyRowHTML)
       .join("");
 
     listEl.innerHTML = html || '<div class="empty-state"><strong>还没有已结算的预测</strong>去「赛事」页挑一场比赛试试手气</div>';
+  }
+
+  /* ============================== 全部竞猜记录（1.2.15） ============================== */
+  // 我的页列表只渲染 matchById 命中的条目——比赛滑出数据窗口后记录被静默丢弃、
+  // 未结算记录全项目无处可看。本页展示全部：找不到的比赛用下注时快照（n1/n2/tn）降级展示。
+  function historyStatusText(m) {
+    var st = statusOf(m);
+    return st === "open" ? "可竞猜"
+      : st === "locked" ? "已截止"
+        : st === "live" ? "正在比赛"
+          : "待赛果";
+  }
+
+  // 单条记录行：已结算（有比赛=完整展示，无比赛=归档降级）与待结算共用
+  function historyRowHTML(p) {
+    var m = matchById(p.matchId);
+    var pending = !p.settled;
+    var pickName = m ? (p.pick === "A" ? m.teamA.name : m.teamB.name)
+      : (p.pick === "A" ? p.n1 : p.n2) || (p.pick === "A" ? "主队" : "客队");
+    var title, sub, amountHTML;
+    if (m) {
+      title = esc(m.teamA.short) + " vs " + esc(m.teamB.short) + (pending ? "" : " · " + esc(m.result.score));
+      sub = esc(m.tournament) + " · 预测 " + esc(pickName) + " · 投入 " + fmtNum(p.stake) + "沙粒";
+      amountHTML = pending
+        ? '<span class="history-amount pending">' + historyStatusText(m) + "</span>"
+        : '<span class="history-amount ' + (p.won ? "won" : "lost") + '">' +
+            (p.profit > 0 ? "+" : "") + fmtNum(p.profit) + "沙粒" +
+          "</span>";
+    } else {
+      title = (p.n1 && p.n2 ? esc(p.n1) + " vs " + esc(p.n2) + " · " : "") + "比赛已归档";
+      sub = (p.tn ? esc(p.tn) + " · " : "") + "预测 " + esc(pickName) + " · 投入 " + fmtNum(p.stake) + "沙粒";
+      amountHTML = '<span class="history-amount ' + (pending ? "pending" : p.won ? "won" : "lost") + '">' +
+        (pending ? "已归档" : (p.profit > 0 ? "+" : "") + fmtNum(p.profit) + "沙粒") + "</span>";
+    }
+    var badge = pending
+      ? '<span class="history-badge pending">…</span>'
+      : '<span class="history-badge ' + (p.won ? "won" : "lost") + '">' + (p.won ? "W" : "L") + "</span>";
+    // 分享按钮只在比赛仍在窗口内时可用（分享卡需要比赛数据）
+    var shareBtn = m && !pending
+      ? '<button type="button" class="history-share" data-share="' + esc(p.matchId) + '" aria-label="分享这场竞猜">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg>' +
+        "</button>"
+      : "";
+    return (
+      '<div class="history-item' + (pending ? " is-pending" : "") + '">' +
+        badge +
+        '<span class="history-main">' +
+          '<span class="history-title">' + title + "</span>" +
+          '<span class="history-sub">' + sub + "</span>" +
+        "</span>" +
+        amountHTML +
+        shareBtn +
+      "</div>"
+    );
+  }
+
+  function renderHistoryFull() {
+    var pending = state.predictions.filter(function (p) { return !p.settled; })
+      .sort(function (a, b) { return (b.placedAt || 0) - (a.placedAt || 0); });
+    var settled = state.predictions.filter(function (p) { return p.settled; })
+      .sort(function (a, b) { return (b.settledAt || 0) - (a.settledAt || 0); });
+    $("#historyTotalSub").textContent = "共 " + state.predictions.length + " 条 · 待赛果 " + pending.length;
+    $("#historyPendingGroup").hidden = !pending.length;
+    $("#historyPendingList").innerHTML = pending.map(historyRowHTML).join("");
+    $("#historySettledList").innerHTML = settled.length
+      ? settled.map(historyRowHTML).join("")
+      : '<div class="empty-state"><strong>还没有已结算的预测</strong>去「赛事」页挑一场比赛试试手气</div>';
+  }
+
+  /* ============================== 比赛详情（1.2.16，赛程表行点击进入） ============================== */
+  var matchDetailId = "";
+
+  function detailStatusText(st) {
+    return st === "open" ? "可竞猜"
+      : st === "locked" ? "已截止"
+        : st === "live" ? "正在比赛"
+          : st === "awaiting" ? "待赛果"
+            : "已结算";
+  }
+
+  // 队伍赛区：PandaScore location 是两位国家码（kr/us，小写），大写展示；manual 的中文赛区名原样
+  function regionLabel(t) {
+    var r = t && t.region ? String(t.region) : "";
+    return /^[a-z]{2}$/.test(r) ? r.toUpperCase() : r;
+  }
+
+  function matchDetailSide(m, side, finished) {
+    var t = side === "A" ? m.teamA : m.teamB;
+    var won = finished && m.result.winner === side;
+    var cls = finished ? (won ? " is-winner" : " is-loser") : "";
+    var sub = t.short ? esc(t.short) : "";
+    if (regionLabel(t)) sub += (sub ? " · " : "") + esc(regionLabel(t));
+    return (
+      '<div class="md-side' + cls + '">' +
+        avatarHTML(t) +
+        '<b class="md-side-name">' + esc(t.name) + "</b>" +
+        (sub ? '<span class="md-side-sub">' + sub + "</span>" : "") +
+      "</div>"
+    );
+  }
+
+  function matchDetailInfoRow(label, valueHTML) {
+    if (valueHTML === null || valueHTML === undefined || valueHTML === "") return "";
+    return '<div class="md-info-row"><span class="md-info-label">' + label + '</span><span class="md-info-value">' + valueHTML + "</span></div>";
+  }
+
+  function renderMatchDetail() {
+    var body = $("#matchDetailBody");
+    var m = matchById(matchDetailId);
+    if (!m) {
+      body.innerHTML = '<div class="empty-state"><strong>比赛已归档</strong>该场比赛不在当前数据窗口内，去「赛程表」看近期赛事</div>';
+      return;
+    }
+    var st = statusOf(m);
+    var finished = st === "finished";
+    var pred = predictionFor(m.id);
+    var locked = isDuelLocked(m.id);
+    var durMs = matchDurationMs(m);
+    var startTs = new Date(m.startAt).getTime();
+
+    // 对阵 hero：胜方高亮 / 未开赛显示状态与时间
+    var center;
+    if (finished) {
+      var sa = String(m.result.score).split(":")[0];
+      var sb = String(m.result.score).split(":")[1];
+      var aWon = m.result.winner === "A";
+      center =
+        '<span class="md-score' + (aWon ? "" : " md-dim") + '">' + esc(sa || "0") + "</span>" +
+        '<span class="md-score-sep">:</span>' +
+        '<span class="md-score' + (aWon ? " md-dim" : "") + '">' + esc(sb || "0") + "</span>" +
+        '<span class="md-center-sub">' + esc(m.result.winner === "A" ? m.teamA.name : m.teamB.name) + " 获胜</span>";
+    } else {
+      center =
+        '<span class="status-chip ' + st + '">' + detailStatusText(st) + "</span>" +
+        '<span class="md-center-sub">' + esc(fmtTime(m.startAt)) + " 开赛</span>";
+    }
+    var hero =
+      '<div class="match-hero">' +
+        matchDetailSide(m, "A", finished) +
+        '<div class="md-center">' + center + "</div>" +
+        matchDetailSide(m, "B", finished) +
+      "</div>";
+
+    // 信息组：这场比赛能拿到的全部数据
+    var durText = (durMs / 3600000) + " 小时";
+    var durLine;
+    if (finished && m.endAt) {
+      durLine = esc(fmtTime(m.endAt)) + "（实际）";
+    } else if (finished) {
+      durLine = "预计 " + esc(fmtTime(new Date(startTs + durMs).toISOString())) + " 前后";
+    } else {
+      durLine = "约 " + esc(durText.replace(".5", " 半")) + " · 预计 " + esc(fmtTime(new Date(startTs + durMs).toISOString())) + " 前后结束";
+    }
+    var info =
+      '<div class="md-info">' +
+        matchDetailInfoRow("状态", '<span class="status-chip ' + st + '">' + detailStatusText(st) + "</span>") +
+        matchDetailInfoRow("开始时间", esc(fmtTime(m.startAt))) +
+        matchDetailInfoRow(finished && m.endAt ? "结束时间" : "预计时长", durLine) +
+        matchDetailInfoRow("赛制", esc(m.format)) +
+        matchDetailInfoRow("等级", m.tier
+          ? '<span class="tier-badge tier-' + esc(m.tier) + '">' + esc(m.tier.toUpperCase()) + "</span>"
+          : "—") +
+        matchDetailInfoRow("赛事", esc(m.tournament)) +
+        matchDetailInfoRow("阶段", esc(m.stage)) +
+        matchDetailInfoRow("游戏项目", esc(gameMeta(m.game).label)) +
+        (m.note ? matchDetailInfoRow("备注", esc(m.note)) : "") +
+      "</div>";
+
+    // 我的预测卡（下过注才有）
+    var predCard = "";
+    if (pred) {
+      var pickName = pred.pick === "A" ? m.teamA.name : m.teamB.name;
+      var badge = pred.settled
+        ? '<span class="history-badge ' + (pred.won ? "won" : "lost") + '">' + (pred.won ? "W" : "L") + "</span>"
+        : '<span class="history-badge pending">…</span>';
+      var sub2 = "预测 " + esc(pickName) + " · 投入 " + fmtNum(pred.stake) + "沙粒";
+      if (pred.settled) sub2 += (pred.profit > 0 ? " · +" : " · ") + fmtNum(pred.profit) + "沙粒";
+      else if (locked) sub2 += " · 已约战锁定";
+      else sub2 += " · " + detailStatusText(st);
+      predCard =
+        '<div class="md-pred">' +
+          badge +
+          '<span class="md-pred-main"><b>' + (locked ? "已约战锁定 · 以战书快照判定" : "我的预测") + "</b>" +
+            "<span>" + sub2 + "</span>" +
+          "</span>" +
+        "</div>";
+    }
+
+    // 操作区：按状态给入口（锁定/非 open 的拦截由 openSheet 自己处理）
+    var actions = "";
+    if (st === "open") {
+      actions += '<button type="button" class="primary-btn md-bet" data-match-bet="' + esc(m.id) + '">' +
+        (pred ? "加注 / 管理预测" : "去竞猜") + "</button>";
+    }
+    if (st === "live" && WATCH_GAME_APPIDS[m.game]) {
+      actions += '<button type="button" class="watch-chip md-watch" data-match-watch="' + esc(m.game) + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M10 9.5l5 3-5 3z"/></svg>去围观</button>';
+    }
+    if (finished && pred && pred.settled) {
+      actions += '<button type="button" class="md-share" data-match-share="' + esc(m.id) + '">分享战报</button>';
+    }
+    var actionsHTML = actions ? '<div class="md-actions">' + actions + "</div>" : "";
+
+    body.innerHTML =
+      hero +
+      info +
+      predCard +
+      actionsHTML +
+      '<p class="md-source">赛程与赛果数据来自公开赛事数据平台（PandaScore），以赛事官方公布为准</p>';
   }
 
   /* ---------- 战队图鉴（押过的队伍 + 跟队连击；纯本地养成，随战绩云同步跨设备） ---------- */
@@ -2194,12 +2416,16 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (amount < minAllowed) { toast("最低投入 " + fmtNum(minAllowed) + " 沙粒"); return; }
     }
     state.bankroll -= amount;
+    // n1/n2/tn：队名与赛事快照——比赛滑出数据窗口后记录仍可读（全部竞猜记录页 1.2.15）
     state.predictions.push({
       matchId: m.id,
       pick: sheetPick,
       stake: amount,
       placedAt: Date.now(),
-      settled: false
+      settled: false,
+      n1: m.teamA.name,
+      n2: m.teamB.name,
+      tn: m.tournament
     });
     state.collection = onBet(state.collection, m, sheetPick, null, MATCHES, predictionFor); // 图鉴收录 + 跟队连击检测
     trackMainLevelBet(m, sheetPick, null); // 主队等级：新押 +1（仅曾为主队的队伍在册）
@@ -2293,9 +2519,11 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
           personAvatar(nick, e.avatar) +
           (e.mainTeam ? '<span class="board-mt">' + avatarHTML({ name: e.mainTeam }) +
             (e.mtLevel >= 1 ? '<span class="board-mt-lv">Lv' + e.mtLevel + "</span>" : "") + "</span>" : "") +
-          '<span class="board-nick">' + esc(nick) +
-            (e.title ? '<span class="title-chip">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
-            (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+          '<span class="board-nick-wrap">' +
+            '<span class="board-nick">' + esc(nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+            // 称号放昵称下方小字：同行 chip 会被 nowrap+ellipsis 截断（1.2.15）
+            (e.title ? '<span class="board-title">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
+          "</span>" +
           '<span class="board-detail">' +
             '<span class="board-first ' + (isWin ? "won" : "lost") + '">' + e.first + " 场</span>" +
             '<span class="board-second">' + (isWin ? "赚 " : "亏 ") + fmtNum(e.second) + " 沙粒</span>" +
@@ -2380,9 +2608,10 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
           personAvatar(e.nick, e.avatar) +
           (e.mainTeam ? '<span class="board-mt">' + avatarHTML({ name: e.mainTeam }) +
             (e.mtLevel >= 1 ? '<span class="board-mt-lv">Lv' + e.mtLevel + "</span>" : "") + "</span>" : "") +
-          '<span class="board-nick">' + esc(e.nick) +
-            (e.title ? '<span class="title-chip">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
-            (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+          '<span class="board-nick-wrap">' +
+            '<span class="board-nick">' + esc(e.nick) + (e.isMe ? '<span class="me-tag">我</span>' : "") + "</span>" +
+            (e.title ? '<span class="board-title">' + esc(achvTitle(e.title) || "🏆") + "</span>" : "") +
+          "</span>" +
           '<span class="board-detail">' + main + '<span class="board-second">' + sub + "</span></span>" +
         "</div>"
       );
@@ -2472,7 +2701,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   }
 
   // 人物头像（战报卡）：有图裁圆绘制，无图/未加载回退渐变首字
-  function drawPersonAvatar(ctx, x, y, size, label, img) {
+  function drawPersonAvatar(ctx, x, y, size, label, img, theme) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
@@ -2484,16 +2713,36 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
     } else {
       var g = ctx.createLinearGradient(x, y, x + size, y + size);
-      g.addColorStop(0, "#ffd08a");
-      g.addColorStop(1, "#ff8a3d");
+      g.addColorStop(0, theme ? theme.soft : "#ffd08a");
+      g.addColorStop(1, theme ? theme.accent : "#ff8a3d");
       ctx.fillStyle = g;
       ctx.fillRect(x, y, size, size);
-      ctx.fillStyle = "#1a0e04";
+      ctx.fillStyle = theme ? theme.text : "#1a0e04";
       ctx.textAlign = "center";
       ctx.font = "800 " + Math.round(size * 0.4) + "px -apple-system, 'PingFang SC', sans-serif";
       ctx.fillText(String(label || "盒").slice(0, 1), x + size / 2, y + size / 2 + Math.round(size * 0.14));
     }
     ctx.restore();
+  }
+
+  // 分享卡队色（1.2.15）：有主队时给出深底可读的提亮变体——
+  // 队色可能是石墨类暗色（Team Spirit #1e1e1e），直接上深底卡会隐身，亮度不足就向白混
+  function shareThemeColors() {
+    var colors = state.mainTeam ? TEAM_COLORS[mainTeamName()] : null;
+    if (!colors || !colors[0]) return null;
+    var c = hexToRgb(colors[0]);
+    if (!c) return null;
+    var lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    var accent = lum >= 110 ? colors[0] : mixHex(colors[0], "#ffffff", .45);
+    if (!accent) return null;
+    var a2 = hexToRgb(accent);
+    var aLum = a2 ? 0.299 * a2.r + 0.587 * a2.g + 0.114 * a2.b : 255;
+    return {
+      accent: accent,
+      soft: mixHex(accent, "#ffffff", .35) || accent,
+      text: aLum > 150 ? "#1a0e04" : "#ffffff",
+      rgb: c.r + ", " + c.g + ", " + c.b
+    };
   }
 
   // 战报卡头像预加载：画布要 toDataURL，跨域图必须 CORS，加载失败/超时回退首字
@@ -2521,6 +2770,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     var W = canvas.width, H = canvas.height;
     var won = pred.won;
     var accent = won ? "#35d39a" : "#ff5d6c";
+    var theme = shareThemeColors(); // 主队队色（可空）：品牌字/头像兜底/对阵卡描边跟随
     var stats = recordStats();
     var profit = settledInOrder().reduce(function (s, p) { return s + (p.profit || 0); }, 0);
     var pickTeam = pred.pick === "A" ? m.teamA : m.teamB;
@@ -2539,7 +2789,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
 
     // 品牌行
     ctx.textAlign = "left";
-    ctx.fillStyle = "#e9eef7";
+    ctx.fillStyle = theme ? theme.accent : "#e9eef7";
     ctx.font = "800 32px -apple-system, 'PingFang SC', sans-serif";
     ctx.fillText("赛事沙盘", 60, 92);
     ctx.textAlign = "right";
@@ -2560,7 +2810,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     ctx.fillStyle = "rgba(255,255,255,.03)";
     roundRect(ctx, 50, 330, W - 100, 310, 28);
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,.07)";
+    ctx.strokeStyle = theme ? "rgba(" + theme.rgb + ", .3)" : "rgba(255,255,255,.07)";
     ctx.lineWidth = 2;
     roundRect(ctx, 50, 330, W - 100, 310, 28);
     ctx.stroke();
@@ -2597,7 +2847,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     });
 
     // 我的预测行（左侧带我的头像，回退首字色块）
-    drawPersonAvatar(ctx, 60, 652, 52, myNickCache || "我", avatarImg);
+    drawPersonAvatar(ctx, 60, 652, 52, myNickCache || "我", avatarImg, theme);
     ctx.textAlign = "left";
     ctx.fillStyle = "#6c788d";
     ctx.font = "500 26px -apple-system, 'PingFang SC', sans-serif";
@@ -3119,7 +3369,7 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex";
+    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match";
   }
 
   function initHistory() {
@@ -3205,13 +3455,13 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
       closeRulesTopic();
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus", "team", "achv", "codex"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus", "team", "achv", "codex", "history", "match"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
-    // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页/成就殿堂/战队图鉴从「我的」侧进入返回回「我的」；
+    // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页/成就殿堂/战队图鉴/全部竞猜记录从「我的」侧进入返回回「我的」；
     // 战队资料页按来源高亮（图鉴进=我的，比赛卡进=赛事）
     var tabName = name === "temple" ? "board"
-      : name === "duels" || name === "versus" || name === "achv" || name === "codex" ? "profile"
+      : name === "duels" || name === "versus" || name === "achv" || name === "codex" || name === "history" ? "profile"
         : name === "team" ? (teamFromView === "profile" ? "profile" : "matches")
           : (isSubPage ? "settings" : name);
     document.querySelectorAll(".tab").forEach(function (t) {
@@ -3226,6 +3476,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     if (name === "team") renderTeamPage();
     if (name === "achv") renderAchv();
     if (name === "codex") renderCodex();
+    if (name === "history") renderHistoryFull();
+    if (name === "match") renderMatchDetail();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -3289,7 +3541,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       sections: [
         { h: "自动结算", p: "比赛结束、赛果录入后，打开小程序会自动结算，无需手动操作。连对加成也在结算时一并计入。" },
         { h: "预计时长", p: "赛果按比赛赛制估算时长：BO1 约 1 小时、BO3 约 2.5 小时、BO5 约 4 小时、BO7 约 5.5 小时。超过预计时长还没出结果的场次会显示「待赛果」，赛果录入后照常结算。" },
-        { h: "以官方为准", p: "赛果来自公开赛事数据，最终以赛事官方公布为准。" }
+        { h: "以官方为准", p: "赛果来自公开赛事数据，最终以赛事官方公布为准。" },
+        { h: "全部竞猜记录", p: "「我的 → 竞猜记录 · 全部」可以看完整历史：进行中/待赛果单独分区，比赛滑出数据窗口的老记录以<strong>「已归档」</strong>展示（投入与盈亏永久保留）。" }
       ]
     },
     {
@@ -3297,7 +3550,25 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       sections: [
         { h: "自动更新", p: "小程序每 <strong>5 分钟</strong>自动检查一次赛程更新，有变化才下载新数据；也可以在设置页手动「刷新数据」。" },
         { h: "断网兜底", p: "拉取失败时自动回退到最近一次缓存，再退到内置赛程快照——<strong>离线也能看赛程</strong>，恢复后自动续上。" },
-        { h: "赛程表", p: "「设置 → 赛程表」收录过去与未来各 30 天的场次，支持按游戏筛选、搜索、只看大型赛事（S/A 级）。" }
+        { h: "赛程表", p: "「设置 → 赛程表」收录过去与未来各 30 天的场次，支持按游戏筛选、搜索、只看大型赛事（S/A 级）。<strong>点任意一行</strong>可以打开这场比赛的详情：状态、时间、赛制、等级、对阵双方、比分与你的预测一目了然。" }
+      ]
+    },
+    {
+      id: "detail", icon: "🔍", title: "比赛详情", summary: "一场比赛能看到的全部信息",
+      sections: [
+        { h: "怎么打开", p: "「赛程表」里点任意一行（或「设置 → 赛程表」），进入这场比赛的详情页。" },
+        { h: "能看到什么", ul: [
+          "对阵双方：队标、全名、缩写与所属赛区",
+          "状态与时间：可竞猜 / 已截止 / 正在比赛 / 待赛果 / 已结算，开始时间、预计时长与结束时间",
+          "比赛信息：赛制（BO1/BO3…）、赛事等级（S/A/B/C/D）、所属赛事与阶段、游戏项目",
+          "已结束的比赛显示<strong>最终比分与胜方</strong>"
+        ] },
+        { h: "能做什么", ul: [
+          "可竞猜的比赛可以<strong>直接去竞猜</strong>（已下注则管理加注）",
+          "正在比赛且支持跳转的游戏可<strong>去围观</strong>（打开小黑盒游戏详情页）",
+          "下过注的已结算比赛可以<strong>分享战报</strong>，赛程表行本身也可以照旧转发"
+        ] },
+        { h: "数据说明", p: "详情数据来自公开赛事数据平台（PandaScore）；电竞比赛没有「比赛场地」数据，队伍标注的是<strong>所属赛区/国家</strong>。最终赛果以赛事官方公布为准。" }
       ]
     },
     {
@@ -3309,7 +3580,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
           "榜单数据约 5 分钟刷新一次",
           "单项净赚超过 10 亿时按 10 亿封顶展示，防止数字失真"
         ] },
-        { h: "昵称与头像", p: "同步黑盒资料或自选昵称后，榜上昵称即时更新；头像同样会显示在榜单上。" }
+        { h: "昵称与头像", p: "同步黑盒资料或自选昵称后，榜上昵称即时更新；头像同样会显示在榜单上。" },
+        { h: "称号展示", p: "在成就殿堂装备的<strong>称号</strong>会以小字显示在榜单昵称下方，长昵称也不会互相挤压；点「我的 → 成就殿堂」即可装备或卸下。" }
       ]
     },
     {
@@ -3347,7 +3619,8 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       sections: [
         { h: "收录规则", p: "押过哪支队伍就点亮哪支，按游戏区分（同名战队在不同游戏各算一支）。每支队伍记录<strong>押过场次</strong>与<strong>已结算胜率</strong>（押它的场次的胜率）。" },
         { h: "跟队连击", p: "连续押中同一支队伍（按它的比赛顺序）会累积<strong>跟队连击</strong>：漏看一场、押了对手或改投都算中断；队伍休赛不断签。最佳连击永久留档，图鉴页展示你的跟队 top3。" },
-        { h: "上限与同步", p: "图鉴上限 <strong>150 支</strong>，超出后按最久未跟的队伍淘汰。图鉴随战绩云同步跨设备，也出现在分享卡与战绩对比里。" }
+        { h: "上限与同步", p: "图鉴上限 <strong>150 支</strong>，超出后按最久未跟的队伍淘汰。图鉴随战绩云同步跨设备，也出现在分享卡与战绩对比里。" },
+        { h: "主队主题色", p: "在战队资料页「设为主队」后，整个小程序换上主队颜色：按钮、徽章、选中态、榜单高亮、余额卡甚至<strong>分享卡</strong>都会跟随；取消主队立即恢复默认配色。主队等级只跟累计押过场次走，换主队不清零。" }
       ]
     },
     {
@@ -3558,6 +3831,13 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (pred && pred.settled) openShare(pred);
     });
 
+    $("#historySettledList").addEventListener("click", function (e) {
+      var btn = e.target.closest(".history-share[data-share]");
+      if (!btn) return;
+      var pred = predictionFor(btn.dataset.share);
+      if (pred && pred.settled) openShare(pred);
+    });
+
     $("#shareCancel").addEventListener("click", closeShare);
     $("#shareBackdrop").addEventListener("click", function (e) {
       if (e.target === $("#shareBackdrop")) closeShare();
@@ -3683,6 +3963,36 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
       if (!tab) return;
       currentBoard = tab.dataset.board;
       renderBoard();
+    });
+
+    // 赛程表行 → 比赛详情（行是分帧渲染的，委托必须绑容器）
+    $("#scheduleList").addEventListener("click", function (e) {
+      var row = e.target.closest(".schedule-row[data-match]");
+      if (!row) return;
+      matchDetailId = row.dataset.match;
+      switchView("match");
+    });
+
+    // 比赛详情页内操作：去竞猜 / 去围观 / 分享战报
+    $("#view-match").addEventListener("click", function (e) {
+      var bet = e.target.closest("[data-match-bet]");
+      if (bet) { openSheet(bet.dataset.matchBet); return; }
+      var watch = e.target.closest("[data-match-watch]");
+      if (watch) {
+        var watchAppId = WATCH_GAME_APPIDS[watch.dataset.matchWatch];
+        if (watchAppId) {
+          openAppPage({ target: "game_detail", appId: watchAppId, gameType: "pc", page: "game", hSrc: "miniprogram-esports-sandbox" })
+            .then(function (res) {
+              if (res && res.error) toast("当前客户端不支持跳转");
+            });
+        }
+        return;
+      }
+      var share = e.target.closest("[data-match-share]");
+      if (share) {
+        var sp = predictionFor(share.dataset.matchShare);
+        if (sp && sp.settled) openShare(sp);
+      }
     });
 
     $("#scheduleSearch").addEventListener("input", function () {
@@ -3925,6 +4235,9 @@ import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./dat
     // 战队图鉴：快捷入口 → 二级页
     $("#codexEntry").addEventListener("click", function () { switchView("codex"); });
     $("#codexBackBtn").addEventListener("click", function () { goBack("profile"); });
+    $("#historyAllBtn").addEventListener("click", function () { switchView("history"); });
+    $("#historyBackBtn").addEventListener("click", function () { goBack("profile"); });
+    $("#matchBackBtn").addEventListener("click", function () { goBack("schedule"); });
 
     // 图鉴单元格 → 战队资料页（网格 + top3 共用委托）
     $("#codexGrid").addEventListener("click", function (e) {

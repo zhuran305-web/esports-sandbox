@@ -12,6 +12,11 @@
   --accent: #ff8a3d;
   --accent-strong: #ff6a13;
   --accent-text: #1a0e04;
+  /* 主队主题衍生色（1.2.15）：applyTeamTheme 内联覆盖，默认值=旧版写死值，保证无主队时外观不变 */
+  --accent-rgb: 255, 138, 61;
+  --accent-hi: #ffd08a;
+  --accent-hi-mid: #ffb066;
+  --accent-glow: rgba(255, 106, 19, .28);
   --cs2: #ff8a3d;
   --valorant: #ff4655;
   --win: #35d39a;
@@ -80,7 +85,7 @@ html::-webkit-scrollbar {
 body {
   min-height: 100vh;
   background:
-    radial-gradient(900px 420px at 50% -140px, rgba(255, 138, 61, .13), transparent 70%),
+    radial-gradient(900px 420px at 50% -140px, rgba(var(--accent-rgb), .13), transparent 70%),
     radial-gradient(700px 380px at 100% 0%, rgba(255, 70, 85, .07), transparent 65%),
     var(--bg);
 }
@@ -141,9 +146,9 @@ input { font-family: inherit; }
   display: grid;
   place-items: center;
   border-radius: 12px;
-  color: #1a0e04;
-  background: linear-gradient(145deg, #ffb066, var(--accent-strong));
-  box-shadow: 0 6px 18px rgba(255, 106, 19, .32);
+  color: var(--accent-text);
+  background: linear-gradient(145deg, var(--accent-hi-mid), var(--accent-strong));
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), .32);
 }
 .brand-mark svg { width: 21px; height: 21px; }
 
@@ -158,8 +163,8 @@ input { font-family: inherit; }
   gap: 6px;
   padding: 6px 11px 6px 9px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 138, 61, .32);
-  background: rgba(255, 138, 61, .09);
+  border: 1px solid rgba(var(--accent-rgb), .32);
+  background: rgba(var(--accent-rgb), .09);
   font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -313,8 +318,8 @@ input { font-family: inherit; }
   font-variant-numeric: tabular-nums;
 }
 .status-tile.is-active {
-  border-color: rgba(255, 138, 61, .5);
-  background: rgba(255, 138, 61, .1);
+  border-color: rgba(var(--accent-rgb), .5);
+  background: rgba(var(--accent-rgb), .1);
   color: #ffc38f;
 }
 .status-tile.is-active b { color: #ffc38f; }
@@ -394,9 +399,9 @@ input { font-family: inherit; }
 }
 .game-tile:active { transform: scale(.98); }
 .game-tile.is-selected {
-  border-color: rgba(255, 138, 61, .6);
-  background: rgba(255, 138, 61, .09);
-  box-shadow: 0 0 0 3px rgba(255, 138, 61, .1);
+  border-color: rgba(var(--accent-rgb), .6);
+  background: rgba(var(--accent-rgb), .09);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .1);
 }
 
 .game-tile-avatar {
@@ -459,7 +464,7 @@ input { font-family: inherit; }
   transition: background .15s ease;
 }
 .tournament-row:hover { background: rgba(255, 255, 255, .04); }
-.tournament-row.is-selected { background: rgba(255, 138, 61, .1); color: #ffc38f; font-weight: 700; }
+.tournament-row.is-selected { background: rgba(var(--accent-rgb), .1); color: #ffc38f; font-weight: 700; }
 .tournament-row.special { font-weight: 700; color: var(--text); }
 .tournament-row.special.is-selected { color: #ffc38f; }
 
@@ -525,8 +530,8 @@ input { font-family: inherit; }
   transition: border-color .2s ease, transform .2s ease;
 }
 
-.match-card.is-open { border-color: rgba(255, 138, 61, .2); }
-.match-card.is-open:hover { border-color: rgba(255, 138, 61, .4); }
+.match-card.is-open { border-color: rgba(var(--accent-rgb), .2); }
+.match-card.is-open:hover { border-color: rgba(var(--accent-rgb), .4); }
 
 .match-card.is-finished { opacity: .92; }
 
@@ -591,8 +596,8 @@ input { font-family: inherit; }
 .team-row.is-pickable:active { background: rgba(255, 255, 255, .045); }
 
 .team-row.is-picked {
-  background: rgba(255, 138, 61, .1);
-  box-shadow: inset 0 0 0 1px rgba(255, 138, 61, .32);
+  background: rgba(var(--accent-rgb), .1);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), .32);
 }
 
 .team-row.is-loser { opacity: .5; }
@@ -690,7 +695,7 @@ input { font-family: inherit; }
   font-size: 10.5px;
   letter-spacing: .3px;
 }
-.status-chip.open { color: #ffc38f; background: rgba(255, 138, 61, .12); border: 1px solid rgba(255, 138, 61, .25); }
+.status-chip.open { color: #ffc38f; background: rgba(var(--accent-rgb), .12); border: 1px solid rgba(var(--accent-rgb), .25); }
 .status-chip.locked { color: #b6c2d4; background: rgba(154, 166, 186, .1); border: 1px solid rgba(154, 166, 186, .2); }
 .status-chip.awaiting { color: #b6c2d4; background: rgba(154, 166, 186, .08); border: 1px dashed rgba(154, 166, 186, .3); }
 .status-chip.live { color: #ff9aa2; background: rgba(255, 93, 108, .12); border: 1px solid rgba(255, 93, 108, .3); }
@@ -751,9 +756,9 @@ input { font-family: inherit; }
   overflow: hidden;
   padding: 18px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 138, 61, .25);
+  border: 1px solid rgba(var(--accent-rgb), .25);
   background:
-    radial-gradient(420px 180px at 88% -30%, rgba(255, 179, 102, .35), transparent 70%),
+    radial-gradient(420px 180px at 88% -30%, rgba(var(--accent-rgb), .35), transparent 70%),
     linear-gradient(145deg, #2a1a0c, #171d29 60%);
   box-shadow: var(--shadow);
 }
@@ -854,11 +859,11 @@ input { font-family: inherit; }
   flex: 0 0 auto;
   padding: 10px 16px;
   border-radius: 11px;
-  background: linear-gradient(135deg, #ffd08a, #ff9a3d);
-  color: #2a1604;
+  background: linear-gradient(135deg, var(--accent-hi), var(--accent));
+  color: var(--accent-text);
   font-size: 13.5px;
   font-weight: 800;
-  box-shadow: 0 8px 20px rgba(255, 154, 61, .25);
+  box-shadow: 0 8px 20px rgba(var(--accent-rgb), .25);
   transition: .16s ease;
 }
 .dig-btn:active { transform: scale(.96); }
@@ -927,6 +932,17 @@ input { font-family: inherit; }
 }
 .section-head h2 { margin: 0; font-size: 14px; letter-spacing: .3px; }
 .section-sub { font-size: 11.5px; color: var(--text-faint); }
+.section-head-more { display: inline-flex; align-items: baseline; gap: 8px; }
+.section-more-btn {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+}
 
 .history-list { display: flex; flex-direction: column; gap: 8px; }
 
@@ -961,6 +977,18 @@ input { font-family: inherit; }
 .history-amount { margin-left: auto; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .history-amount.won { color: var(--win); }
 .history-amount.lost { color: var(--lose); }
+/* 待结算/归档行 + 分组（1.2.15 全部竞猜记录页） */
+.history-item.is-pending { border-style: dashed; }
+.history-badge.pending { color: var(--text-faint); background: rgba(255, 255, 255, .05); }
+.history-amount.pending { font-size: 11px; font-weight: 700; color: var(--text-faint); }
+.history-group { margin-bottom: 18px; }
+.history-group-label {
+  margin: 0 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: var(--text-faint);
+}
 
 /* ---------- 战绩记录 ---------- */
 .record-grid {
@@ -1024,8 +1052,8 @@ input { font-family: inherit; }
   min-width: 0;
   padding: 10px 9px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 138, 61, .08);
-  border: 1px solid rgba(255, 138, 61, .18);
+  background: rgba(var(--accent-rgb), .08);
+  border: 1px solid rgba(var(--accent-rgb), .18);
 }
 .codex-top-cell b {
   font-size: 15px;
@@ -1103,7 +1131,7 @@ input { font-family: inherit; }
   font-weight: 600;
 }
 .codex-toggle:active { color: var(--accent); }
-html[data-theme="light"] .codex-top-cell { background: rgba(255, 138, 61, .1); }
+html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .1); }
 
 /* ---------- 战队资料页（1.2.9） ---------- */
 .team-hero-card {
@@ -1141,15 +1169,15 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   white-space: nowrap;
 }
 .team-main-btn.is-main {
-  border-color: rgba(255, 138, 61, .45);
-  background: rgba(255, 138, 61, .12);
+  border-color: rgba(var(--accent-rgb), .45);
+  background: rgba(var(--accent-rgb), .12);
   color: var(--accent);
 }
 .codex-main-chip {
   padding: 3px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 138, 61, .35);
-  background: rgba(255, 138, 61, .1);
+  border: 1px solid rgba(var(--accent-rgb), .35);
+  background: rgba(var(--accent-rgb), .1);
   color: var(--accent);
   font-size: 11px;
   font-weight: 700;
@@ -1158,27 +1186,26 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.codex-cell.is-main { border-color: rgba(255, 138, 61, .4); }
+.codex-cell.is-main { border-color: rgba(var(--accent-rgb), .4); }
 .codex-fav { margin-right: 3px; }
 
-/* ---------- 成就殿堂 + 称号徽章（1.2.10） ---------- */
+/* ---------- 成就殿堂 + 称号（1.2.10；1.2.15 称号改昵称下方小字） ---------- */
 .honor-line-title { margin-top: 6px; }
 .honor-line-title b { color: var(--accent); }
-.title-chip {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 138, 61, .4);
-  background: rgba(255, 138, 61, .12);
-  color: var(--accent);
+/* 榜单/魔神殿中列：昵称一行 + 称号小字一行（同行 chip 会被 nowrap+ellipsis 截断） */
+.board-nick-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.board-title {
   font-size: 10px;
-  font-weight: 700;
-  vertical-align: 1px;
-  max-width: 120px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .board-mt { flex: 0 0 auto; margin-left: -2px; display: inline-flex; align-items: center; }
 .board-mt .avatar { width: 22px; height: 22px; border-radius: 6px; font-size: 8px; padding: 0 1px; }
@@ -1246,7 +1273,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   color: var(--text);
   font: inherit;
 }
-.achv-card.is-got { border-color: rgba(255, 138, 61, .3); }
+.achv-card.is-got { border-color: rgba(var(--accent-rgb), .3); }
 .achv-card.is-got:active { background: var(--surface-2); }
 .achv-card.is-locked { opacity: .55; }
 .achv-card.is-equipped { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
@@ -1258,7 +1285,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   padding: 2px 7px;
   border-radius: 999px;
   background: var(--accent);
-  color: #1a0e04;
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 800;
   vertical-align: 2px;
@@ -1390,7 +1417,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   padding: 15px 16px;
   margin-bottom: 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 138, 61, .22);
+  border: 1px solid rgba(var(--accent-rgb), .22);
   background:
     radial-gradient(320px 130px at 90% -30%, rgba(255, 190, 120, .2), transparent 70%),
     var(--surface);
@@ -1405,8 +1432,8 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   place-items: center;
   font-size: 20px;
   font-weight: 800;
-  color: #1a0e04;
-  background: linear-gradient(145deg, #ffd08a, var(--accent-strong));
+  color: var(--accent-text);
+  background: linear-gradient(145deg, var(--accent-hi), var(--accent-strong));
 }
 
 .board-me-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -1436,8 +1463,8 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   background: var(--surface);
 }
 .board-row.is-me {
-  border-color: rgba(255, 138, 61, .45);
-  background: rgba(255, 138, 61, .07);
+  border-color: rgba(var(--accent-rgb), .45);
+  background: rgba(var(--accent-rgb), .07);
 }
 
 .board-rank {
@@ -1469,7 +1496,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   font-size: 9.5px;
   font-weight: 800;
   color: #ffc38f;
-  border: 1px solid rgba(255, 138, 61, .4);
+  border: 1px solid rgba(var(--accent-rgb), .4);
   border-radius: 4px;
   padding: 1px 4px;
 }
@@ -1546,8 +1573,8 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   place-items: center;
   font-size: 19px;
   font-weight: 800;
-  color: #1a0e04;
-  background: linear-gradient(145deg, #ffd08a, var(--accent-strong));
+  color: var(--accent-text);
+  background: linear-gradient(145deg, var(--accent-hi), var(--accent-strong));
 }
 
 .account-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -1559,8 +1586,8 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   flex: 0 0 auto;
   padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 138, 61, .35);
-  background: rgba(255, 138, 61, .08);
+  border: 1px solid rgba(var(--accent-rgb), .35);
+  background: rgba(var(--accent-rgb), .08);
   color: #ffc38f;
   font-size: 10px;
   font-weight: 700;
@@ -1575,9 +1602,9 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   width: 100%;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 138, 61, .32);
+  border: 1px solid rgba(var(--accent-rgb), .32);
   border-radius: 12px;
-  background: rgba(255, 138, 61, .08);
+  background: rgba(var(--accent-rgb), .08);
   color: #ffcf9f;
   font-size: 13px;
   font-weight: 750;
@@ -1663,8 +1690,8 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   transition: .15s ease;
 }
 .theme-options button.is-active {
-  border-color: rgba(255, 138, 61, .5);
-  background: rgba(255, 138, 61, .1);
+  border-color: rgba(var(--accent-rgb), .5);
+  background: rgba(var(--accent-rgb), .1);
   color: var(--accent);
 }
 .settings-row .chev { width: 16px; height: 16px; color: var(--text-faint); flex: 0 0 auto; }
@@ -1732,8 +1759,10 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   content-visibility: auto;
   /* 内容盒高度约 36px（整行 59px = 36 + 上下 padding 22 + 边框 1） */
   contain-intrinsic-size: auto 36px;
+  cursor: pointer; /* 1.2.16 行点击进比赛详情 */
 }
 .schedule-row:last-child { border-bottom: none; }
+.schedule-row:active { background: var(--surface-2); }
 
 .schedule-time {
   font-size: 11px;
@@ -1770,6 +1799,88 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
 .schedule-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .schedule-score { font-size: 14.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
+/* ---------- 比赛详情（1.2.16） ---------- */
+.match-hero {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 18px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+.md-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+}
+.md-side .avatar { width: 52px; height: 52px; border-radius: 13px; }
+.md-side-name { font-size: 14px; font-weight: 800; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-side-sub { font-size: 10.5px; color: var(--text-faint); }
+.md-side.is-winner .md-side-name { color: var(--win); }
+.md-side.is-loser { opacity: .62; }
+.md-center { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.md-score { font-size: 34px; font-weight: 850; font-variant-numeric: tabular-nums; line-height: 1; }
+.md-score.md-dim { color: var(--text-faint); }
+.md-score-sep { font-size: 22px; color: var(--text-faint); font-weight: 700; }
+.md-center-sub { font-size: 11px; color: var(--text-faint); max-width: 120px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.md-info {
+  margin-top: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  padding: 4px 14px;
+}
+.md-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-soft);
+  min-width: 0;
+}
+.md-info-row:last-child { border-bottom: none; }
+.md-info-label { flex: 0 0 auto; font-size: 12px; color: var(--text-faint); }
+.md-info-value { min-width: 0; font-size: 12.5px; font-weight: 650; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-info-value .tier-badge { vertical-align: -1px; }
+
+.md-pred {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+.md-pred-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.md-pred-main b { font-size: 12.5px; }
+.md-pred-main span { font-size: 11px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.md-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.md-actions .md-bet { margin-top: 0; }
+.md-watch { align-self: center; }
+.md-share {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), .1);
+  border: 1px solid rgba(var(--accent-rgb), .32);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  align-self: center;
+}
+.md-source { margin: 14px 2px 0; font-size: 10.5px; color: var(--text-faint); text-align: center; }
+
 /* 赛程搜索 */
 .schedule-search {
   position: relative;
@@ -1789,7 +1900,7 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   appearance: none;
   transition: border-color .15s ease;
 }
-.schedule-search input:focus { border-color: rgba(255, 138, 61, .5); }
+.schedule-search input:focus { border-color: rgba(var(--accent-rgb), .5); }
 .schedule-search input::placeholder { color: var(--text-faint); }
 .schedule-search input::-webkit-search-cancel-button { display: none; -webkit-appearance: none; }
 
@@ -1985,9 +2096,9 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   transition: .18s ease;
 }
 .pick-card.is-selected {
-  border-color: rgba(255, 138, 61, .65);
-  background: rgba(255, 138, 61, .09);
-  box-shadow: 0 0 0 3px rgba(255, 138, 61, .12);
+  border-color: rgba(var(--accent-rgb), .65);
+  background: rgba(var(--accent-rgb), .09);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .12);
 }
 
 .pick-avatar {
@@ -2075,7 +2186,7 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   border: 1px solid var(--border);
   background: #0f141d;
 }
-.stake-input-row:focus-within { border-color: rgba(255, 138, 61, .5); }
+.stake-input-row:focus-within { border-color: rgba(var(--accent-rgb), .5); }
 .stake-input-row input {
   flex: 1;
   min-width: 0;
@@ -2137,12 +2248,12 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   margin-top: 14px;
   padding: 15px 0;
   border-radius: 13px;
-  background: linear-gradient(135deg, #ffb066, var(--accent-strong));
-  color: #1a0e04;
+  background: linear-gradient(135deg, var(--accent-hi-mid), var(--accent-strong));
+  color: var(--accent-text);
   font-size: 15px;
   font-weight: 800;
   letter-spacing: .5px;
-  box-shadow: 0 10px 24px rgba(255, 106, 19, .28);
+  box-shadow: 0 10px 24px var(--accent-glow);
   transition: .16s ease;
 }
 .primary-btn:active { transform: scale(.985); }
@@ -2221,9 +2332,9 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   border-radius: 16px;
   display: grid;
   place-items: center;
-  color: #1a0e04;
-  background: linear-gradient(145deg, #ffb066, var(--accent-strong));
-  box-shadow: 0 8px 22px rgba(255, 106, 19, .3);
+  color: var(--accent-text);
+  background: linear-gradient(145deg, var(--accent-hi-mid), var(--accent-strong));
+  box-shadow: 0 8px 22px rgba(var(--accent-rgb), .3);
 }
 .onboard-icon svg { width: 28px; height: 28px; }
 .onboard-icon.onboard-safe {
@@ -2303,6 +2414,10 @@ html[data-theme="light"] {
   --text-faint: #8a95a8;
   --accent: #e8620f;
   --accent-strong: #d9530a;
+  --accent-rgb: 232, 98, 15;
+  --accent-hi: #ffd08a;
+  --accent-hi-mid: #ffb066;
+  --accent-glow: rgba(255, 106, 19, .28);
   --win: #0f8f63;
   --lose: #cf3b4c;
   --shadow: 0 18px 40px rgba(24, 32, 45, .12);
@@ -2310,7 +2425,7 @@ html[data-theme="light"] {
 
 html[data-theme="light"] body {
   background:
-    radial-gradient(900px 420px at 50% -140px, rgba(255, 138, 61, .10), transparent 70%),
+    radial-gradient(900px 420px at 50% -140px, rgba(var(--accent-rgb), .10), transparent 70%),
     radial-gradient(700px 380px at 100% 0%, rgba(255, 70, 85, .05), transparent 65%),
     var(--bg);
 }
@@ -2322,8 +2437,8 @@ html[data-theme="light"] .topbar {
 
 html[data-theme="light"] .balance-pill {
   color: #a8430a;
-  background: rgba(232, 98, 15, .08);
-  border-color: rgba(232, 98, 15, .28);
+  background: rgba(var(--accent-rgb), .08);
+  border-color: rgba(var(--accent-rgb), .28);
 }
 html[data-theme="light"] .balance-pill.in-debt {
   color: #b52f40;
@@ -2360,8 +2475,8 @@ html[data-theme="light"] .match-note {
 
 html[data-theme="light"] .status-chip.open {
   color: #a8430a;
-  background: rgba(232, 98, 15, .08);
-  border-color: rgba(232, 98, 15, .22);
+  background: rgba(var(--accent-rgb), .08);
+  border-color: rgba(var(--accent-rgb), .22);
 }
 html[data-theme="light"] .status-chip.locked,
 html[data-theme="light"] .status-chip.awaiting {
@@ -2390,9 +2505,9 @@ html[data-theme="light"] .tier-badge.tier-a {
 
 html[data-theme="light"] .balance-card {
   background:
-    radial-gradient(420px 180px at 88% -30%, rgba(255, 179, 102, .3), transparent 70%),
+    radial-gradient(420px 180px at 88% -30%, rgba(var(--accent-rgb), .3), transparent 70%),
     linear-gradient(180deg, #fff7ef, #ffffff);
-  border-color: rgba(232, 98, 15, .25);
+  border-color: rgba(var(--accent-rgb), .25);
 }
 html[data-theme="light"] .balance-card-head { color: #8a5a2b; }
 html[data-theme="light"] .balance-big small,
@@ -2401,7 +2516,7 @@ html[data-theme="light"] .tag-ghost { color: #8a5a2b; border-color: rgba(138, 90
 
 html[data-theme="light"] .sand-bar {
   background: linear-gradient(180deg, #fff8ef, #ffffff);
-  border-color: rgba(232, 98, 15, .2);
+  border-color: rgba(var(--accent-rgb), .2);
 }
 html[data-theme="light"] .sand-label { color: #8a5a2b; }
 html[data-theme="light"] .sand-meta b { color: #a8430a; }
@@ -2459,6 +2574,7 @@ html[data-theme="light"] .search-clear {
 }
 
 html[data-theme="light"] .pick-card.is-selected .pick-check { box-shadow: inset 0 0 0 3px #ffffff; }
+html[data-theme="light"] .history-badge.pending { background: rgba(24, 32, 45, .06); }
 html[data-theme="light"] .onboard-dots span { background: #cfd7e3; }
 html[data-theme="light"] .scroll-rail span { background: rgba(95, 107, 127, .45); }
 html[data-theme="light"] .rule-warn {
@@ -2534,9 +2650,9 @@ html[data-theme="light"] .game-popover::-webkit-scrollbar-thumb { background: #c
 
 /* ============================== 浅色模式补齐（浮层/魔神殿/账号卡） ============================== */
 html[data-theme="light"] .game-popover { background: var(--surface); box-shadow: 0 22px 55px rgba(24, 32, 45, .16); }
-html[data-theme="light"] .game-tile.is-selected { background: rgba(232, 98, 15, .07); border-color: rgba(232, 98, 15, .5); }
-html[data-theme="light"] .tournament-row.is-selected { background: rgba(232, 98, 15, .08); color: #b34f08; }
-html[data-theme="light"] .hb-sync-btn { background: rgba(232, 98, 15, .07); border-color: rgba(232, 98, 15, .32); color: #a8430a; }
+html[data-theme="light"] .game-tile.is-selected { background: rgba(var(--accent-rgb), .07); border-color: rgba(var(--accent-rgb), .5); }
+html[data-theme="light"] .tournament-row.is-selected { background: rgba(var(--accent-rgb), .08); color: #b34f08; }
+html[data-theme="light"] .hb-sync-btn { background: rgba(var(--accent-rgb), .07); border-color: rgba(var(--accent-rgb), .32); color: #a8430a; }
 html[data-theme="light"] .temple-entry-ic { color: #b8860b; background: linear-gradient(135deg, rgba(255, 209, 102, .32), rgba(255, 195, 143, .18)); }
 html[data-theme="light"] .temple-progress-bar { background: rgba(24, 32, 45, .08); }
 html[data-theme="light"] .temple-dist b, html[data-theme="light"] .cer-desc b { color: var(--text); }
@@ -2558,15 +2674,15 @@ html[data-theme="light"] .temple-cta { color: #4a2f04; }
   margin: 0 0 10px;
   padding: 12px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 138, 61, .35);
-  background: linear-gradient(135deg, rgba(255, 138, 61, .14), rgba(255, 216, 138, .08));
+  border: 1px solid rgba(var(--accent-rgb), .35);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), .14), rgba(255, 216, 138, .08));
 }
 .duel-banner[hidden] { display: none; }
 .duel-banner-main { min-width: 0; flex: 1; font-size: 13px; line-height: 1.5; color: var(--text); }
 .duel-banner-sub { display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-faint); }
 .duel-banner-acts { flex: 0 0 auto; display: flex; gap: 8px; }
 .duel-banner-acts button { font: inherit; font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 8px 14px; cursor: pointer; border: 1px solid transparent; }
-.duel-accept { color: #08111f; background: linear-gradient(135deg, #ffd08a, #ff8a3d); }
+.duel-accept { color: var(--accent-text); background: linear-gradient(135deg, var(--accent-hi), var(--accent)); }
 .duel-ignore { color: var(--text-dim); background: transparent; border-color: var(--border); }
 
 /* 「去围观」小徽标（进行中的比赛卡片上，点跳游戏详情页） */
@@ -2576,15 +2692,15 @@ html[data-theme="light"] .temple-cta { color: #4a2f04; }
   gap: 4px;
   padding: 4px 9px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 138, 61, .35);
-  background: rgba(255, 138, 61, .1);
+  border: 1px solid rgba(var(--accent-rgb), .35);
+  background: rgba(var(--accent-rgb), .1);
   color: var(--accent);
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
 .watch-chip svg { width: 12px; height: 12px; }
-.watch-chip:active { background: rgba(255, 138, 61, .2); }
+.watch-chip:active { background: rgba(var(--accent-rgb), .2); }
 
 .sheet-actions { display: flex; gap: 10px; margin-top: 12px; }
 .sheet-actions .primary-btn { flex: 1; }
@@ -2592,8 +2708,8 @@ html[data-theme="light"] .temple-cta { color: #4a2f04; }
   flex: 0 0 auto;
   padding: 13px 16px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 138, 61, .4);
-  background: rgba(255, 138, 61, .1);
+  border: 1px solid rgba(var(--accent-rgb), .4);
+  background: rgba(var(--accent-rgb), .1);
   color: #ff9a52;
   font: inherit;
   font-size: 14px;
@@ -2612,13 +2728,13 @@ html[data-theme="light"] .temple-cta { color: #4a2f04; }
   padding: 14px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(255, 138, 61, .07);
+  background: rgba(var(--accent-rgb), .07);
   color: var(--text);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.duel-entry-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: linear-gradient(135deg, #ffd08a, #ff8a3d); color: #08111f; font-size: 16px; }
+.duel-entry-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent-hi), var(--accent)); color: var(--accent-text); font-size: 16px; }
 .duel-entry-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .duel-entry-main b { font-size: 14px; }
 .duel-entry-main span { font-size: 11.5px; color: var(--text-faint); }
@@ -2646,12 +2762,12 @@ html[data-theme="light"] .temple-cta { color: #4a2f04; }
 .duel-match { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
 .duel-picks { margin-top: 4px; font-size: 12px; color: var(--text-faint); line-height: 1.6; }
 .duel-foot { margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-faint); }
-.duel-report-btn { margin-left: auto; font: inherit; font-size: 11.5px; font-weight: 700; color: #ff9a52; background: rgba(255, 138, 61, .1); border: 1px solid rgba(255, 138, 61, .32); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.duel-report-btn { margin-left: auto; font: inherit; font-size: 11.5px; font-weight: 700; color: #ff9a52; background: rgba(var(--accent-rgb), .1); border: 1px solid rgba(var(--accent-rgb), .32); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
 
-html[data-theme="light"] .duel-banner { border-color: rgba(232, 98, 15, .3); background: linear-gradient(135deg, rgba(255, 158, 74, .14), rgba(255, 216, 138, .1)); }
-html[data-theme="light"] .duel-btn { color: #b25a10; background: rgba(232, 98, 15, .08); border-color: rgba(232, 98, 15, .3); }
+html[data-theme="light"] .duel-banner { border-color: rgba(var(--accent-rgb), .3); background: linear-gradient(135deg, rgba(255, 158, 74, .14), rgba(255, 216, 138, .1)); }
+html[data-theme="light"] .duel-btn { color: #b25a10; background: rgba(var(--accent-rgb), .08); border-color: rgba(var(--accent-rgb), .3); }
 html[data-theme="light"] .duel-report-btn { color: #b25a10; }
-html[data-theme="light"] .duel-entry { background: rgba(232, 98, 15, .06); }
+html[data-theme="light"] .duel-entry { background: rgba(var(--accent-rgb), .06); }
 html[data-theme="light"] .duel-stat,
 html[data-theme="light"] .duel-card { background: rgba(24, 32, 45, .03); }
 html[data-theme="light"] .duel-badge { background: rgba(24, 32, 45, .06); }
@@ -2699,8 +2815,8 @@ html[data-theme="light"] .duel-sent-row { background: rgba(24, 32, 45, .03); }
   position: relative;
   font-size: 15px;
   font-weight: 800;
-  color: #1a0e04;
-  background: linear-gradient(145deg, #ffd08a, var(--accent-strong));
+  color: var(--accent-text);
+  background: linear-gradient(145deg, var(--accent-hi), var(--accent-strong));
 }
 .person-avatar .avatar-img {
   position: absolute;
@@ -2800,8 +2916,8 @@ html[data-theme="light"] .cer-quote input {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #ffd08a, var(--accent-strong));
-  color: #1a0e04;
+  background: linear-gradient(135deg, var(--accent-hi), var(--accent-strong));
+  color: var(--accent-text);
   font-size: 12px;
 }
 .duel-help-step > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }

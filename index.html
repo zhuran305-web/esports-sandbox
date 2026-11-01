@@ -221,7 +221,10 @@
 
         <div class="section-head">
           <h2>竞猜记录</h2>
-          <span id="historyCount" class="section-sub">0 条</span>
+          <span class="section-head-more">
+            <span id="historyCount" class="section-sub">0 条</span>
+            <button class="section-more-btn" id="historyAllBtn" type="button">全部 ›</button>
+          </span>
         </div>
         <div id="historyList" class="history-list"></div>
       </section>
@@ -286,6 +289,36 @@
           <div class="codex-grid" id="codexGrid"></div>
           <button class="codex-toggle" id="codexToggle" type="button" hidden>展开全部</button>
         </div>
+      </section>
+
+      <!-- 全部竞猜记录（我的页「竞猜记录·全部」入口，1.2.15：比赛滑出数据窗口的记录也可见） -->
+      <section class="view" id="view-history" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="historyBackBtn" type="button" aria-label="返回我的">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">全部竞猜记录</h1>
+          <span class="section-sub" id="historyTotalSub"></span>
+        </div>
+        <div class="history-group" id="historyPendingGroup" hidden>
+          <div class="history-group-label">待赛果 / 进行中</div>
+          <div id="historyPendingList" class="history-list"></div>
+        </div>
+        <div class="history-group">
+          <div class="history-group-label">已结算</div>
+          <div id="historySettledList" class="history-list"></div>
+        </div>
+      </section>
+
+      <!-- 比赛详情（赛程表行点击进入，1.2.16） -->
+      <section class="view" id="view-match" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="matchBackBtn" type="button" aria-label="返回赛程表">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">比赛详情</h1>
+        </div>
+        <div id="matchDetailBody"></div>
       </section>
 
       <!-- 排行榜 -->

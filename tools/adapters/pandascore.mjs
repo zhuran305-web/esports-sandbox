@@ -89,10 +89,11 @@ function toRaw(item, game) {
     tournament: tournament,
     stage: item.tournament ? item.tournament.name : "赛程",
     startAt: startAt,
+    endAt: item.end_at || "",
     bestof: item.number_of_games || 0,
     tier: item.tournament && item.tournament.tier ? String(item.tournament.tier).toLowerCase() : "",
-    teamA: { name: op1.name, short: op1.acronym || "", region: "", logo: logoPath(op1.image_url) },
-    teamB: { name: op2.name, short: op2.acronym || "", region: "", logo: logoPath(op2.image_url) },
+    teamA: { name: op1.name, short: op1.acronym || "", region: String(op1.location || "").toLowerCase(), logo: logoPath(op1.image_url) },
+    teamB: { name: op2.name, short: op2.acronym || "", region: String(op2.location || "").toLowerCase(), logo: logoPath(op2.image_url) },
     status: result ? "finished" : undefined,
     result: result,
     note: ""

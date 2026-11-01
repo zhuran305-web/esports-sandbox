@@ -37,7 +37,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.2.16";
+  var APP_VERSION = "1.2.17";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -4508,12 +4508,13 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       }
       return;
     }
-    // 对决链接：比赛就绪后先处理邀请/战报，再走常规定位高亮
+    // 对决链接：先处理邀请/战报。挑战卡就在首页顶部，处理成功就不再滚动定位
+    // （否则自动滚到比赛行会把用户拽离卡片——1.2.16 用户反馈）；被拒（截止等）才落到常规定位给上下文
     if (pendingDuelLaunch && pendingDuelLaunch.m === m.id) {
       var duel = pendingDuelLaunch;
       pendingDuelLaunch = null;
-      if (duel.d === 1) handleDuelInvite(duel);
-      else handleDuelReport(duel);
+      var duelHandled = duel.d === 1 ? handleDuelInvite(duel) : handleDuelReport(duel);
+      if (duelHandled) { pendingDeepLink = ""; return; }
     }
     var start = new Date(m.startAt).getTime();
     var now = Date.now();
@@ -4787,15 +4788,16 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     });
   }
 
-  // 收到约战（d:1）：已有预测直接成立，否则挂挑战卡等下注
+  // 收到约战（d:1）：已有预测直接成立，否则挂挑战卡等下注。返回 true=邀请已落地（卡/成局）
   function handleDuelInvite(ex) {
     var m = matchById(ex.m);
-    if (!m) { toast("约战的比赛不在当前数据范围内"); return; }
-    if (statusOf(m) !== "open") { toast("这场比赛已截止，无法应战"); return; }
-    if (predictionFor(m.id)) { acceptDuel(ex); return; }
+    if (!m) { toast("约战的比赛不在当前数据范围内"); return false; }
+    if (statusOf(m) !== "open") { toast("这场比赛已截止，无法应战"); return false; }
+    if (predictionFor(m.id)) { acceptDuel(ex); return true; }
     duelInvite = { m: ex.m, p: ex.p, s: ex.s, n: ex.n, r: ex.r || "", msg: ex.g || ex.msg || "", exp: matchLockTime(m) };
     storageSet(DUEL_INVITE_KEY, duelInvite).catch(function () {});
     renderDuelBanner();
+    return true;
   }
 
   // 应战成立：记录含对手昵称/选择/投入，赛果出来后自动结算
@@ -4938,11 +4940,12 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   }
 
   // 收到战报（d:2）：发起时不知道谁应战，靠对方回传补全这一侧的记录
+  // 收到回执/战报（d:2）：发起方建账。返回 true=已记录（不再滚动定位），false=被忽略
   function handleDuelReport(ex) {
     var m = matchById(ex.m);
-    if (!m) { toast("战报的比赛不在当前数据范围内"); return; }
+    if (!m) { toast("战报的比赛不在当前数据范围内"); return false; }
     var my = predictionFor(ex.m);
-    if (!my) { toast("这场你没有参与竞猜，战报已忽略"); return; }
+    if (!my) { toast("这场你没有参与竞猜，战报已忽略"); return false; }
     var id = duelId(ex.m, "initiator", ex.n + (ex.r ? "+" + ex.r : ""));
     var rec = null;
     DUELS.forEach(function (x) { if (x.id === id) rec = x; });
@@ -4970,6 +4973,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     }
     if (!$("#view-profile").hidden) renderProfile();
     if (!$("#view-duels").hidden) renderDuels();
+    return true;
   }
 
   // 结算：同边平、猜中胜、猜错负；我的投入/盈亏按结算时的真实预测回填

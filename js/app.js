@@ -17,7 +17,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   var TEAM_LOGOS = DATA.teams || {};
   // 队伍主题色（1.2.11）：{队名: [c1, c2, darkText]}——构建期从队标提取，runtime/内嵌切片携带
   var TEAM_COLORS = DATA.teamColors || {};
-  // 战队选手阵容（1.3.2）：{"game:name": {pid, players:[{n 职业ID, r 位置, l 国籍}]}}——fetch-team-rosters 管线切片
+  // 战队选手阵容（1.3.2）：{"game:name": [{n 职业ID, r 位置, l 国籍}, ...]}——fetch-team-rosters 管线切片（数组形状）
   var ROSTERS = DATA.rosters || {};
   var LOGO_BASE = "https://cdn-api.pandascore.co/images/team/image/";
   var matchIndex = new Map();
@@ -1998,12 +1998,12 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     var codex = state.collection[currentTeamKey];
 
     var html = "";
-    // 战队选手阵容（1.3.2）：PandaScore 花名册（键 game:name，规避同名不同游戏队）；无数据整块隐藏
-    var roster = ROSTERS[currentTeamKey];
-    if (roster && Array.isArray(roster.players) && roster.players.length) {
+    // 战队选手阵容（1.3.2）：PandaScore 花名册（键 game:name，规避同名不同游戏队）；数组形状，无数据整块隐藏
+    var rosterPlayers = ROSTERS[currentTeamKey];
+    if (Array.isArray(rosterPlayers) && rosterPlayers.length) {
       var ROLE_LABEL = { top: "上单", jungle: "打野", mid: "中单", adc: "ADC", support: "辅助", "midlaner": "中单", "adc/upport": "ADC", "upport": "辅助", "jungler": "打野", carry: "核心", "offlane": "三号位", solo: "中单" };
       html += '<div class="section-head"><h2>阵容</h2><span class="section-sub">公开赛果平台数据</span></div>' +
-        '<div class="roster-list">' + roster.players.map(function (p) {
+        '<div class="roster-list">' + rosterPlayers.map(function (p) {
           var role = p.r ? (ROLE_LABEL[p.r.toLowerCase()] || p.r) : "";
           return '<div class="roster-row">' +
             (p.l ? '<span class="roster-nat">' + esc(p.l.toUpperCase()) + "</span>" : '<span class="roster-nat roster-nat-none">–</span>') +

@@ -75,7 +75,8 @@ function normalizeTeamColors(raw) {
   return out;
 }
 
-// 战队选手阵容（1.3.2）：{ "game:name": { pid, players: [{n 职业ID, r 位置, l 国籍}] } }。脏数据整队丢弃
+// 战队选手阵容（1.3.2）：{ "game:name": [{n 职业ID, r 位置, l 国籍}, ...] }——数组形状，与
+// build-runtime-data/trim-embedded 的切片一致。脏数据整队丢弃
 var MAX_ROSTERS = 1500;
 function normalizeRosters(raw) {
   var src = raw && raw.rosters;
@@ -84,15 +85,17 @@ function normalizeRosters(raw) {
   var n = 0;
   Object.keys(src).forEach(function (key) {
     if (n >= MAX_ROSTERS) return;
-    var e = src[key];
-    if (!e || !Array.isArray(e.players)) return;
-    var players = e.players.filter(function (p) {
+    var v = src[key];
+    // 兼容两种来源：数组（build/trim/embedded）与 {pid, players}（老缓存）
+    var players = Array.isArray(v) ? v : (v && Array.isArray(v.players) ? v.players : null);
+    if (!players) return;
+    players = players.filter(function (p) {
       return p && typeof p.n === "string" && p.n;
     }).slice(0, 5).map(function (p) {
       return { n: p.n, r: typeof p.r === "string" ? p.r : "", l: typeof p.l === "string" ? p.l : "" };
     });
     if (!players.length) return;
-    out[key] = { pid: typeof e.pid === "number" ? e.pid : 0, players: players };
+    out[key] = players;
     n++;
   });
   return out;

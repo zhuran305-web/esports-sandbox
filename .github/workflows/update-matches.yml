@@ -1,9 +1,10 @@
 name: Update match data
 
-# 公开仓库 + 每 5 分钟采集一次（GitHub Actions 的最短间隔）。
+# 公开仓库 + 每 15 分钟采集一次（2026-11-02 由 5 分钟降频：GitHub 定时任务高峰期延迟明显，
+# 5 分钟档经常排不进去还挤占配额；客户端轮询同步放宽到 15 分钟——见 js/app.js POLL_INTERVAL）。
 # 数据不提交到 Git：每次先恢复 Release 资产里的上一份快照，采集合并后只有内容变化才覆盖上传，
 # 因此仓库体积不会增长。小程序仍是构建时打包数据，用户端要看到新赛程需重新构建发布。
-# 每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次；12 轮/小时约 396 次，占额度 40%。
+# 每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次；4 轮/小时约 132 次，占额度 13%。
 # 需要在仓库 Secrets 配置：
 #   PANDASCORE_TOKEN（必填）、LIQUIPEDIA_API_KEY（可选）
 #   LIQUIPEDIA_CONTACT（可选，填邮箱或主页，Liquipedia 要求 UA 带联系方式）
@@ -16,7 +17,7 @@ name: Update match data
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:

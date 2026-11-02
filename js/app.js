@@ -6,6 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PICK, PICKEM_PERFECT_BONUS, PICKEM_DEADLINE_MS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableBracketMatches, swissPicksComplete, scorePhase, pickemCoinOf, mergePickem } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -19,6 +20,9 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   var TEAM_COLORS = DATA.teamColors || {};
   // 战队选手阵容（1.3.2）：{"game:name": [{n 职业ID, r 位置, l 国籍}, ...]}——fetch-team-rosters 管线切片（数组形状）
   var ROSTERS = DATA.rosters || {};
+  // Pick'Em 赛事聚合（1.4.0 实验功能）：fetch-pickem 管线切片（内嵌 + 运行时合并，只增不减）
+  var PICKEM = normalizePickemData(DATA.pickem).events;
+  var pickemEventId = ""; // 当前查看的赛事（多赛事时顶部 chip 切换）
   var LOGO_BASE = "https://cdn-api.pandascore.co/images/team/image/";
   var matchIndex = new Map();
   rebuildMatchIndex();
@@ -39,7 +43,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.2";
+  var APP_VERSION = "1.4.0";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -114,7 +118,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   ];
 
   /* ============================== 状态 ============================== */
-  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {} };
+  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {} };
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
@@ -216,7 +220,8 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
     "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
-    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#duelDialogBackdrop", "#duelHelpBackdrop"
+    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#duelDialogBackdrop", "#duelHelpBackdrop",
+    "#pickemSheet"
   ];
 
   function closeAllOverlays() {
@@ -245,7 +250,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {} };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {} };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -266,6 +271,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
         title: typeof parsed.title === "string" ? parsed.title : undefined,
         mainTeam: typeof parsed.mainTeam === "string" ? parsed.mainTeam : undefined, // 三态：undefined=从未设置、""=已取消
         mainLevels: normalizeAchv(parsed.mainLevels), // {键: 累计押过场次}——复用同构校验（正数、取整、上限）
+        pickem: normalizePickemState(parsed.pickem), // Pick'Em 竞猜记录（1.4.0，键 eventId:stageId）
         updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
@@ -278,7 +284,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   var achvChecking = false; // 成就检测重入防护（checkAchievements 在 saveState 内执行）
 
   function stateSnapshot() {
-    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam, state.mainLevels]);
+    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam, state.mainLevels, state.pickem]);
   }
 
   function saveState() {
@@ -337,6 +343,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     }
     var codex = collectionSummary(state.collection);
     var ds = duelStats();
+    var pkCoin = pickemCoinOf(state.pickem);
     return {
       bets: state.predictions.length,
       settled: settled.length,
@@ -352,7 +359,9 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       duelsTotal: DUELS.length,
       duelsWon: ds.won,
       gods: state.gods || 0,
-      bankrupts: state.bankrupts || 0
+      bankrupts: state.bankrupts || 0,
+      pickemSubmitted: pkCoin.submitted,   // Pick'Em：提交过竞猜（铜币）
+      pickemPerfect: pkCoin.perfect        // Pick'Em：全对阶段数（银/金/钻币）
     };
   }
 
@@ -467,6 +476,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     var localCodex = state.collection;
     var localAchv = state.achv, localMinBankroll = state.minBankroll;
     var localMainLevels = state.mainLevels;
+    var localPickem = state.pickem;
     state = {
       bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
       predictions: Array.isArray(s.predictions) ? s.predictions : [],
@@ -482,12 +492,14 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       title: typeof s.title === "string" ? s.title : state.title,
       mainTeam: typeof s.mainTeam === "string" ? s.mainTeam : state.mainTeam,
       mainLevels: mergeAchv(localMainLevels, s.mainLevels),
+      pickem: mergePickem(localPickem, s.pickem), // Pick'Em：pickedAt 较新者胜、settled 取 OR（js/pickem.js#mergePickem）
       updatedAt: rec.updatedAt
     };
     validateLoadedState();
     persistedSnapshot = stateSnapshot();
     storageSet(STORAGE_KEY, state);
     var events = settlePending();
+    var pkDone = settlePickem();
     renderBalance();
     renderAll();
     if (!$("#view-profile").hidden) renderProfile();
@@ -1893,6 +1905,501 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       '<p class="md-source">赛程与赛果数据来自公开赛事数据平台（PandaScore），以赛事官方公布为准</p>';
   }
 
+  /* ============================== Pick'Em 赛事竞猜（1.4.0 实验功能） ==============================
+     大型赛事按阶段竞猜：瑞士轮阶段猜 10 项（3:0 晋级×2 / 3:1·3:2 晋级×6 / 0:3 淘汰×2，
+     1:3/2:3 淘汰 6 队为剩余队自动落位仅展示），淘汰赛逐场猜胜者。
+     开赛前 1 小时截止（镜像单场竞猜），阶段完赛自动结算发沙粒。
+     数据形状单一来源 = tools/fetch-pickem.mjs 头注释；桶定义/计分/云合并 = js/pickem.js。 */
+
+  function pickemEvents() {
+    return PICKEM.filter(function (ev) { return ev && ev.stages && ev.stages.length; });
+  }
+
+  function pickemEventById(id) {
+    for (var i = 0; i < PICKEM.length; i++) { if (PICKEM[i].id === id) return PICKEM[i]; }
+    return null;
+  }
+
+  function pickemRecKey(evId, stageId) { return evId + ":" + stageId; }
+
+  function pickemRec(evId, stageId) {
+    return state.pickem[pickemRecKey(evId, stageId)] || null;
+  }
+
+  function pickemEnsureRec(stage, evId, stageId) {
+    var key = pickemRecKey(evId, stageId);
+    var rec = state.pickem[key];
+    if (!rec || rec.type !== stage.type) {
+      rec = stage.type === "swiss"
+        ? { type: "swiss", picks: {}, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 }
+        : { type: "bracket", picks: { w: {} }, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 };
+      if (rec.type === "swiss") PICKEM_BUCKETS.forEach(function (b) { rec.picks[b.k] = []; });
+      state.pickem[key] = rec;
+    }
+    return rec;
+  }
+
+  function pickemTeamOf(stage, name) {
+    for (var i = 0; i < stage.teams.length; i++) { if (stage.teams[i].name === name) return stage.teams[i]; }
+    return { name: name, short: "", region: "", logo: "", w: 0, l: 0 };
+  }
+
+  function pickemBucketByKey(k) {
+    for (var i = 0; i < PICKEM_BUCKETS.length; i++) { if (PICKEM_BUCKETS[i].k === k) return PICKEM_BUCKETS[i]; }
+    return null;
+  }
+
+  function pickemSwissCount(rec) {
+    var n = 0;
+    if (!rec) return 0;
+    PICKEM_BUCKETS.forEach(function (b) { n += (rec.picks[b.k] || []).length; });
+    return n;
+  }
+
+  function pickemStageStatus(stage) {
+    // open=可竞猜 / locked=已截止待赛果 / wait=赛程未齐（队伍未定或结构降级）/ done=已完赛
+    if (stageAllDone(stage)) return "done";
+    if (stage.type === "swiss") {
+      if (stage.teams.length !== PICKEM_SWISS_TEAMS) return "wait";
+    } else if (stage.degraded) {
+      return "wait";
+    }
+    var start = new Date(stage.startsAt).getTime();
+    if (isNaN(start)) return "wait";
+    return Date.now() < start - PICKEM_DEADLINE_MS ? "open" : "locked";
+  }
+
+  function pickemToastText(list) {
+    return "🏆 赛事竞猜结算：" + list.map(function (x) {
+      return x.stage.label + " 猜对 " + x.r.correct + "/" + x.r.total +
+        (x.r.prize ? " · +" + fmtNum(x.r.prize) + " 沙粒" : "");
+    }).join(" · ");
+  }
+
+  /* ---- 结算：阶段完赛后按聚合器 results/赛果计分，幂等锁存（rec.settled），奖励走 saveState 唯一写闸 ---- */
+  function settlePickem() {
+    var done = [];
+    Object.keys(state.pickem).forEach(function (key) {
+      var rec = state.pickem[key];
+      if (!rec || rec.settled) return;
+      var sep = key.indexOf(":");
+      if (sep < 1) return;
+      var ev = pickemEventById(key.slice(0, sep));
+      if (!ev) return;
+      var stage = null;
+      ev.stages.forEach(function (s) { if (s.id === key.slice(sep + 1)) stage = s; });
+      if (!stage) return;
+      var r = scorePhase(stage, rec);
+      if (!r) return; // 阶段未完赛（results 缺失 / 无完赛场次）
+      rec.settled = true;
+      rec.settledAt = Date.now();
+      rec.score = r.correct;
+      rec.total = r.total;
+      rec.prize = r.prize;
+      if (r.prize > 0) state.bankroll += r.prize;
+      done.push({ ev: ev, stage: stage, r: r });
+    });
+    if (done.length) saveState(); // 成就检测（铜/银/金/钻币）挂在 saveState 写闸内自动触发
+    return done;
+  }
+
+  /* ---------- 渲染 ---------- */
+
+  function pickemStageBadge(st, stage, rec) {
+    if (st === "open") {
+      var start = new Date(stage.startsAt).getTime();
+      var dl = isNaN(start) ? "" : fmtTime(new Date(start - PICKEM_DEADLINE_MS).toISOString());
+      return '<span class="pickem-badge is-open">可竞猜' + (dl ? " · " + esc(dl) + " 截止" : "") + "</span>";
+    }
+    if (st === "locked") return '<span class="pickem-badge is-locked">已截止 · 等待赛果</span>';
+    if (st === "wait") return '<span class="pickem-badge is-wait">待赛程确定</span>';
+    if (rec && rec.settled) {
+      return '<span class="pickem-badge is-done">猜对 ' + rec.score + "/" + rec.total + (rec.prize ? " · +" + fmtNum(rec.prize) : "") + "</span>";
+    }
+    return '<span class="pickem-badge is-done">已结束' + (rec ? " · 待结算" : "") + "</span>";
+  }
+
+  function pickemTeamStrip(stage) {
+    if (!stage.teams.length) return "";
+    return '<div class="pickem-strip">' + stage.teams.map(function (t) {
+      return '<span class="pickem-chip">' + avatarHTML(t) + "<span>" + esc(t.short || t.name) + "</span></span>";
+    }).join("") + "</div>";
+  }
+
+  function pickemBucketHTML(stage, bucket, rec, editable, results) {
+    var picks = rec && rec.picks ? (rec.picks[bucket.k] || []) : [];
+    var resNames = results ? (results[bucket.k] || []) : null;
+    var shown = Math.max(bucket.cap, picks.length, resNames ? resNames.length : 0);
+    var slots = "";
+    for (var i = 0; i < shown; i++) {
+      var name = picks[i] || "";
+      var resName = resNames ? (resNames[i] || "") : "";
+      var team = pickemTeamOf(stage, name || resName);
+      var hit = !!(name && resNames && resNames.indexOf(name) >= 0);
+      var miss = !!(name && resNames && !hit);
+      var cls = "pickem-slot" + (name ? " is-filled" : "") + (hit ? " is-hit" : "") + (miss ? " is-miss" : "") + (!name && resName ? " is-result" : "");
+      slots += '<button type="button" class="' + cls + '"' +
+        (editable ? ' data-pkslot="' + esc(bucket.k) + '" data-pkcur="' + esc(name) + '"' : ' disabled') + ">" +
+        (name || resName
+          ? avatarHTML(team) + '<span class="pickem-slot-name">' + esc(name || resName) +
+              (hit ? '<i class="pickem-mark hit">✓</i>' : "") + (miss ? '<i class="pickem-mark miss">✗</i>' : "") + "</span>"
+          : '<span class="pickem-slot-empty">＋</span>') +
+        "</button>";
+    }
+    return '<div class="pickem-bucket' + (bucket.tone === "win" ? " is-win" : " is-lose") + '">' +
+      '<div class="pickem-bucket-head"><span>' + esc(bucket.label) + "</span><b>" + picks.length + "/" + bucket.cap + "</b></div>" +
+      '<div class="pickem-slot-grid">' + slots + "</div></div>";
+  }
+
+  function pickemSwissBody(ev, stage, st, rec) {
+    var editable = st === "open";
+    var html = "";
+    if (st === "wait") {
+      html += '<div class="pickem-note">参赛队伍未同步完整（' + stage.teams.length + "/" + PICKEM_SWISS_TEAMS + "），赛程确定后开放竞猜</div>" + pickemTeamStrip(stage);
+      return html;
+    }
+    if (st === "done" && stage.results && rec && pickemSwissCount(rec) > 0) {
+      html += '<div class="pickem-note">按终局比分逐桶比对：猜进「3:0 晋级」的队伍须真以 3-0 出线才算对</div>';
+    }
+    html += PICKEM_BUCKETS.map(function (b) {
+      return pickemBucketHTML(stage, b, rec, editable, st === "done" ? stage.results : null);
+    }).join("");
+    if (st === "done" && stage.results) {
+      // 自动落位桶（1:3 / 2:3 淘汰）：剩余队伍的终局展示，不参与选择与计分
+      html += PICKEM_AUTO_BUCKETS.map(function (b) {
+        return pickemBucketHTML(stage, b, null, false, stage.results);
+      }).join("");
+    }
+    if (editable) {
+      var n = pickemSwissCount(rec);
+      html += '<div class="pickem-stage-acts">' +
+        (n > 0 ? '<button type="button" class="ghost-btn" data-pkact="clear">清空重选</button>' : "") +
+        '<span class="pickem-progress">已分配 ' + n + "/10" + (n === 10 ? " · 提交完成，截止前可修改" : "") + "</span></div>";
+      if (st === "open" && n === 0) {
+        html += '<div class="pickem-note">点空位选队伍：3:0 晋级 2 支 · 3:1/3:2 晋级 6 支 · 0:3 淘汰 2 支（1:3/2:3 淘汰由剩余队自动落位）</div>';
+      }
+    } else if (st === "locked") {
+      html += '<div class="pickem-note">已截止：开赛前 1 小时锁定选择，赛果出来后自动结算</div>';
+    }
+    return html;
+  }
+
+  function pickemSideHTML(stage, m, side, myPick, open) {
+    var name = side === "A" ? m.a : m.b;
+    if (!name) return '<span class="pickem-side is-tbd">待上一轮</span>';
+    var team = pickemTeamOf(stage, name);
+    var sel = myPick === side;
+    var won = m.winner === side;
+    return '<button type="button" class="pickem-side' + (sel ? " is-picked" : "") + (won ? " is-winner" : "") + '"' +
+      (open ? ' data-pkmatch="' + esc(m.id) + '" data-pkside="' + side + '"' : " disabled") + ">" +
+      avatarHTML(team) + "<span>" + esc(name) + "</span>" +
+      (won && m.winner ? '<i class="pickem-mark ' + (sel ? "hit" : "plain") + '">' + (sel ? "✓" : "胜") + "</i>" : "") +
+      "</button>";
+  }
+
+  function pickemBracketBody(ev, stage, st, rec) {
+    if (stage.degraded) {
+      return '<div class="pickem-note">该阶段赛制结构与预期不符（非单败 ' + stage.matches.length + " 场），暂只展示赛程</div>" + pickemTeamStrip(stage);
+    }
+    var myW = rec && rec.picks ? rec.picks.w : {};
+    var html = "";
+    var lastRound = -1;
+    stage.matches.forEach(function (m) {
+      if (m.round !== lastRound) {
+        lastRound = m.round;
+        html += '<div class="pickem-round-label">' + esc((stage.rounds && stage.rounds[m.round]) || "对阵") + "</div>";
+      }
+      var start = new Date(m.startAt).getTime();
+      var open = !m.winner && !!m.a && !!m.b && !isNaN(start) && Date.now() < start - PICKEM_DEADLINE_MS;
+      var my = myW[m.id] || "";
+      var hit = !!(m.winner && my && my === m.winner);
+      var miss = !!(m.winner && my && !hit);
+      html += '<div class="pickem-match' + (m.winner ? " is-done" : "") + '">' +
+        '<span class="pickem-match-time">' + esc(fmtTime(m.startAt)) + "</span>" +
+        '<div class="pickem-match-sides">' +
+          pickemSideHTML(stage, m, "A", my, open) +
+          '<span class="pickem-vs">VS</span>' +
+          pickemSideHTML(stage, m, "B", my, open) +
+        "</div>" +
+        (hit ? '<span class="pickem-mark hit">✓</span>' : "") + (miss ? '<span class="pickem-mark miss">✗</span>' : "") +
+        "</div>";
+    });
+    if (st === "locked") html += '<div class="pickem-note">对阵确定后逐轮开放，各场开赛前 1 小时截止</div>';
+    if (st === "open" && !pickableBracketMatches(stage).length) {
+      html += '<div class="pickem-note">对阵待上一轮赛果确定，确定后开放竞猜</div>';
+    }
+    return html;
+  }
+
+  function pickemStageHTML(ev, stage) {
+    var st = pickemStageStatus(stage);
+    var rec = pickemRec(ev.id, stage.id);
+    return '<div class="pickem-stage" data-pstage="' + esc(pickemRecKey(ev.id, stage.id)) + '">' +
+      '<div class="pickem-stage-head"><b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) + "</div>" +
+      (stage.type === "swiss" ? pickemSwissBody(ev, stage, st, rec) : pickemBracketBody(ev, stage, st, rec)) +
+      "</div>";
+  }
+
+  function pickemEventHTML(ev) {
+    var stLabel = ev.status === "done" ? "已结束" : ev.status === "active" ? "进行中" : "未开始";
+    var coin = pickemCoinOf(state.pickem);
+    var html =
+      '<div class="pickem-evhead"><span class="pickem-evname">' + esc(ev.name) + "</span>" +
+        '<span class="pickem-evstatus is-' + ev.status + '">' + stLabel + "</span>" +
+        '<span class="pickem-evmeta">' + esc(gameMeta(ev.game).label) + "</span></div>" +
+      '<div class="pickem-coin' + (coin.tier > 1 ? " has" : "") + '">' +
+        (coin.tier > 0
+          ? coin.coin.icon + " 挑战币「" + esc(coin.coin.name) + "」 · 全对 " + coin.perfect + " 个阶段"
+          : "全对 1 个阶段升银币 · 每猜对 1 项 +" + fmtNum(PICKEM_PER_PICK) + " 沙粒，全对再加 " + fmtNum(PICKEM_PERFECT_BONUS)) +
+      "</div>";
+    ev.stages.forEach(function (stage) { html += pickemStageHTML(ev, stage); });
+    html += '<p class="data-note">参赛名单与赛果以赛事官方公布为准 · 实验功能可能随时调整或下线</p>';
+    return html;
+  }
+
+  function renderPickem() {
+    var coin = $("#pickemCoin");
+    if (coin) {
+      var pk = pickemCoinOf(state.pickem);
+      coin.textContent = pk.tier > 0 ? pk.coin.icon + " " + pk.coin.name : "";
+    }
+    var tabs = $("#pickemEvtabs");
+    var body = $("#pickemBody");
+    if (!body) return;
+    var evs = pickemEvents();
+    if (!evs.length) {
+      if (tabs) tabs.hidden = true;
+      body.innerHTML = '<div class="empty-state"><strong>暂无进行中的赛事</strong>大型赛事（Major 级）确认排期后，这里会开放整赛程竞猜</div>';
+      return;
+    }
+    if (!pickemEventById(pickemEventId)) {
+      var first = evs.filter(function (e) { return e.status !== "done"; })[0] || evs[0];
+      pickemEventId = first.id;
+    }
+    var ev = pickemEventById(pickemEventId);
+    if (tabs) {
+      if (evs.length > 1) {
+        tabs.hidden = false;
+        tabs.innerHTML = evs.map(function (e) {
+          return '<button type="button" class="pickem-evtab' + (e.id === pickemEventId ? " is-active" : "") + '" data-pevt="' + esc(e.id) + '">' + esc(e.name) + "</button>";
+        }).join("");
+      } else {
+        tabs.hidden = true;
+      }
+    }
+    body.innerHTML = pickemEventHTML(ev);
+  }
+
+  function renderLabs() {
+    var box = $("#labsList");
+    if (!box) return;
+    var evs = pickemEvents();
+    var active = evs.filter(function (e) { return e.status !== "done"; }).length;
+    box.innerHTML =
+      '<button type="button" class="settings-row" data-labs="pickem">' +
+        '<span class="settings-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/></svg></span>' +
+        '<span class="settings-row-label">赛事竞猜 · Major Pick\'Em</span>' +
+        '<span class="settings-row-value">' + (active ? active + " 个赛事进行中" : "暂无进行中") + "</span>" +
+        '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' +
+      "</button>";
+  }
+
+  /* ---------- 交互：桶位选择器（底部 sheet）与淘汰赛点选 ---------- */
+
+  var pickemSheetCtx = null; // { evId, stageId, bucket, current }
+  var pickemClearArmed = "";
+  var pickemClearTimer = 0;
+
+  function pickemStageByKey(key) {
+    var sep = key.indexOf(":");
+    if (sep < 1) return null;
+    var ev = pickemEventById(key.slice(0, sep));
+    if (!ev) return null;
+    var stageId = key.slice(sep + 1);
+    for (var i = 0; i < ev.stages.length; i++) {
+      if (ev.stages[i].id === stageId) return { ev: ev, stage: ev.stages[i] };
+    }
+    return null;
+  }
+
+  function renderPickemSheet() {
+    var ctx = pickemSheetCtx;
+    if (!ctx) return;
+    var hit = pickemStageByKey(ctx.evId + ":" + ctx.stageId);
+    if (!hit) return;
+    var stage = hit.stage;
+    var bucket = pickemBucketByKey(ctx.bucket);
+    if (!bucket) return;
+    var rec = pickemRec(ctx.evId, ctx.stageId);
+    var picks = rec && rec.picks ? (rec.picks[ctx.bucket] || []) : [];
+    $("#pickemSheetTitle").textContent = bucket.label;
+    $("#pickemSheetMeta").textContent = "空位 " + Math.max(0, bucket.cap - picks.length) + "/" + bucket.cap +
+      (ctx.current ? " · 点当前队伍可移出" : " · 点选队伍放入");
+    var assigned = {};
+    PICKEM_BUCKETS.forEach(function (b) {
+      ((rec && rec.picks ? rec.picks[b.k] : []) || []).forEach(function (n) { if (n) assigned[n] = b; });
+    });
+    var list = stage.teams.slice().sort(function (a, b2) {
+      var xa = assigned[a.name] ? 1 : 0;
+      var xb = assigned[b2.name] ? 1 : 0;
+      return xa - xb || (b2.w - a.w) || (a.l - b2.l);
+    });
+    var html = "";
+    if (ctx.current) {
+      html += '<button type="button" class="pickem-picker-row is-remove" data-pksel="__remove__"><span class="pickem-picker-name">移出「' + esc(ctx.current) + "」</span></button>";
+    }
+    list.forEach(function (t) {
+      var inBucket = assigned[t.name];
+      html += '<button type="button" class="pickem-picker-row' + (inBucket ? " is-assigned" : "") +
+        (t.name === ctx.current ? " is-current" : "") + '" data-pksel="' + esc(t.name) + '">' +
+        avatarHTML(t) +
+        '<span class="pickem-picker-name">' + esc(t.name) + "</span>" +
+        '<span class="pickem-picker-where">' + (inBucket ? "已在 " + esc(inBucket.label) : t.w + " 胜 " + t.l + " 负") + "</span>" +
+        "</button>";
+    });
+    $("#pickemSheetList").innerHTML = html;
+  }
+
+  function openPickemPicker(evId, stageId, bucketKey, current) {
+    pickemSheetCtx = { evId: evId, stageId: stageId, bucket: bucketKey, current: current || "" };
+    renderPickemSheet();
+    $("#pickemSheet").hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+
+  function closePickemSheet() {
+    var el = $("#pickemSheet");
+    if (el) el.hidden = true;
+    pickemSheetCtx = null;
+    document.body.style.overflow = "";
+  }
+
+  function pickemSheetPick(name) {
+    var ctx = pickemSheetCtx;
+    if (!ctx) return;
+    var hit = pickemStageByKey(ctx.evId + ":" + ctx.stageId);
+    if (!hit) { closePickemSheet(); return; }
+    var stage = hit.stage;
+    var bucket = pickemBucketByKey(ctx.bucket);
+    if (!bucket) { closePickemSheet(); return; }
+    var rec = pickemEnsureRec(stage, ctx.evId, ctx.stageId);
+    if (name === "__remove__") {
+      var arr = rec.picks[ctx.bucket] || [];
+      var i = arr.indexOf(ctx.current);
+      if (i >= 0) arr.splice(i, 1);
+    } else {
+      // 先从所有桶移除（同队只能在一个桶），再放进当前桶（替换 current 语义）
+      PICKEM_BUCKETS.forEach(function (b) {
+        var list = rec.picks[b.k];
+        if (!list) return;
+        var j = list.indexOf(name);
+        if (j >= 0) list.splice(j, 1);
+      });
+      var arr2 = rec.picks[ctx.bucket] || (rec.picks[ctx.bucket] = []);
+      var cur = arr2.indexOf(ctx.current);
+      if (cur >= 0) arr2.splice(cur, 1);
+      if (arr2.length >= bucket.cap) {
+        toast("「" + bucket.label + "」已满（" + bucket.cap + " 支）");
+        renderPickemSheet();
+        return;
+      }
+      arr2.push(name);
+    }
+    rec.pickedAt = Date.now();
+    saveState();
+    renderPickem();
+    closePickemSheet();
+  }
+
+  function pickemBracketPick(evId, stageId, matchId, side) {
+    var hit = pickemStageByKey(evId + ":" + stageId);
+    if (!hit) return;
+    var stage = hit.stage;
+    var m = null;
+    stage.matches.forEach(function (x) { if (x.id === matchId) m = x; });
+    if (!m) return;
+    var start = new Date(m.startAt).getTime();
+    if (m.winner || isNaN(start) || Date.now() >= start - PICKEM_DEADLINE_MS) {
+      toast("该场竞猜已截止");
+      renderPickem();
+      return;
+    }
+    var rec = pickemEnsureRec(stage, evId, stageId);
+    rec.picks.w[matchId] = side;
+    rec.pickedAt = Date.now();
+    saveState();
+    renderPickem();
+  }
+
+  function pickemClearStage(evId, stageId) {
+    var key = pickemRecKey(evId, stageId);
+    if (pickemClearArmed !== key) {
+      pickemClearArmed = key;
+      clearTimeout(pickemClearTimer);
+      pickemClearTimer = setTimeout(function () { pickemClearArmed = ""; renderPickem(); }, 3000);
+      toast("再点一次「清空重选」确认");
+      var btn = document.querySelector('[data-pstage="' + key + '"] [data-pkact="clear"]');
+      if (btn) btn.textContent = "再点一次确认";
+      return;
+    }
+    pickemClearArmed = "";
+    clearTimeout(pickemClearTimer);
+    delete state.pickem[key];
+    saveState();
+    renderPickem();
+    toast("已清空该阶段选择");
+  }
+
+  function bindPickem() {
+    $("#labsList").addEventListener("click", function (e) {
+      var row = e.target.closest("[data-labs]");
+      if (row && row.dataset.labs) switchView(row.dataset.labs);
+    });
+    $("#labsBackBtn").addEventListener("click", function () { goBack("about"); });
+    $("#pickemBackBtn").addEventListener("click", function () { goBack("labs"); });
+    $("#pickemEvtabs").addEventListener("click", function (e) {
+      var t = e.target.closest("[data-pevt]");
+      if (t && t.dataset.pevt !== pickemEventId) {
+        pickemEventId = t.dataset.pevt;
+        renderPickem();
+      }
+    });
+    $("#pickemBody").addEventListener("click", function (e) {
+      var slot = e.target.closest("[data-pkslot]");
+      if (slot) {
+        var box = slot.closest("[data-pstage]");
+        if (!box) return;
+        var key = box.dataset.pstage;
+        var sep = key.indexOf(":");
+        openPickemPicker(key.slice(0, sep), key.slice(sep + 1), slot.dataset.pkslot, slot.dataset.pkcur || "");
+        return;
+      }
+      var pick = e.target.closest("[data-pkmatch]");
+      if (pick) {
+        var mbox = pick.closest("[data-pstage]");
+        if (!mbox) return;
+        var mkey = mbox.dataset.pstage;
+        var msep = mkey.indexOf(":");
+        pickemBracketPick(mkey.slice(0, msep), mkey.slice(msep + 1), pick.dataset.pkmatch, pick.dataset.pkside);
+        return;
+      }
+      var act = e.target.closest("[data-pkact]");
+      if (act && act.dataset.pkact === "clear") {
+        var cbox = act.closest("[data-pstage]");
+        if (!cbox) return;
+        var ckey = cbox.dataset.pstage;
+        var csep = ckey.indexOf(":");
+        pickemClearStage(ckey.slice(0, csep), ckey.slice(csep + 1));
+      }
+    });
+    $("#pickemSheetClose").addEventListener("click", closePickemSheet);
+    $("#pickemSheet").addEventListener("click", function (e) {
+      if (e.target === $("#pickemSheet")) { closePickemSheet(); return; }
+      var row = e.target.closest("[data-pksel]");
+      if (row) pickemSheetPick(row.dataset.pksel);
+    });
+  }
+
   /* ---------- 战队图鉴（押过的队伍 + 跟队连击；纯本地养成，随战绩云同步跨设备） ---------- */
   var codexExpanded = false;
   var CODEX_PREVIEW = 24; // 网格默认展示数，其余折叠进「展开全部」
@@ -3013,6 +3520,8 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       // 运行时全量数据到之前老预测仍需保留（结算/渲染都会跳过找不到的比赛）
       return true;
     });
+    if (state.pickem === undefined || state.pickem === null || typeof state.pickem !== "object") state.pickem = {};
+    state.pickem = normalizePickemState(state.pickem); // Pick'Em 记录形状兜底（脏记录整条丢弃）
   }
 
   /* ============================== 新手引导与发帖素材 ============================== */
@@ -3420,7 +3929,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match";
+    return name === "rules" || name === "schedule" || name === "about" || name === "temple" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match" || name === "labs" || name === "pickem";
   }
 
   function initHistory() {
@@ -3506,11 +4015,11 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
       closeRulesTopic();
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus", "team", "achv", "codex", "history", "match"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "temple", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
     // 魔神殿从排行榜进入返回回排行榜；对决记录/对比页/成就殿堂/战队图鉴/全部竞猜记录从「我的」侧进入返回回「我的」；
-    // 战队资料页按来源高亮（图鉴进=我的，比赛卡进=赛事）
+    // 战队资料页按来源高亮（图鉴进=我的，比赛卡进=赛事）；实验功能/赛事竞猜挂在「关于小程序」链上归设置 tab
     var tabName = name === "temple" ? "board"
       : name === "duels" || name === "versus" || name === "achv" || name === "codex" || name === "history" ? "profile"
         : name === "team" ? (teamFromView === "profile" ? "profile" : "matches")
@@ -3529,6 +4038,8 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     if (name === "codex") renderCodex();
     if (name === "history") renderHistoryFull();
     if (name === "match") renderMatchDetail();
+    if (name === "labs") renderLabs();
+    if (name === "pickem") renderPickem();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -3664,6 +4175,23 @@ import { fitDuelExtra } from "./duel-extra.mjs";
           "路人打开回执且押过同一场，会按公开挑战在他们自己的记录里建账"
         ] },
         { h: "记录管理", p: "「我的 → 对决记录」查看全部对决：已发出的约战可再复制链接；败局有「再战一场」一键开新约战。对决记录只保存在本机。" }
+      ]
+    },
+    {
+      id: "pickem", icon: "🏆", title: "赛事竞猜", summary: "大型赛事整程竞猜（实验功能）",
+      sections: [
+        { h: "怎么玩", ul: [
+          "「设置 → 关于小程序 → <strong>实验功能</strong>」进入赛事竞猜",
+          "瑞士轮阶段（小组赛）：共 <strong>10 项选择</strong>——猜哪些队 <strong>3:0 晋级（2 支）</strong>、哪些队 <strong>3:1/3:2 晋级（6 支）</strong>、哪些队 <strong>0:3 淘汰（2 支）</strong>，不用猜对局路线；1:3/2:3 淘汰的 6 队由剩余队伍自动落位，仅供展示",
+          "淘汰赛阶段：对阵确定后逐场点选胜者（八强 4 场 → 半决赛 2 场 → 决赛 1 场）"
+        ] },
+        { h: "截止与结算", p: "每阶段在<strong>第一场开赛前 1 小时</strong>截止，截止前可随时修改（与单场竞猜一致）；阶段全部打完后自动结算，逐桶比对终局比分——猜进「3:0 晋级」的队伍要真以 3-0 出线才算对。" },
+        { h: "奖励", p: "每猜对 1 项 <strong>+2,000 沙粒</strong>；单阶段全对（10/10）再加 <strong>+20,000</strong>。奖励自动入账，随战绩云同步。" },
+        { h: "挑战币", ul: [
+          "🥉 铜币：提交过竞猜 · 🥈 银币：1 个阶段全对 · 🥇 金币：2 个阶段全对 · 💎 钻石币：3 个阶段全对",
+          "挑战币会记入<strong>成就殿堂 · 赛事</strong>分组，可装备称号上榜"
+        ] },
+        { h: "实验功能", warn: true, p: "参赛名单与赛果以赛事官方公布为准；本功能为实验功能，可能随时调整或下线，奖励口径如有调整以当期页面说明为准。" }
       ]
     },
     {
@@ -4153,6 +4681,9 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     renderRulesMenu();
     $("#aboutBackBtn").addEventListener("click", function () { goBack("settings"); });
     $("#openAboutBtn").addEventListener("click", function () { switchView("about"); });
+    // 实验功能（1.4.0）：关于页 → 实验功能列表 → 赛事竞猜
+    $("#openLabsBtn").addEventListener("click", function () { switchView("labs"); });
+    bindPickem();
     $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
 
     $("#openScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
@@ -4343,7 +4874,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   }
 
   /* ============================== 运行时数据 ============================== */
-  function applySnapshot(matches, meta, teams, teamColors, rosters) {
+  function applySnapshot(matches, meta, teams, teamColors, rosters, pickem) {
     if (!matches || !matches.length) return;
 
     var map = {};
@@ -4370,6 +4901,16 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     if (rosters) {
       Object.keys(rosters).forEach(function (key) { ROSTERS[key] = rosters[key]; });
     }
+    // Pick'Em 赛事只增不减（事件 id 键；同 id 新数据整体替换——聚合器每次全量重建，新数据更完整）
+    if (pickem && Array.isArray(pickem.events)) {
+      pickem.events.forEach(function (ev) {
+        if (!ev || !ev.id) return;
+        var hit = -1;
+        for (var i = 0; i < PICKEM.length; i++) { if (PICKEM[i].id === ev.id) { hit = i; break; } }
+        if (hit >= 0) PICKEM[hit] = ev;
+        else PICKEM.push(ev);
+      });
+    }
     applyTeamTheme(); // 主队的新色到了可能要换肤
     rebuildMatchIndex();
     if (meta && meta.updatedAt) DATA_UPDATED_AT = meta.updatedAt;
@@ -4377,6 +4918,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
 
     var events = settlePending();
     var duelDone = settleDuels();
+    var pkDone = settlePickem();
     renderDuelBanner(); // 数据刷新可能改变比赛状态（截止/开赛），横幅跟着收敛
     renderSelectors();
     renderAll();
@@ -4395,6 +4937,9 @@ import { fitDuelExtra } from "./duel-extra.mjs";
         (duelDone.length ? " · " + duelToastText(duelDone) : ""));
     } else if (duelDone.length) {
       setTimeout(function () { toast(duelToastText(duelDone)); }, 500);
+    }
+    if (pkDone.length) {
+      setTimeout(function () { toast(pickemToastText(pkDone)); }, events.length || duelDone.length ? 1000 : 500);
     }
   }
 
@@ -5241,6 +5786,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     maybeRestoreFromCloud(); // 云端较新则异步拉回覆盖，不阻塞首屏
     var events = settlePending();
     var duelDone = settleDuels();
+    var pkDone = settlePickem();
     bindEvents();
     bindHostEvents();
     bindOnboard();
@@ -5292,17 +5838,26 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     } else if (duelDone.length) {
       setTimeout(function () { toast(duelToastText(duelDone)); }, 500);
     }
+    if (pkDone.length) {
+      setTimeout(function () { toast(pickemToastText(pkDone)); }, events.length || duelDone.length ? 1000 : 500);
+    }
 
     // 每分钟刷新一次状态（到点自动截止、赛果更新后自动结算）
     setInterval(function () {
       var settledNow = settlePending();
+      var pkDone = settlePickem();
       renderSelectors();
       renderAll();
       if (!$("#view-schedule").hidden) renderSchedule();
+      if (!$("#view-pickem").hidden) renderPickem();
       if (settledNow.length) {
         syncBoards();
         var total = settledNow.reduce(function (s, e) { return s + e.pred.profit; }, 0);
         toast("已结算 " + settledNow.length + " 场预测 · " + (total >= 0 ? "+" : "") + fmtNum(total) + " 沙粒");
+        vibrate("medium");
+      }
+      if (pkDone.length) {
+        setTimeout(function () { toast(pickemToastText(pkDone)); }, settledNow.length ? 1000 : 0);
         vibrate("medium");
       }
     }, 60000);

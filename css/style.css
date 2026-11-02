@@ -3020,3 +3020,317 @@ html[data-theme="light"] .cer-quote input {
   line-height: 1.6;
   color: var(--text-faint);
 }
+
+/* ============================== Pick'Em 赛事竞猜（1.4.0 实验功能） ==============================
+   说明：追加在文件末尾（基础规则之后），本组自己的窄屏 media 块也放在本组基础规则之后。 */
+.pickem-evtabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: none;
+}
+.pickem-evtabs::-webkit-scrollbar { display: none; }
+.pickem-evtab {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pickem-evtab.is-active {
+  border-color: rgba(var(--accent-rgb), .5);
+  background: rgba(var(--accent-rgb), .1);
+  color: var(--accent);
+}
+.pickem-evhead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 14px;
+  min-width: 0;
+}
+.pickem-evname {
+  font-size: 16px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickem-evstatus {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-faint);
+}
+.pickem-evstatus.is-active { color: var(--win); border-color: rgba(53, 211, 154, .4); }
+.pickem-evstatus.is-upcoming { color: var(--accent); border-color: rgba(var(--accent-rgb), .4); }
+.pickem-evmeta { flex: 0 0 auto; font-size: 10px; color: var(--text-faint); }
+.pickem-coin {
+  margin-top: 8px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+.pickem-coin.has {
+  border-style: solid;
+  border-color: rgba(var(--accent-rgb), .35);
+  background: rgba(var(--accent-rgb), .07);
+  color: var(--text);
+}
+.pickem-stage {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+.pickem-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pickem-stage-head b { font-size: 14px; font-weight: 800; }
+.pickem-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.pickem-badge.is-open { color: var(--accent); }
+.pickem-badge.is-locked { color: var(--text-dim); }
+.pickem-badge.is-done { color: var(--win); }
+.pickem-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+.pickem-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.pickem-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.pickem-chip .avatar { width: 20px; height: 20px; border-radius: 6px; font-size: 8px; }
+.pickem-bucket { margin-top: 12px; }
+.pickem-bucket-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pickem-bucket-head span { font-size: 12px; font-weight: 800; }
+.pickem-bucket.is-win .pickem-bucket-head span { color: var(--win); }
+.pickem-bucket.is-lose .pickem-bucket-head span { color: var(--lose); }
+.pickem-bucket-head b { font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.pickem-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.pickem-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 4px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  text-align: center;
+}
+.pickem-slot:disabled { cursor: default; }
+.pickem-slot.is-filled {
+  border-style: solid;
+  border-color: var(--border-soft);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.pickem-slot[data-pkslot]:active { border-color: rgba(var(--accent-rgb), .5); }
+.pickem-slot.is-hit {
+  border-color: rgba(53, 211, 154, .55);
+  background: rgba(53, 211, 154, .08);
+}
+.pickem-slot.is-miss {
+  border-color: rgba(255, 93, 108, .45);
+  background: rgba(255, 93, 108, .06);
+}
+.pickem-slot.is-result { opacity: .62; }
+.pickem-slot .avatar { width: 30px; height: 30px; border-radius: 9px; }
+.pickem-slot-name {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickem-slot-empty { font-size: 16px; line-height: 30px; opacity: .55; }
+.pickem-mark {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.pickem-mark.hit { color: var(--win); }
+.pickem-mark.miss { color: var(--lose); }
+.pickem-mark.plain { color: var(--text-faint); }
+.pickem-stage-acts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+.pickem-progress { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.pickem-round-label {
+  margin-top: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-dim);
+  letter-spacing: .04em;
+}
+.pickem-match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pickem-match-time {
+  flex: 0 0 auto;
+  width: 74px;
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.pickem-match-sides {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pickem-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+.pickem-side > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickem-side .avatar { width: 26px; height: 26px; border-radius: 8px; flex: 0 0 auto; }
+.pickem-side.is-tbd {
+  border-style: dashed;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+  justify-content: center;
+}
+.pickem-side.is-picked {
+  border-color: rgba(var(--accent-rgb), .55);
+  background: rgba(var(--accent-rgb), .1);
+}
+.pickem-side.is-winner { border-color: rgba(53, 211, 154, .5); }
+.pickem-side:disabled { cursor: default; opacity: .85; }
+.pickem-vs { flex: 0 0 auto; font-size: 10px; font-weight: 800; color: var(--text-faint); }
+.pickem-match .pickem-mark { flex: 0 0 auto; font-size: 12px; }
+.pickem-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 4px 2px 8px;
+}
+.pickem-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.pickem-picker-row .avatar { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; }
+.pickem-picker-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickem-picker-where { flex: 0 0 auto; font-size: 10px; color: var(--text-faint); }
+.pickem-picker-row.is-assigned { opacity: .78; }
+.pickem-picker-row.is-current { border-color: rgba(var(--accent-rgb), .55); }
+.pickem-picker-row.is-remove {
+  border-color: rgba(255, 93, 108, .4);
+  color: var(--lose);
+  font-weight: 700;
+  justify-content: center;
+}
+
+/* Pick'Em 窄屏（≤374px）：五桶收紧间距，淘汰赛时间列收窄 */
+@media (max-width: 374px) {
+  .pickem-slot-grid { gap: 4px; }
+  .pickem-slot { padding: 7px 2px 6px; }
+  .pickem-slot .avatar { width: 26px; height: 26px; border-radius: 8px; }
+  .pickem-match-time { width: 62px; font-size: 9px; }
+}
+

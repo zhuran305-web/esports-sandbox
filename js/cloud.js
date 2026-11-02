@@ -472,7 +472,8 @@ export var Sync = {
           minBankroll: typeof state.minBankroll === "number" ? state.minBankroll : 0, // 历史最低余额（lifetime 极值）
           title: typeof state.title === "string" ? state.title : undefined,          // 装备称号（undefined=未配置，沿用榜上旧值）
           mainTeam: typeof state.mainTeam === "string" ? state.mainTeam : undefined, // 主队三态：undefined=从未设置（不碰榜上旧值）、""=已取消（权威清空）
-          mainLevels: state.mainLevels || {} // 主队等级累计（1.2.12，{键: 押过场次}，逐键 max 合并）
+          mainLevels: state.mainLevels || {}, // 主队等级累计（1.2.12，{键: 押过场次}，逐键 max 合并）
+          pickem: state.pickem || {}          // Pick'Em 竞猜记录（1.4.0，选择极小；冲突合并见 app.js#applyCloudRecord）
         }
       });
     }

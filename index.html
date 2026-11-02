@@ -330,6 +330,31 @@
         <div id="matchDetailBody"></div>
       </section>
 
+      <!-- 实验功能（关于小程序入口，1.4.0） -->
+      <section class="view" id="view-labs" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="labsBackBtn" type="button" aria-label="返回关于小程序">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">实验功能</h1>
+        </div>
+        <div class="settings-group" id="labsList"></div>
+        <p class="settings-footer">实验功能可能随时调整或下线 · 欢迎在评论区反馈</p>
+      </section>
+
+      <!-- 赛事竞猜 Pick'Em（实验功能 1.4.0：瑞士轮五桶 + 淘汰赛逐场） -->
+      <section class="view" id="view-pickem" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="pickemBackBtn" type="button" aria-label="返回实验功能">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">赛事竞猜</h1>
+          <span class="section-sub" id="pickemCoin"></span>
+        </div>
+        <div class="pickem-evtabs" id="pickemEvtabs" hidden></div>
+        <div id="pickemBody"></div>
+      </section>
+
       <!-- 排行榜 -->
       <section class="view" id="view-board" hidden>
         <h1 class="page-title">排行榜</h1>
@@ -544,6 +569,18 @@
             </span>
             <span class="settings-row-label">清除本地数据</span>
             <span class="settings-row-value" id="clearDataHint">重置全部</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+
+        <!-- 实验功能（1.4.0）：正在试验的新玩法入口 -->
+        <div class="settings-group">
+          <button class="settings-row" id="openLabsBtn" type="button">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v6.5L4.5 18a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L14 8.5V2"/><path d="M8.5 2h7M7.5 14h9"/></svg>
+            </span>
+            <span class="settings-row-label">实验功能</span>
+            <span class="settings-row-value">新玩法试玩</span>
             <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
           </button>
         </div>
@@ -765,6 +802,23 @@
       <div class="sheet-actions">
         <button class="primary-btn" id="duelHelpOk" type="button">知道了</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Pick'Em 桶位选择器（实验功能 1.4.0）：复用 sheet-backdrop（自带 [hidden] 补丁），pagehide 自动关闭已注册 OVERLAY_SELECTORS -->
+  <div class="sheet-backdrop" id="pickemSheet" hidden>
+    <div class="sheet pickem-sheet" role="dialog" aria-modal="true" aria-labelledby="pickemSheetTitle">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <h2 id="pickemSheetTitle">选择队伍</h2>
+          <p id="pickemSheetMeta" class="sheet-meta"></p>
+        </div>
+        <button class="icon-btn" id="pickemSheetClose" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="pickem-picker" id="pickemSheetList"></div>
     </div>
   </div>
 

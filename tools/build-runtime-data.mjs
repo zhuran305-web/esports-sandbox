@@ -49,8 +49,18 @@ raw.matches.forEach(function (m) {
     if (e && Array.isArray(e.players) && e.players.length && !rosters[key]) rosters[key] = e.players;
   });
 });
+// Pick'Em 赛事聚合（1.4.0 实验功能）：fetch-pickem 的累积缓存整体进 runtime；
+// 事件内部自带全部队伍/赛程/赛果，与 matches 的时间窗无关（major 跨 2-3 周）
+var pickem = { v: 1, events: [] };
+var pickemPath = path.join(ROOT, "data", "pickem.json");
+if (existsSync(pickemPath)) {
+  try {
+    var pickemRaw = JSON.parse(await readFile(pickemPath, "utf8"));
+    if (pickemRaw && Array.isArray(pickemRaw.events)) pickem = { v: 1, events: pickemRaw.events };
+  } catch (e) { pickem = { v: 1, events: [] }; }
+}
 var updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString();
-var hash = createHash("sha256").update(JSON.stringify({ teams: teams, teamColors: teamColors, rosters: rosters, matches: matches })).digest("hex");
+var hash = createHash("sha256").update(JSON.stringify({ teams: teams, teamColors: teamColors, rosters: rosters, pickem: pickem, matches: matches })).digest("hex");
 var meta = {
   schemaVersion: 1,
   updatedAt: updatedAt,
@@ -58,9 +68,10 @@ var meta = {
   teamCount: Object.keys(teams).length,
   teamColorCount: Object.keys(teamColors).length,
   rosterCount: Object.keys(rosters).length,
+  pickemCount: pickem.events.length,
   hash: hash
 };
-var body = JSON.stringify({ updatedAt: updatedAt, teams: teams, teamColors: teamColors, rosters: rosters, matches: matches });
+var body = JSON.stringify({ updatedAt: updatedAt, teams: teams, teamColors: teamColors, rosters: rosters, pickem: pickem, matches: matches });
 
 await mkdir(OUT, { recursive: true });
 await writeFile(path.join(OUT, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
@@ -69,5 +80,6 @@ await writeFile(path.join(OUT, "matches.json"), body + "\n", "utf8");
 console.log(
   "[runtime] " + matches.length + " 场 · " + Object.keys(teams).length + " 支队标 · " +
   Object.keys(teamColors).length + " 支主题色 · " + Object.keys(rosters).length + " 套阵容 · " +
+  pickem.events.length + " 个 Pick'Em 赛事 · " +
   (body.length / 1048576).toFixed(2) + " MiB · hash " + hash.slice(0, 12)
 );

@@ -461,7 +461,7 @@ check("分享卡跟队色：shareThemeColors 提亮防线 + 三处应用",
   /theme \? "rgba\(" \+ theme\.rgb \+ ", \.3\)" : "rgba\(255,255,255,\.07\)"/.test(appSrc));
 check("全部竞猜记录页：DOM + 视图接线 + 渲染与分享委托",
   /id="view-history"/.test(htmlSrc) && /id="historyAllBtn"/.test(htmlSrc) && /id="historyBackBtn"/.test(htmlSrc) &&
-  /name === "codex" \|\| name === "history" \|\| name === "match"/.test(appSrc) && /"history", "match"\]\.forEach/.test(appSrc) &&
+  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) && /"match", "labs", "pickem"\]\.forEach/.test(appSrc) &&
   /function renderHistoryFull/.test(appSrc) && /name === "history"\) renderHistoryFull/.test(appSrc) &&
   /historySettledList"\)\.addEventListener/.test(appSrc));
 check("竞猜快照：下注落账冗余存队名/赛事 + 归档降级渲染",
@@ -478,8 +478,8 @@ check("采集器：location→region + end_at 采集 + normalize 白名单放行
   /region: cur\[side\]\.region/.test(libSrc));
 check("比赛详情页：DOM + 视图接线 + 渲染与操作委托",
   /id="view-match"/.test(htmlSrc) && /id="matchBackBtn"/.test(htmlSrc) && /id="matchDetailBody"/.test(htmlSrc) &&
-  /name === "codex" \|\| name === "history" \|\| name === "match"/.test(appSrc) &&
-  /"history", "match"\]\.forEach/.test(appSrc) &&
+  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) &&
+  /"match", "labs", "pickem"\]\.forEach/.test(appSrc) &&
   /function renderMatchDetail/.test(appSrc) && /name === "match"\) renderMatchDetail/.test(appSrc) &&
   /scheduleList"\)\.addEventListener/.test(appSrc) && /view-match"\)\.addEventListener/.test(appSrc) &&
   /matchBackBtn"\)\.addEventListener/.test(appSrc) && /goBack\("schedule"\)/.test(appSrc));
@@ -565,6 +565,134 @@ check("rosters 链路静态：工具 + workflow + build/trim 切片 + 客户端�
   /function normalizeRosters/.test(dsSrc) && /rosters: normalizeRosters\(cached\)/.test(dsSrc) &&
   /roster-list/.test(appSrc) && /roster-row/.test(cssSrc) &&
   /公开赛果平台数据/.test(appSrc));
+
+/* ---------- 场景 V：1.4.0 Pick'Em 赛事竞猜（js/pickem.js 纯函数直跑） ---------- */
+console.log("V. Pick'Em 赛事竞猜：");
+var PK = await import(pathToFileURL(path.join(root, "js", "pickem.js")).href);
+
+function mkTeams(prefix) {
+  var arr = [];
+  for (var i = 0; i < 16; i++) arr.push({ name: prefix + (i + 1), short: "T" + (i + 1), region: "xx", logo: "", w: 0, l: 0 });
+  return arr;
+}
+function iso(msFromNow) { return new Date(Date.now() + msFromNow).toISOString(); }
+var T16 = mkTeams("队");
+var SWISS_RESULTS = {
+  adv30: ["队1", "队2"], adv: ["队3", "队4", "队5", "队6", "队7", "队8"],
+  out23: ["队9", "队10", "队11"], out13: ["队12", "队13", "队14"], out03: ["队15", "队16"]
+};
+function mkSwissStage(startsAtMs, teams) {
+  return { id: "s1", type: "swiss", label: "第一阶段", startsAt: iso(startsAtMs), endsAt: "", teams: teams || T16,
+    matches: [{ id: "m1", a: "队1", b: "队2", startAt: iso(startsAtMs), winner: "", score: "" }], results: null };
+}
+function fullPicks() { return JSON.parse(JSON.stringify(SWISS_RESULTS)); }
+
+check("数据规范：normalizePickemData 脏事件整条丢弃 + 事件数封顶 8",
+  PK.normalizePickemData({ events: [null, { id: "e1", game: "cs2", name: "E", status: "active", stages: [{ id: "s1", type: "swiss", label: "L", teams: T16, matches: [] }] }, { id: "bad" }, { id: "e2", stages: [] }] }).events.length === 1 &&
+  (function () { var many = []; for (var i = 0; i < 12; i++) many.push({ id: "e" + i, stages: [{ id: "s", type: "swiss", label: "L", teams: [], matches: [] }] }); return PK.normalizePickemData({ events: many }).events.length === 8; })());
+check("截止边界：开赛前 1 小时（镜像 statusOf 的 3600000 语义）+ 队伍未齐不可猜",
+  PK.stageOpenForPicks(mkSwissStage(61 * 60 * 1000), Date.now()) === true &&
+  PK.stageOpenForPicks(mkSwissStage(59 * 60 * 1000), Date.now()) === false &&
+  PK.stageOpenForPicks(mkSwissStage(2 * 3600000, T16.slice(0, 15)), Date.now()) === false);
+check("选择完整性：五桶恰好满 / 桶内重复 / 缺员 均按语义判定",
+  PK.swissPicksComplete(fullPicks()) === true &&
+  (function () { var p = fullPicks(); p.adv30 = ["队1", "队1"]; return PK.swissPicksComplete(p) === false; })() &&
+  (function () { var p = fullPicks(); p.adv.pop(); return PK.swissPicksComplete(p) === false; })());
+check("计分（瑞士轮）：逐桶位置语义——猜进 3:0 桶的队必须真 3-0 出线；全对加成 +20,000",
+  (function () {
+    var r = PK.scorePhase({ id: "s1", type: "swiss", label: "L", teams: T16, matches: [], results: SWISS_RESULTS }, { type: "swiss", picks: fullPicks() });
+    return r && r.correct === 10 && r.total === 10 && r.perfect && r.prize === 10 * 2000 + 20000;
+  })() &&
+  (function () {
+    var p = fullPicks();
+    p.adv30 = ["队1", "队3"];  // 队3 实际 3-1/3-2 晋级：放 3:0 桶不算对
+    p.adv = ["队2", "队4", "队5", "队6", "队7", "队8"]; // 队2 实际 3-0：放 adv 桶也不算对
+    var r = PK.scorePhase({ id: "s1", type: "swiss", label: "L", teams: T16, matches: [], results: SWISS_RESULTS }, { type: "swiss", picks: p });
+    return r && r.correct === 8 && !r.perfect && r.prize === 16000;
+  })());
+check("计分（淘汰赛）：逐场胜者比对 + 未猜场次不计对不扣分",
+  (function () {
+    var stage = { id: "po", type: "bracket", label: "淘汰赛", startsAt: iso(-86400000), endsAt: "", teams: T16.slice(0, 4), rounds: ["四分之一决赛", "半决赛", "决赛"], degraded: false,
+      matches: [
+        { id: "qf1", a: "队1", b: "队2", startAt: iso(-86400000), winner: "A", score: "", round: 0 },
+        { id: "qf2", a: "队3", b: "队4", startAt: iso(-82800000), winner: "B", score: "", round: 0 },
+        { id: "sf1", a: "队1", b: "队4", startAt: iso(-3600000), winner: "A", score: "", round: 1 }
+      ] };
+    var r = PK.scorePhase(stage, { type: "bracket", picks: { w: { qf1: "A", qf2: "A", sf1: "A" } } });
+    var r2 = PK.scorePhase(stage, { type: "bracket", picks: { w: { qf1: "B" } } });
+    return r && r.correct === 2 && r.total === 3 && r2 && r2.correct === 0 && r2.total === 3 && r2.prize === 0;
+  })());
+check("挑战币：未参与=无 / 参与=铜 / 全对 1/2/3+ 阶段=银/金/钻",
+  PK.pickemCoinOf({}).tier === 0 &&
+  PK.pickemCoinOf({ "e:s": { type: "swiss", picks: { adv30: ["队1"] }, pickedAt: 1, settled: false } }).tier === 1 &&
+  PK.pickemCoinOf({ "e:s": { type: "swiss", picks: { adv30: ["队1"] }, pickedAt: 1, settled: true, score: 10, total: 10, prize: 40000 } }).tier === 2 &&
+  (function () {
+    var st = {};
+    for (var i = 0; i < 3; i++) st["e" + i + ":s"] = { type: "swiss", picks: { adv30: ["队1"] }, pickedAt: 1, settled: true, score: 10, total: 10, prize: 40000 };
+    return PK.pickemCoinOf(st).tier === 4;
+  })());
+check("云合并：pickedAt 较新者胜选择内容 + settled 取 OR 且奖励随已结算侧",
+  (function () {
+    var local = { "e:s": { type: "swiss", picks: { adv30: ["队1"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 100, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 } };
+    var cloud = { "e:s": { type: "swiss", picks: { adv30: ["队2"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 200, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 } };
+    return PK.mergePickem(local, cloud)["e:s"].picks.adv30[0] === "队2";
+  })() &&
+  (function () {
+    var local = { "e:s": { type: "swiss", picks: { adv30: ["队1"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 300, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 } };
+    var cloud = { "e:s": { type: "swiss", picks: { adv30: ["队2"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 100, settled: true, settledAt: 50, score: 7, total: 10, prize: 14000 } };
+    var m = PK.mergePickem(local, cloud)["e:s"];
+    return m.settled === true && m.score === 7 && m.prize === 14000;
+  })() &&
+  (function () {
+    // 脏记录（未知 type / picks 形状错）整条丢弃，不污染本地
+    var m = PK.mergePickem({}, { bad: { type: "???", picks: {} }, "e:s": { type: "swiss", picks: "垃圾", pickedAt: 1, settled: false } });
+    return !m.bad && m["e:s"] && Array.isArray(m["e:s"].picks.adv30);
+  })());
+
+/* ---------- 场景 W：1.4.0 Pick'Em 接线静态断言 ---------- */
+console.log("W. Pick'Em 接线：");
+var achvSrc = rf(path.join(root, "js", "achv.js"), "utf8");
+var cloudSrc = rf(path.join(root, "js", "cloud.js"), "utf8");
+var fpkSrc = rf(path.join(root, "tools", "fetch-pickem.mjs"), "utf8");
+var pickemJsSrc = rf(path.join(root, "js", "pickem.js"), "utf8");
+check("数据链路：fetch-pickem 聚合 → build/trim 切片（hash 计入）→ data-source normalize → app PICKEM",
+  /adv30: \[队名\]/.test(fpkSrc) && /DEFAULT_SWISS_BUCKETS/.test(fpkSrc) && /KEEP_DONE_DAYS = 30/.test(fpkSrc) &&
+  /pickem: pickem/.test(buildSrc) && /pickemCount: pickem\.events\.length/.test(buildSrc) &&
+  /pickem: \(function \(\)/.test(trimSrc) &&
+  /function normalizePickemData/.test(pickemJsSrc) && /normalizePickemData/.test(dsSrc) &&
+  /var PICKEM = normalizePickemData\(DATA\.pickem\)\.events/.test(appSrc) &&
+  /pickem\.events\.forEach\(function \(ev\)/.test(appSrc) &&
+  /pickem, matches: matches/.test(buildSrc));
+check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册（[hidden] 补丁随 sheet-backdrop 继承）",
+  /id="view-labs"/.test(htmlSrc) && /id="view-pickem"/.test(htmlSrc) && /id="labsList"/.test(htmlSrc) &&
+  /id="pickemEvtabs"/.test(htmlSrc) && /id="pickemBody"/.test(htmlSrc) &&
+  /id="pickemSheet"/.test(htmlSrc) && /id="pickemSheetList"/.test(htmlSrc) &&
+  /id="openLabsBtn"/.test(htmlSrc) && /id="labsBackBtn"/.test(htmlSrc) && /id="pickemBackBtn"/.test(htmlSrc) &&
+  /name === "labs" \|\| name === "pickem"/.test(appSrc) &&
+  /"match", "labs", "pickem"\]\.forEach/.test(appSrc) &&
+  /name === "labs"\) renderLabs/.test(appSrc) && /name === "pickem"\) renderPickem/.test(appSrc) &&
+  /function bindPickem/.test(appSrc) && /bindPickem\(\);/.test(appSrc) &&
+  /"#pickemSheet"/.test(appSrc));
+check("状态与结算：state.pickem 全链（init/load/快照/校验/云合并）+ settlePickem 四挂点 + Sync.pack 白名单",
+  /mainLevels: \{\}, pickem: \{\}/.test(appSrc) &&
+  /pickem: normalizePickemState\(parsed\.pickem\)/.test(appSrc) &&
+  /state\.mainLevels, state\.pickem\]/.test(appSrc) &&
+  /state\.pickem = normalizePickemState\(state\.pickem\)/.test(appSrc) &&
+  /pickem: mergePickem\(localPickem, s\.pickem\)/.test(appSrc) &&
+  /function settlePickem/.test(appSrc) &&
+  (appSrc.match(/settlePickem\(\)/g) || []).length >= 4 &&
+  /pickem: state\.pickem \|\| \{\}/.test(cloudSrc));
+check("workflow：fetch-pickem 步骤 + 显式 continue-on-error（假设 77）+ Release 资产恢复/上传",
+  /Fetch pickem events/.test(umSrc) && /node tools\/fetch-pickem\.mjs/.test(umSrc) &&
+  /Fetch pickem events/.test(bfSrc) && /node tools\/fetch-pickem\.mjs/.test(bfSrc) &&
+  /pattern pickem\.json/.test(umSrc) && /pattern pickem\.json/.test(bfSrc) &&
+  /Upload pickem data/.test(umSrc) && /data\/pickem\.json --clobber/.test(bfSrc));
+check("玩法/成就/样式：pickem topic + 赛事成就组（铜银金钻）+ css 关键类",
+  /id: "pickem", icon: "🏆"/.test(appSrc) && /实验功能/.test(appSrc) &&
+  /g: "赛事"/.test(achvSrc) && /pickem_first/.test(achvSrc) && /pickem_diamond/.test(achvSrc) &&
+  /pickemSubmitted/.test(appSrc) && /pickemPerfect/.test(appSrc) &&
+  /pickem-slot-grid/.test(cssSrc) && /pickem-bucket/.test(cssSrc) && /pickem-side\.is-picked/.test(cssSrc) &&
+  /pickem-picker-row/.test(cssSrc) && /PICKEM_BUCKETS/.test(appSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

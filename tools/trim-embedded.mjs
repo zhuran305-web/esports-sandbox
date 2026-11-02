@@ -87,6 +87,17 @@ var out = {
     });
     return out;
   })(),
+  // Pick'Em 赛事聚合（1.4.0）：整体进内嵌数据，不参与时间窗裁剪——major 跨 2-3 周，
+  // 早期阶段会被窗口过滤掉，冷启动离线也要能看到完整赛事
+  pickem: (function () {
+    var p = path.join(ROOT, "data", "pickem.json");
+    if (!existsSync(p)) return { v: 1, events: [] };
+    try {
+      var raw = JSON.parse(readFileSync(p, "utf8"));
+      if (raw && Array.isArray(raw.events)) return { v: 1, events: raw.events };
+    } catch (e) { /* 脏数据当空 */ }
+    return { v: 1, events: [] };
+  })(),
   matches: stripTeamLogos(matches)
 };
 

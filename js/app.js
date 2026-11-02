@@ -827,7 +827,8 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     var games = gameList();
     if (currentGame !== "all" && games.indexOf(currentGame) === -1) currentGame = "all";
 
-    var windowMatches = MATCHES.filter(inHomeWindow);
+    // 计数与列表同口径（homeListMatches）：已结束且未预测的场次不在列表里，也不能算进 tile 计数
+    var windowMatches = homeListMatches();
     var allCount = windowMatches.length;
     var filteredCount = matchesFiltered().length;
     var meta = currentGame === "all"
@@ -849,9 +850,23 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     $("#gameGrid").innerHTML = html;
   }
 
-  function tournamentBase() {
+  // 主页列表口径（1.3.2）：窗口内 + 剔除「已结束且（未预测 或 超过 1 天）」。
+  // 选择器计数必须走这里——否则会出现「全部赛事/游戏里显示 N 场、列表 0 张卡」（用户反馈）。
+  // matchesFiltered 的逐条过滤与此保持一致（改口径时两处一起改）。
+  function homeListMatches() {
+    var dayAgo = Date.now() - 86400000;
     return MATCHES.filter(function (m) {
-      return inHomeWindow(m) && (currentGame === "all" || m.game === currentGame);
+      if (!inHomeWindow(m)) return false;
+      var st = statusOf(m);
+      if (st === "finished" && (!predictionFor(m.id) || new Date(m.startAt).getTime() < dayAgo)) return false;
+      return true;
+    });
+  }
+
+  function tournamentBase() {
+    var list = homeListMatches();
+    return list.filter(function (m) {
+      return currentGame === "all" || m.game === currentGame;
     });
   }
 

@@ -42,6 +42,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
       - name: Restore previous snapshot
         id: restore
@@ -77,9 +78,14 @@ jobs:
           fi
 
       # 队伍主题色（1.2.11）：增量提色，失败仅少颜色不阻塞数据；OSS 缓存累积，每轮只处理新队
+      # 1.3.1 修复：之前漏装依赖（sharp 缺失导致整步失败、把数据发布一起拖死 8 轮）——
+      # 现在先 npm ci（带缓存）再提色，且 continue-on-error 兜底：提色出问题也绝不影响数据发布
       - name: Extract team colors
         if: env.OSS_ACCESS_KEY_ID != ''
-        run: node tools/extract-team-colors.mjs --oss
+        continue-on-error: true
+        run: |
+          npm ci --no-audit --no-fund
+          node tools/extract-team-colors.mjs --oss
 
       - name: Build runtime data
         run: node tools/build-runtime-data.mjs

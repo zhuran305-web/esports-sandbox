@@ -68,6 +68,25 @@ var out = {
     });
     return out;
   })(),
+  // 窗口内队伍的选手阵容切片（fetch-team-rosters 的缓存；离线冷启动也能看阵容）
+  rosters: (function () {
+    var out = {};
+    var all = {};
+    var p = path.join(ROOT, "data", "team-rosters.json");
+    if (existsSync(p)) {
+      try { all = JSON.parse(readFileSync(p, "utf8")) || {}; } catch (e) { all = {}; }
+    }
+    matches.forEach(function (m) {
+      ["teamA", "teamB"].forEach(function (side) {
+        var t = m[side];
+        if (!t || !t.name) return;
+        var key = m.game + ":" + t.name;
+        var e = all[key];
+        if (e && Array.isArray(e.players) && e.players.length && !out[key]) out[key] = e.players;
+      });
+    });
+    return out;
+  })(),
   matches: stripTeamLogos(matches)
 };
 

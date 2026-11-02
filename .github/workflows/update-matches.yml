@@ -53,6 +53,9 @@ jobs:
           if gh release view data >/dev/null 2>&1; then
             gh release download data --pattern matches.json --dir data --clobber \
               || echo "release 存在但还没有 matches.json 资产，从空数据开始"
+            # 队伍 id 映射（1.3.2 选手阵容）：可选资产，缺失时从空累积
+            gh release download data --pattern team-ids.json --dir data --clobber \
+              || echo "还没有 team-ids.json 资产，从空累积"
           else
             echo "首次运行：还没有 data release，从空数据开始"
           fi
@@ -101,6 +104,17 @@ jobs:
           cp runtime/matches.json "$RUNNER_TEMP/runtime-matches.json"
           cp runtime/meta.json "$RUNNER_TEMP/runtime-meta.json"
           gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber
+
+      # 队伍 id 映射（1.3.2）：无条件上传（若挂在「数据变化」条件下，无变化的首轮会漏传）；
+      # 文件不存在（首次运行前）跳过
+      - name: Upload team ids
+        if: hashFiles('data/team-ids.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view data >/dev/null 2>&1 \
+            || gh release create data --title "赛事数据" --notes "由 GitHub Actions 自动更新，请勿手动编辑。"
+          gh release upload data data/team-ids.json --clobber
 
       # 防漂移（2026-10-25 事故）：变化检测以 Release 为基准，OSS 若因故脱节会被
       # 「无变化」永久卡住。这里无条件比对 OSS 线上 meta hash，不一致即同步。

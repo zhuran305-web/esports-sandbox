@@ -75,6 +75,29 @@ function normalizeTeamColors(raw) {
   return out;
 }
 
+// 战队选手阵容（1.3.2）：{ "game:name": { pid, players: [{n 职业ID, r 位置, l 国籍}] } }。脏数据整队丢弃
+var MAX_ROSTERS = 1500;
+function normalizeRosters(raw) {
+  var src = raw && raw.rosters;
+  if (!src || typeof src !== "object") return {};
+  var out = {};
+  var n = 0;
+  Object.keys(src).forEach(function (key) {
+    if (n >= MAX_ROSTERS) return;
+    var e = src[key];
+    if (!e || !Array.isArray(e.players)) return;
+    var players = e.players.filter(function (p) {
+      return p && typeof p.n === "string" && p.n;
+    }).slice(0, 5).map(function (p) {
+      return { n: p.n, r: typeof p.r === "string" ? p.r : "", l: typeof p.l === "string" ? p.l : "" };
+    });
+    if (!players.length) return;
+    out[key] = { pid: typeof e.pid === "number" ? e.pid : 0, players: players };
+    n++;
+  });
+  return out;
+}
+
 function baseUrl() {
   return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/";
 }
@@ -97,16 +120,18 @@ export async function loadCachedSnapshot() {
     matches: matches,
     teams: normalizeTeams(cached),
     teamColors: normalizeTeamColors(cached),
+    rosters: normalizeRosters(cached),
     checkedAt: typeof cached.checkedAt === "number" ? cached.checkedAt : 0
   };
 }
 
-async function saveCache(meta, matches, teams, teamColors, checkedAt) {
+async function saveCache(meta, matches, teams, teamColors, rosters, checkedAt) {
   return storageSet(CACHE_KEY, {
     meta: meta,
     matches: matches,
     teams: teams,
     teamColors: teamColors,
+    rosters: rosters,
     checkedAt: checkedAt
   });
 }
@@ -131,6 +156,7 @@ export async function fetchRemoteSnapshot(options) {
       matches: cached.matches,
       teams: cached.teams,
       teamColors: cached.teamColors,
+      rosters: cached.rosters,
       checkedAt: cached.checkedAt,
       fromCache: true,
       skipped: true
@@ -148,12 +174,13 @@ export async function fetchRemoteSnapshot(options) {
   if (cached && cached.meta.hash === meta.hash && cached.meta.updatedAt === meta.updatedAt) {
     // 数据未变化：也刷新 checkedAt，让 maxAge 节流在下一轮生效（每轮轮询只花一次 meta 探测）
     cached.checkedAt = Date.now();
-    await saveCache(meta, cached.matches, cached.teams, cached.teamColors, cached.checkedAt);
+    await saveCache(meta, cached.matches, cached.teams, cached.teamColors, cached.rosters, cached.checkedAt);
     return {
       meta: meta,
       matches: cached.matches,
       teams: cached.teams,
       teamColors: cached.teamColors,
+      rosters: cached.rosters,
       checkedAt: cached.checkedAt,
       fromCache: true
     };
@@ -173,9 +200,10 @@ export async function fetchRemoteSnapshot(options) {
   if (!matches) return { error: "INVALID_MATCHES" };
   var teams = normalizeTeams(raw);
   var teamColors = normalizeTeamColors(raw);
+  var rosters = normalizeRosters(raw);
 
   var checkedAt = Date.now();
-  var cachedOk = await saveCache(meta, matches, teams, teamColors, checkedAt);
+  var cachedOk = await saveCache(meta, matches, teams, teamColors, rosters, checkedAt);
   if (!cachedOk) {
     // 整包约 1.2 MiB，宿主可能对单值设 UTF-8 字节配额；失败只影响下次启动需重下
     console.warn("[data] 快照缓存写入失败，下次启动会重新下载整包");
@@ -185,6 +213,7 @@ export async function fetchRemoteSnapshot(options) {
     matches: matches,
     teams: teams,
     teamColors: teamColors,
+    rosters: rosters,
     checkedAt: checkedAt,
     fromCache: false
   };

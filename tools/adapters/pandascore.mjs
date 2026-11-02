@@ -136,9 +136,20 @@ export async function collectPandascore(options) {
   var rangeParam = "range%5Bbegin_at%5D=" +
     encodeURIComponent(new Date(from).toISOString() + "," + new Date(to).toISOString());
 
+  // 队伍 id 累积（1.3.2 选手阵容）：game:name → PandaScore team id，供 fetch-team-rosters 拉花名册
+  var teamIds = {};
+
   function inWindow(raw) {
     var t = new Date(raw.startAt).getTime();
     return t >= from && t <= to;
+  }
+
+  function recordTeamIds(item, game) {
+    var opponents = item.opponents || [];
+    [opponents[0], opponents[1]].forEach(function (side) {
+      var op = side && side.opponent;
+      if (op && op.id && op.name) teamIds[game + ":" + op.name] = op.id;
+    });
   }
 
   for (var i = 0; i < games.length; i++) {
@@ -155,6 +166,7 @@ export async function collectPandascore(options) {
           token
         );
         upcoming.forEach(function (item) {
+          recordTeamIds(item, game);
           var raw = toRaw(item, game);
           if (!raw || !inWindow(raw)) return;
           var normalized = normalizeMatch(raw, "pandascore");
@@ -176,6 +188,7 @@ export async function collectPandascore(options) {
           token
         );
         past.forEach(function (item) {
+          recordTeamIds(item, game);
           var raw = toRaw(item, game);
           if (!raw || !inWindow(raw)) return;
           var normalized = normalizeMatch(raw, "pandascore");
@@ -189,7 +202,7 @@ export async function collectPandascore(options) {
     }
   }
 
-  return { matches: matches, count: matches.length, errors: errors };
+  return { matches: matches, count: matches.length, errors: errors, teamIds: teamIds };
 }
 
 export { toRaw };

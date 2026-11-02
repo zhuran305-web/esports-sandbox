@@ -17,6 +17,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFile, writeFile } from "node:fs/promises";
 import { collectManual } from "./adapters/manual.mjs";
 import { collectLiquipedia } from "./adapters/liquipedia.mjs";
 import { collectPandascore } from "./adapters/pandascore.mjs";
@@ -59,6 +60,7 @@ async function main() {
   var enabled = args.only ? new Set(args.only) : null;
   var sources = [];
   var allIncoming = [];
+  var pandaTeamIds = null; // PandaScore 队伍 id 累积（1.3.2 选手阵容）
 
   console.log(
     "赛事采集器启动 · 未来 " + args.days + " 天 · 过去 " + args.pastDays + " 天 · " +
@@ -86,6 +88,7 @@ async function main() {
     });
     sources.push({ name: "pandascore", count: panda.count, skipped: panda.skipped, errors: panda.errors });
     allIncoming = allIncoming.concat(panda.matches);
+    pandaTeamIds = panda.teamIds || {};
   }
 
   var existing = await readExisting(ROOT);
@@ -124,6 +127,23 @@ async function main() {
 
   await writeOutputs(ROOT, merged.matches);
   console.log("\n已写入 data/matches.json");
+
+  // 队伍 id 累积（1.3.2 选手阵容）：game:name → PandaScore team id，供 fetch-team-rosters 拉花名册
+  if (pandaTeamIds && Object.keys(pandaTeamIds).length) {
+    var idsPath = path.join(ROOT, "data/team-ids.json");
+    var known = {};
+    try {
+      known = JSON.parse(await readFile(idsPath, "utf8")) || {};
+    } catch (e) { /* 首次没有该文件 */ }
+    var addedIds = 0;
+    Object.keys(pandaTeamIds).forEach(function (k) {
+      if (known[k] !== pandaTeamIds[k]) { known[k] = pandaTeamIds[k]; addedIds++; }
+    });
+    if (addedIds > 0) {
+      await writeFile(idsPath, JSON.stringify(known, null, 2) + "\n", "utf8");
+      console.log("已写入 data/team-ids.json（新增映射 " + addedIds + " 条，共 " + Object.keys(known).length + " 队）");
+    }
+  }
 }
 
 main().catch(function (e) {

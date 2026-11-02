@@ -17,6 +17,8 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   var TEAM_LOGOS = DATA.teams || {};
   // 队伍主题色（1.2.11）：{队名: [c1, c2, darkText]}——构建期从队标提取，runtime/内嵌切片携带
   var TEAM_COLORS = DATA.teamColors || {};
+  // 战队选手阵容（1.3.2）：{"game:name": {pid, players:[{n 职业ID, r 位置, l 国籍}]}}——fetch-team-rosters 管线切片
+  var ROSTERS = DATA.rosters || {};
   var LOGO_BASE = "https://cdn-api.pandascore.co/images/team/image/";
   var matchIndex = new Map();
   rebuildMatchIndex();
@@ -37,7 +39,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.1";
+  var APP_VERSION = "1.3.2";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -116,6 +118,8 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
+  var homeQuery = ""; // 主页搜索词（1.3.2）：列表 + 状态 tab + 选择器计数三处同源
+  var homeSearchTimer = null; // 独立防抖：不与赛程表的 searchTimer 串用
   var schedGame = "all";
   var schedTournament = "__all__";
   var schedQuery = "";
@@ -763,9 +767,11 @@ import { fitDuelExtra } from "./duel-extra.mjs";
 
   function matchesFiltered(statusMap) {
     var dayAgo = Date.now() - 86400000;
+    var q = homeQuery.trim().toLowerCase();
     return MATCHES.filter(function (m) {
       if (!inHomeWindow(m)) return false;
       if (currentGame !== "all" && m.game !== currentGame) return false;
+      if (!matchQuery(m, q)) return false; // 主页搜索（1.3.2）
       if (currentTournament !== "__all__") {
         if (currentTournament === "__major__") {
           if (!isMajor(m)) return false;
@@ -785,10 +791,12 @@ import { fitDuelExtra } from "./duel-extra.mjs";
 
   function statusCounts() {
     var dayAgo = Date.now() - 86400000;
+    var q = homeQuery.trim().toLowerCase();
     var counts = { all: 0, live: 0, open: 0, locked: 0, awaiting: 0, finished: 0 };
     MATCHES.forEach(function (m) {
       if (!inHomeWindow(m)) return;
       if (currentGame !== "all" && m.game !== currentGame) return;
+      if (!matchQuery(m, q)) return; // 搜索词下状态 tab 计数与列表同源（1.3.2）
       if (currentTournament !== "__all__") {
         if (currentTournament === "__major__") {
           if (!isMajor(m)) return;
@@ -855,8 +863,10 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   // matchesFiltered 的逐条过滤与此保持一致（改口径时两处一起改）。
   function homeListMatches() {
     var dayAgo = Date.now() - 86400000;
+    var q = homeQuery.trim().toLowerCase();
     return MATCHES.filter(function (m) {
       if (!inHomeWindow(m)) return false;
+      if (!matchQuery(m, q)) return false; // 搜索词下选择器计数与列表同源（1.3.2）
       var st = statusOf(m);
       if (st === "finished" && (!predictionFor(m.id) || new Date(m.startAt).getTime() < dayAgo)) return false;
       return true;
@@ -1325,7 +1335,9 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     html += groupHTML("刚刚结束", groups.finished);
 
     if (!html) {
-      html = '<div class="empty-state"><strong>这里还没有赛事</strong>切换其他游戏分类看看，或等待赛程更新</div>';
+      html = homeQuery.trim()
+        ? '<div class="empty-state"><strong>没有匹配的赛事</strong>换个关键词，或清空搜索试试</div>'
+        : '<div class="empty-state"><strong>这里还没有赛事</strong>切换其他游戏分类看看，或等待赛程更新</div>';
     }
 
     listEl.innerHTML = html;
@@ -1986,6 +1998,20 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     var codex = state.collection[currentTeamKey];
 
     var html = "";
+    // 战队选手阵容（1.3.2）：PandaScore 花名册（键 game:name，规避同名不同游戏队）；无数据整块隐藏
+    var roster = ROSTERS[currentTeamKey];
+    if (roster && Array.isArray(roster.players) && roster.players.length) {
+      var ROLE_LABEL = { top: "上单", jungle: "打野", mid: "中单", adc: "ADC", support: "辅助", "midlaner": "中单", "adc/upport": "ADC", "upport": "辅助", "jungler": "打野", carry: "核心", "offlane": "三号位", solo: "中单" };
+      html += '<div class="section-head"><h2>阵容</h2><span class="section-sub">公开赛果平台数据</span></div>' +
+        '<div class="roster-list">' + roster.players.map(function (p) {
+          var role = p.r ? (ROLE_LABEL[p.r.toLowerCase()] || p.r) : "";
+          return '<div class="roster-row">' +
+            (p.l ? '<span class="roster-nat">' + esc(p.l.toUpperCase()) + "</span>" : '<span class="roster-nat roster-nat-none">–</span>') +
+            '<b class="roster-name">' + esc(p.n) + "</b>" +
+            (role ? '<span class="roster-role">' + esc(role) + "</span>" : "") +
+          "</div>";
+        }).join("") + "</div>";
+    }
     if (codex) {
       var settledN = codex.w + codex.l;
       html += '<div class="section-head"><h2>我的跟队档案</h2></div>' +
@@ -3575,7 +3601,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       sections: [
         { h: "自动更新", p: "小程序每 <strong>5 分钟</strong>自动检查一次赛程更新，有变化才下载新数据；也可以在设置页手动「刷新数据」。" },
         { h: "断网兜底", p: "拉取失败时自动回退到最近一次缓存，再退到内置赛程快照——<strong>离线也能看赛程</strong>，恢复后自动续上。" },
-        { h: "赛程表", p: "「设置 → 赛程表」收录过去与未来各 30 天的场次，支持按游戏筛选、搜索、只看大型赛事（S/A 级）。<strong>点任意一行</strong>可以打开这场比赛的详情：状态、时间、赛制、等级、对阵双方、比分与你的预测一目了然。" }
+        { h: "赛程表", p: "「设置 → 赛程表」收录过去与未来各 30 天的场次，支持按游戏筛选、搜索、只看大型赛事（S/A 级）。<strong>点任意一行</strong>可以打开这场比赛的详情：状态、时间、赛制、等级、对阵双方、比分与你的预测一目了然。主页顶部也有<strong>搜索框</strong>，直接搜队伍、赛事或日期。" }
       ]
     },
     {
@@ -3646,7 +3672,8 @@ import { fitDuelExtra } from "./duel-extra.mjs";
         { h: "收录规则", p: "押过哪支队伍就点亮哪支，按游戏区分（同名战队在不同游戏各算一支）。每支队伍记录<strong>押过场次</strong>与<strong>已结算胜率</strong>（押它的场次的胜率）。" },
         { h: "跟队连击", p: "连续押中同一支队伍（按它的比赛顺序）会累积<strong>跟队连击</strong>：漏看一场、押了对手或改投都算中断；队伍休赛不断签。最佳连击永久留档，图鉴页展示你的跟队 top3。" },
         { h: "上限与同步", p: "图鉴上限 <strong>150 支</strong>，超出后按最久未跟的队伍淘汰。图鉴随战绩云同步跨设备，也出现在分享卡与战绩对比里。" },
-        { h: "主队主题色", p: "在战队资料页「设为主队」后，整个小程序换上主队颜色：按钮、徽章、选中态、榜单高亮、余额卡甚至<strong>分享卡</strong>都会跟随；取消主队立即恢复默认配色。主队等级只跟累计押过场次走，换主队不清零。" }
+        { h: "主队主题色", p: "在战队资料页「设为主队」后，整个小程序换上主队颜色：按钮、徽章、选中态、榜单高亮、余额卡甚至<strong>分享卡</strong>都会跟随；取消主队立即恢复默认配色。主队等级只跟累计押过场次走，换主队不清零。" },
+        { h: "选手阵容", p: "战队资料页可以看<strong>选手阵容</strong>（职业 ID、位置、国籍），来自公开赛果平台——阵容变更以赛事官方公布为准；部分项目（如 CS2）没有位置数据，徽章会留空。" }
       ]
     },
     {
@@ -4021,6 +4048,27 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       }
     });
 
+    // 主页搜索（1.3.2，仿赛程表）：列表 + 状态 tab + 选择器计数三处同源刷新
+    $("#matchSearch").addEventListener("input", function () {
+      var input = this;
+      clearTimeout(homeSearchTimer);
+      homeSearchTimer = setTimeout(function () {
+        homeQuery = input.value;
+        $("#matchSearchClear").hidden = !homeQuery;
+        renderSelectors(); // 含 renderStatusTray：列表 + 状态 tab + 选择器计数三处同源
+        renderMatches();
+      }, 250);
+    });
+
+    $("#matchSearchClear").addEventListener("click", function () {
+      $("#matchSearch").value = "";
+      homeQuery = "";
+      $("#matchSearchClear").hidden = true;
+      renderSelectors();
+      renderMatches();
+      $("#matchSearch").focus();
+    });
+
     $("#scheduleSearch").addEventListener("input", function () {
       var input = this;
       clearTimeout(searchTimer);
@@ -4295,7 +4343,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
   }
 
   /* ============================== 运行时数据 ============================== */
-  function applySnapshot(matches, meta, teams, teamColors) {
+  function applySnapshot(matches, meta, teams, teamColors, rosters) {
     if (!matches || !matches.length) return;
 
     var map = {};
@@ -4317,6 +4365,10 @@ import { fitDuelExtra } from "./duel-extra.mjs";
     // 主题色同理只增不减
     if (teamColors) {
       Object.keys(teamColors).forEach(function (name) { TEAM_COLORS[name] = teamColors[name]; });
+    }
+    // 阵容同理只增不减（键 game:name，同一队名不同游戏互不串）
+    if (rosters) {
+      Object.keys(rosters).forEach(function (key) { ROSTERS[key] = rosters[key]; });
     }
     applyTeamTheme(); // 主队的新色到了可能要换肤
     rebuildMatchIndex();
@@ -4369,7 +4421,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
       var cached = await loadCachedSnapshot();
       if (cached && cached.meta && cached.meta.updatedAt &&
           cached.meta.updatedAt !== DATA_UPDATED_AT) {
-        applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors);
+        applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors, cached.rosters);
       }
 
       // 宿主明确拒绝服务端 API 时，24 小时内不再自动重试，避免每次启动弹原生错误框
@@ -4391,7 +4443,7 @@ import { fitDuelExtra } from "./duel-extra.mjs";
         pollBackoffUntil = 0;
         await storageSet(NET_BLOCK_KEY, { at: 0, version: APP_VERSION });
         if (remote.meta.updatedAt && remote.meta.updatedAt !== DATA_UPDATED_AT) {
-          applySnapshot(remote.matches, remote.meta, remote.teams, remote.teamColors);
+          applySnapshot(remote.matches, remote.meta, remote.teams, remote.teamColors, remote.rosters);
           if (manual) toast("赛程已更新");
         } else if (manual) {
           toast("赛程已是最新");

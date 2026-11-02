@@ -33,17 +33,34 @@ Object.keys(teams).forEach(function (name) {
   var e = colorsAll[name];
   if (e && Array.isArray(e.c) && e.c.length >= 3) teamColors[name] = e.c;
 });
+// 战队选手阵容（1.3.2）：fetch-team-rosters 的缓存切片——只输出窗口队伍（键 game:name）
+var rostersAll = {};
+var rostersPath = path.join(ROOT, "data", "team-rosters.json");
+if (existsSync(rostersPath)) {
+  try { rostersAll = JSON.parse(await readFile(rostersPath, "utf8")) || {}; } catch (e) { rostersAll = {}; }
+}
+var rosters = {};
+raw.matches.forEach(function (m) {
+  ["teamA", "teamB"].forEach(function (side) {
+    var t = m[side];
+    if (!t || !t.name) return;
+    var key = m.game + ":" + t.name;
+    var e = rostersAll[key];
+    if (e && Array.isArray(e.players) && e.players.length && !rosters[key]) rosters[key] = e.players;
+  });
+});
 var updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString();
-var hash = createHash("sha256").update(JSON.stringify({ teams: teams, teamColors: teamColors, matches: matches })).digest("hex");
+var hash = createHash("sha256").update(JSON.stringify({ teams: teams, teamColors: teamColors, rosters: rosters, matches: matches })).digest("hex");
 var meta = {
   schemaVersion: 1,
   updatedAt: updatedAt,
   count: matches.length,
   teamCount: Object.keys(teams).length,
   teamColorCount: Object.keys(teamColors).length,
+  rosterCount: Object.keys(rosters).length,
   hash: hash
 };
-var body = JSON.stringify({ updatedAt: updatedAt, teams: teams, teamColors: teamColors, matches: matches });
+var body = JSON.stringify({ updatedAt: updatedAt, teams: teams, teamColors: teamColors, rosters: rosters, matches: matches });
 
 await mkdir(OUT, { recursive: true });
 await writeFile(path.join(OUT, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
@@ -51,6 +68,6 @@ await writeFile(path.join(OUT, "matches.json"), body + "\n", "utf8");
 
 console.log(
   "[runtime] " + matches.length + " 场 · " + Object.keys(teams).length + " 支队标 · " +
-  Object.keys(teamColors).length + " 支主题色 · " +
+  Object.keys(teamColors).length + " 支主题色 · " + Object.keys(rosters).length + " 套阵容 · " +
   (body.length / 1048576).toFixed(2) + " MiB · hash " + hash.slice(0, 12)
 );

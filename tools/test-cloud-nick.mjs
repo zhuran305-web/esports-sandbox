@@ -535,6 +535,36 @@ check("选择器计数与列表同口径（1.3.2）：homeListMatches 收敛 + �
   /var windowMatches = homeListMatches\(\);/.test(appSrc) &&
   /var list = homeListMatches\(\);/.test(appSrc) &&
   /st === "finished" && \(!predictionFor\(m\.id\) \|\| new Date\(m\.startAt\)\.getTime\(\) < dayAgo\)\) return false;/.test(appSrc));
+check("主页搜索接线（1.3.2）：输入框 + 三处 matchQuery 同源 + 空态区分",
+  /id="matchSearch"/.test(htmlSrc) && /id="matchSearchClear"/.test(htmlSrc) &&
+  /var homeQuery = ""/.test(appSrc) && /var homeSearchTimer = null/.test(appSrc) &&
+  /"#matchSearch"\)\.addEventListener/.test(appSrc) && /"#matchSearchClear"\)\.addEventListener/.test(appSrc) &&
+  /if \(!matchQuery\(m, q\)\) return false; \/\/ 主页搜索（1\.3\.2）/.test(appSrc) &&
+  (appSrc.match(/homeQuery\.trim\(\)\.toLowerCase\(\)/g) || []).length >= 3 &&
+  /没有匹配的赛事/.test(appSrc));
+
+/* ---------- 场景 U：1.3.2 选手阵容（PandaScore rosters 管线） ---------- */
+console.log("U. 选手阵容：");
+var rostersTool = rf(path.join(root, "tools", "fetch-team-rosters.mjs"), "utf8");
+var buildSrc = rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8");
+var trimSrc = rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8");
+var dsSrc = readIfDs();
+var umSrc = rf(path.join(root, ".github", "workflows", "update-matches.yml"), "utf8");
+var bfSrc = rf(path.join(root, ".github", "workflows", "backfill-matches.yml"), "utf8");
+var pandaSrc2 = rf(path.join(root, "tools", "adapters", "pandascore.mjs"), "utf8");
+var fetchSrc = rf(path.join(root, "tools", "fetch-matches.mjs"), "utf8");
+check("rosters 采集链：pandascore 累积 team-ids + fetch-matches 落盘",
+  /teamIds\[game \+ ":" \+ op\.name\]/.test(pandaSrc2) && /var teamIds = \{\}/.test(pandaSrc2) &&
+  /data\/team-ids\.json/.test(fetchSrc) && /pandaTeamIds/.test(fetchSrc));
+check("rosters 链路静态：工具 + workflow + build/trim 切片 + 客户端渲染",
+  /function extractPlayers/.test(rostersTool) && /ROSTER_CAP = 5/.test(rostersTool) && /CACHE_CAP = 1500/.test(rostersTool) &&
+  /team-ids\.json/.test(umSrc) && /team-ids\.json/.test(bfSrc) && /Fetch team rosters/.test(bfSrc) &&
+  /rosters: rosters/.test(buildSrc) && /out\[key\] = e\.players/.test(trimSrc) &&
+  /var ROSTERS = DATA\.rosters \|\| \{\}/.test(appSrc) &&
+  /ROSTERS\[key\] = rosters\[key\]/.test(appSrc) &&
+  /function normalizeRosters/.test(dsSrc) && /rosters: normalizeRosters\(cached\)/.test(dsSrc) &&
+  /roster-list/.test(appSrc) && /roster-row/.test(cssSrc) &&
+  /公开赛果平台数据/.test(appSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

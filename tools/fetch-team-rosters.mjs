@@ -99,13 +99,20 @@ function extractPlayers(team) {
 }
 
 async function fetchTeam(pid, token) {
-  var res = await fetch("https://api.pandascore.co/teams/" + pid, {
-    headers: { "Authorization": "Bearer " + token, "Accept": "application/json" },
-    signal: AbortSignal.timeout(15000)
-  });
-  if (res.status === 404) return null; // 队伍已被数据源下架：缓存里也清掉
-  if (!res.ok) throw new Error("PandaScore HTTP " + res.status);
-  return await res.json();
+  // 429 退避：撞小时配额时等 45s 再试（回填当轮采集已耗掉大半配额时常见）；最多退避 2 次
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var res = await fetch("https://api.pandascore.co/teams/" + pid, {
+      headers: { "Authorization": "Bearer " + token, "Accept": "application/json" },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (res.status === 404) return null; // 队伍已被数据源下架：缓存里也清掉
+    if (res.status !== 429) {
+      if (!res.ok) throw new Error("PandaScore HTTP " + res.status);
+      return await res.json();
+    }
+    if (attempt < 2) await sleep(45000);
+  }
+  throw new Error("PandaScore HTTP 429（退避 2 次后仍限流）");
 }
 
 async function main() {

@@ -65,7 +65,7 @@ function validMatch(m) {
 }
 
 function normalizeStage(raw) {
-  if (!raw || (raw.type !== "swiss" && raw.type !== "bracket")) return null;
+  if (!raw || (raw.type !== "swiss" && raw.type !== "bracket" && raw.type !== "series")) return null;
   if (typeof raw.id !== "string" || !raw.id) return null;
   var teams = (Array.isArray(raw.teams) ? raw.teams : []).filter(validTeam).slice(0, 24).map(function (t) {
     return { name: t.name, short: typeof t.short === "string" ? t.short : "", region: typeof t.region === "string" ? t.region : "", logo: typeof t.logo === "string" ? t.logo : "", w: typeof t.w === "number" && isFinite(t.w) ? t.w : 0, l: typeof t.l === "number" && isFinite(t.l) ? t.l : 0 };
@@ -92,10 +92,11 @@ function normalizeStage(raw) {
       });
       out.results = ok ? clean : null;
     }
-  } else {
+  } else if (raw.type === "bracket") {
     out.rounds = Array.isArray(raw.rounds) ? raw.rounds.filter(function (s) { return typeof s === "string"; }) : [];
     out.degraded = raw.degraded === true;
   }
+  // series（逐场猜，1.3.4）：无轮次/无降级概念——任何赛制（双败/联赛/瑞士轮转写）都能逐场猜
   return out;
 }
 
@@ -154,7 +155,7 @@ export function normalizePickemState(raw) {
   Object.keys(raw).forEach(function (key) {
     if (out[key] || Object.keys(out).length >= 24) return;
     var rec = raw[key];
-    if (!rec || typeof rec !== "object" || (rec.type !== "swiss" && rec.type !== "bracket")) return;
+    if (!rec || typeof rec !== "object" || (rec.type !== "swiss" && rec.type !== "bracket" && rec.type !== "series")) return;
     var clean = {
       type: rec.type,
       picks: rec.type === "swiss" ? normalizeSwissPicks(rec.picks) : normalizeBracketPicks(rec.picks),
@@ -177,10 +178,13 @@ export function stageAllDone(stage) {
   return !!stage && stage.matches.length > 0 && stage.matches.every(function (m) { return m.winner === "A" || m.winner === "B"; });
 }
 
-/** 该阶段是否可参与竞猜（赛程齐备 + 未截止）。瑞士轮=队数对上 16；淘汰赛=未降级且有可猜场次 */
+/** 该阶段是否可参与竞猜（赛程齐备 + 未截止）。瑞士轮=队数对上 16；淘汰赛=未降级且有可猜场次；系列赛=有可猜场次 */
 export function stageOpenForPicks(stage, now) {
   now = now || Date.now();
   if (!stage || stageAllDone(stage)) return false;
+  if (stage.type === "series") {
+    return pickableSeriesMatches(stage, now).length > 0; // 逐场截止：阶段已开打也能猜剩余场次
+  }
   if (stage.type === "swiss") {
     if (stage.teams.length !== PICKEM_SWISS_TEAMS) return false;
   } else {
@@ -198,6 +202,18 @@ export function pickableBracketMatches(stage, now) {
   if (!stage || stage.type !== "bracket" || stage.degraded) return [];
   return stage.matches.filter(function (m) {
     if (!m.a || !m.b) return false; // 对阵未定（等上一轮）
+    if (m.winner === "A" || m.winner === "B") return false;
+    var start = new Date(m.startAt).getTime();
+    return !isNaN(start) && now < start - PICKEM_DEADLINE_MS;
+  });
+}
+
+/** 系列赛（1.3.4）当前可猜的场次：双方确定 + 未完赛 + 未到自己开赛前 1 小时。任何赛制通用 */
+export function pickableSeriesMatches(stage, now) {
+  now = now || Date.now();
+  if (!stage || stage.type !== "series") return [];
+  return stage.matches.filter(function (m) {
+    if (!m.a || !m.b) return false;
     if (m.winner === "A" || m.winner === "B") return false;
     var start = new Date(m.startAt).getTime();
     return !isNaN(start) && now < start - PICKEM_DEADLINE_MS;
@@ -238,8 +254,20 @@ export function scorePhase(stage, rec) {
     var perfect = correct === total;
     return { correct: correct, total: total, perfect: perfect, prize: correct * PICKEM_PER_PICK + (perfect ? PICKEM_PERFECT_BONUS : 0) };
   }
-  // bracket：逐场比对胜者；total=已完成场次里「我猜过的」……不——奖励按全部场次算，
-  // 没猜的场不计对也不计入 total（降级/未排期不扣钱）
+  // series（逐场猜，1.3.4）：只算「用户猜过的、且已有结果的」场次——中途接入公平
+  // （赛事已开打时用户没机会猜的场次不计入分母）；逐场竞猜不发全对加成（防「只猜一场就全对」套利），
+  // 每猜对 1 场 +PICKEM_PER_PICK
+  if (stage.type === "series") {
+    var mine = rec.picks && rec.picks.w ? rec.picks.w : {};
+    var scored = stage.matches.filter(function (m) {
+      return (m.winner === "A" || m.winner === "B") && mine[m.id];
+    });
+    if (!scored.length) return null;
+    var sc = 0;
+    scored.forEach(function (m) { if (mine[m.id] === m.winner) sc += 1; });
+    return { correct: sc, total: scored.length, perfect: false, prize: sc * PICKEM_PER_PICK };
+  }
+  // bracket：逐场比对胜者（阶段从开赛前就整段可猜，全部有结果场次计入分母）
   var done = stage.matches.filter(function (m) { return m.winner === "A" || m.winner === "B"; });
   if (!done.length) return null;
   var bc = 0, bt = 0;
@@ -265,7 +293,7 @@ export function pickemCoinOf(pickemState) {
       ? bucketKeys().some(function (k) { return (rec.picks[k] || []).length > 0; })
       : Object.keys(rec.picks.w || {}).length > 0;
     if (hasPicks) submitted = true;
-    if (rec.settled && rec.total > 0 && rec.score === rec.total) perfect += 1;
+    if (rec.settled && rec.type === "swiss" && rec.total > 0 && rec.score === rec.total) perfect += 1; // 挑战币只认瑞士轮 10 选全对（series/bracket 全对不发币）
   });
   var tier = perfect >= 3 ? 4 : perfect > 0 ? perfect + 1 : (submitted ? 1 : 0);
   return { tier: tier, coin: PICKEM_COINS[tier], submitted: submitted, perfect: perfect };

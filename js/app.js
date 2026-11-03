@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PICK, PICKEM_PERFECT_BONUS, PICKEM_DEADLINE_MS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableBracketMatches, swissPicksComplete, scorePhase, pickemCoinOf, mergePickem } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PICK, PICKEM_PERFECT_BONUS, PICKEM_DEADLINE_MS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableBracketMatches, pickableSeriesMatches, swissPicksComplete, scorePhase, pickemCoinOf, mergePickem } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -43,7 +43,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.3";
+  var APP_VERSION = "1.3.4";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -1932,7 +1932,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
     if (!rec || rec.type !== stage.type) {
       rec = stage.type === "swiss"
         ? { type: "swiss", picks: {}, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 }
-        : { type: "bracket", picks: { w: {} }, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 };
+        : { type: stage.type, picks: { w: {} }, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 };
       if (rec.type === "swiss") PICKEM_BUCKETS.forEach(function (b) { rec.picks[b.k] = []; });
       state.pickem[key] = rec;
     }
@@ -1959,6 +1959,14 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
   function pickemStageStatus(stage) {
     // open=可竞猜 / locked=已截止待赛果 / wait=赛程未齐（队伍未定或结构降级）/ done=已完赛
     if (stageAllDone(stage)) return "done";
+    if (stage.type === "series") {
+      // 逐场截止：阶段开打后只要有剩余可猜场次就是 open；全部过期且未完赛 = locked
+      if (pickableSeriesMatches(stage).length) return "open";
+      var anyFuture = stage.matches.some(function (m) {
+        return !m.winner && m.a && m.b && !isNaN(new Date(m.startAt).getTime()) && Date.now() < new Date(m.startAt).getTime();
+      });
+      return anyFuture ? "locked" : "locked"; // 已开赛未完赛（含进行中）：等赛果
+    }
     if (stage.type === "swiss") {
       if (stage.teams.length !== PICKEM_SWISS_TEAMS) return "wait";
     } else if (stage.degraded) {
@@ -1991,6 +1999,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
       if (!stage) return;
       var r = scorePhase(stage, rec);
       if (!r) return; // 阶段未完赛（results 缺失 / 无完赛场次）
+      // 系列赛（逐场猜）必须整段结束才结算——中途部分场次出结果时 scorePhase 只覆盖已结果场次，
+      // 提前置 settled 会漏计后续场次的猜对奖励
+      if (stage.type === "series" && !stageAllDone(stage)) return;
       rec.settled = true;
       rec.settledAt = Date.now();
       rec.score = r.correct;
@@ -2007,11 +2018,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
 
   function pickemStageBadge(st, stage, rec) {
     if (st === "open") {
+      if (stage.type === "series") {
+        var n = pickableSeriesMatches(stage).length;
+        return '<span class="pickem-badge is-open">可竞猜 ' + n + " 场 · 各场开赛前 1 小时截止</span>";
+      }
       var start = new Date(stage.startsAt).getTime();
       var dl = isNaN(start) ? "" : fmtTime(new Date(start - PICKEM_DEADLINE_MS).toISOString());
       return '<span class="pickem-badge is-open">可竞猜' + (dl ? " · " + esc(dl) + " 截止" : "") + "</span>";
     }
-    if (st === "locked") return '<span class="pickem-badge is-locked">已截止 · 等待赛果</span>';
+    if (st === "locked") return '<span class="pickem-badge is-locked">' + (stage.type === "series" ? "进行中 · 等赛果" : "已截止 · 等待赛果") + "</span>";
     if (st === "wait") return '<span class="pickem-badge is-wait">待赛程确定</span>';
     if (rec && rec.settled) {
       return '<span class="pickem-badge is-done">猜对 ' + rec.score + "/" + rec.total + (rec.prize ? " · +" + fmtNum(rec.prize) : "") + "</span>";
@@ -2131,12 +2146,43 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
     return html;
   }
 
+  /* 系列赛（1.3.4）：任意赛制逐场猜（双败小组/联赛等）——已结束场次只展示，剩余场次逐场可猜；
+     计分只算「用户猜过的」场次（中途接入公平），不发全对加成 */
+  function pickemSeriesBody(ev, stage, st, rec) {
+    var myW = rec && rec.picks ? rec.picks.w : {};
+    var doneCount = stage.matches.filter(function (m) { return m.winner === "A" || m.winner === "B"; }).length;
+    var picked = 0;
+    Object.keys(myW).forEach(function (k) { if (myW[k]) picked++; });
+    var html =
+      '<div class="pickem-note">逐场竞猜：已结束场次只展示结果，剩余场次各场开赛前 1 小时截止；只统计你猜过的场次，每猜对 1 场 +' + fmtNum(PICKEM_PER_PICK) + " 沙粒</div>" +
+      '<div class="pickem-progress">已结束 ' + doneCount + "/" + stage.matches.length + " 场 · 你已猜 " + picked + " 场</div>";
+    stage.matches.forEach(function (m) {
+      var start = new Date(m.startAt).getTime();
+      var open = !m.winner && !!m.a && !!m.b && !isNaN(start) && Date.now() < start - PICKEM_DEADLINE_MS;
+      var my = myW[m.id] || "";
+      var hit = !!(m.winner && my && my === m.winner);
+      var miss = !!(m.winner && my && !hit);
+      html += '<div class="pickem-match' + (m.winner ? " is-done" : "") + '">' +
+        '<span class="pickem-match-time">' + esc(fmtTime(m.startAt)) + "</span>" +
+        '<div class="pickem-match-sides">' +
+          pickemSideHTML(stage, m, "A", my, open) +
+          '<span class="pickem-vs">VS</span>' +
+          pickemSideHTML(stage, m, "B", my, open) +
+        "</div>" +
+        (hit ? '<span class="pickem-mark hit">✓</span>' : "") + (miss ? '<span class="pickem-mark miss">✗</span>' : "") +
+        "</div>";
+    });
+    return html;
+  }
+
   function pickemStageHTML(ev, stage) {
     var st = pickemStageStatus(stage);
     var rec = pickemRec(ev.id, stage.id);
     return '<div class="pickem-stage" data-pstage="' + esc(pickemRecKey(ev.id, stage.id)) + '">' +
       '<div class="pickem-stage-head"><b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) + "</div>" +
-      (stage.type === "swiss" ? pickemSwissBody(ev, stage, st, rec) : pickemBracketBody(ev, stage, st, rec)) +
+      (stage.type === "swiss" ? pickemSwissBody(ev, stage, st, rec)
+        : stage.type === "series" ? pickemSeriesBody(ev, stage, st, rec)
+          : pickemBracketBody(ev, stage, st, rec)) +
       "</div>";
   }
 

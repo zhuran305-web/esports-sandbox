@@ -649,6 +649,30 @@ check("云合并：pickedAt 较新者胜选择内容 + settled 取 OR 且奖励�
     return !m.bad && m["e:s"] && Array.isArray(m["e:s"].picks.adv30);
   })());
 
+check("series 逐场计分（1.3.4）：只算猜过的场次（中途接入公平）+ 不发全对加成 + 逐场截止",
+  (function () {
+    var stage = { id: "gA", type: "series", label: "Group A", teams: T16.slice(0, 8), matches: [
+      { id: "s-m1", a: "队1", b: "队2", startAt: iso(-7200000), winner: "A", score: "" }, // 已结束（用户没机会猜）
+      { id: "s-m2", a: "队3", b: "队4", startAt: iso(-3600000), winner: "B", score: "" },
+      { id: "s-m3", a: "队5", b: "队6", startAt: iso(3600000), winner: "", score: "" }
+    ] };
+    var r = PK.scorePhase(stage, { type: "series", picks: { w: { "s-m2": "B", "s-m3": "A" } } });
+    return r && r.correct === 1 && r.total === 1 && r.prize === 2000 && r.perfect === false;
+  })() &&
+  (function () {
+    var stage = { id: "gA", type: "series", label: "Group A", teams: [], matches: [
+      { id: "s-m1", a: "队1", b: "队2", startAt: iso(-7200000), winner: "A", score: "" } ] };
+    return PK.scorePhase(stage, { type: "series", picks: { w: {} } }) === null;
+  })() &&
+  (function () {
+    // 阶段已开打（首场已结束）但剩余场次仍可猜：逐场截止与阶段截止解耦
+    var stage = { id: "gA", type: "series", label: "Group A", startsAt: iso(-3600000), teams: [], matches: [
+      { id: "s-m1", a: "队1", b: "队2", startAt: iso(-7200000), winner: "A", score: "" },
+      { id: "s-m2", a: "队3", b: "队4", startAt: iso(3 * 3600000), winner: "", score: "" } ] };
+    return PK.stageOpenForPicks(stage) === true && PK.pickableSeriesMatches(stage).length === 1;
+  })() &&
+  PK.pickemCoinOf({ "e:s": { type: "series", picks: { w: { x: "A" } }, pickedAt: 1, settled: true, score: 3, total: 3, prize: 6000 } }).tier === 1);
+
 /* ---------- 场景 W：1.4.0 Pick'Em 接线静态断言 ---------- */
 console.log("W. Pick'Em 接线：");
 var achvSrc = rf(path.join(root, "js", "achv.js"), "utf8");
@@ -693,6 +717,13 @@ check("玩法/成就/样式：pickem topic + 赛事成就组（铜银金钻）+ 
   /pickemSubmitted/.test(appSrc) && /pickemPerfect/.test(appSrc) &&
   /pickem-slot-grid/.test(cssSrc) && /pickem-bucket/.test(cssSrc) && /pickem-side\.is-picked/.test(cssSrc) &&
   /pickem-picker-row/.test(cssSrc) && /PICKEM_BUCKETS/.test(appSrc));
+
+check("series 逐场链路（1.3.4）：聚合器 + 渲染 + 逐场点选 + 结算整段门控",
+  /function buildSeriesStage/.test(fpkSrc) && /scfg\.type === "series" \? buildSeriesStage/.test(fpkSrc) &&
+  /function pickableSeriesMatches/.test(pickemJsSrc) && /stage\.type === "series"\) \{\s*return pickableSeriesMatches/.test(pickemJsSrc) &&
+  /function pickemSeriesBody/.test(appSrc) && /pickableSeriesMatches/.test(appSrc) &&
+  /stage\.type === "series" && !stageAllDone\(stage\)\) return/.test(appSrc) &&
+  /pickemSeriesBody\(ev, stage, st, rec\)/.test(appSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

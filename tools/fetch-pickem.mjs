@@ -27,6 +27,7 @@
  *     }]
  *   }]
  * }
+ * 阶段类型：swiss（16 队 10 选）/ bracket（单败淘汰树，按开赛时间分 [4,2,1] 轮）/ series（1.3.4 逐场猜，任何赛制）。
  *
  * 结算口径（客户端 scorePhase 用同一张表）：瑞士轮终局 3-0→adv30、3-1/3-2→adv、2-3→out23、1-3→out13、0-3→out03。
  * 已 done 的事件不再重建（matches 可能已被 retention 清掉，重建会丢数据），只随 30 天窗口淘汰。
@@ -155,6 +156,29 @@ function buildBracketStage(cfg, matches) {
   };
 }
 
+function buildSeriesStage(cfg, matches) {
+  // 系列赛（1.3.4）：任意赛制逐场猜（双败/联赛/瑞士轮转写皆可）——不做轮次切块、不要求场次数，
+  // 已结束场次随 matches 一起带出（客户端只展示结果，不参与计分）
+  var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
+  var teams = {};
+  var order = [];
+  var compact = list.map(function (m) {
+    var a = compactTeam(m.teamA), b = compactTeam(m.teamB);
+    [a, b].forEach(function (t) {
+      if (!t) return;
+      if (!teams[t.name]) { teams[t.name] = t; order.push(t.name); }
+    });
+    var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "" };
+  });
+  return {
+    id: cfg.id, type: "series", label: cfg.label || cfg.id,
+    startsAt: list.length ? list[0].startAt : "", endsAt: list.length ? list[list.length - 1].startAt : "",
+    teams: order.map(function (n) { return teams[n]; }),
+    matches: compact
+  };
+}
+
 function buildEvent(cfg, allMatches) {
   var evMatches = allMatches.filter(function (m) {
     return m.game === cfg.game && m.tournament === cfg.tournament;
@@ -163,7 +187,9 @@ function buildEvent(cfg, allMatches) {
   (cfg.stages || []).forEach(function (scfg) {
     var sm = evMatches.filter(function (m) { return (scfg.stageNames || []).indexOf(m.stage) >= 0; });
     if (!sm.length) return; // 该阶段还没有任何数据（未排期/拼写对不上），宁缺勿滥
-    stages.push(scfg.type === "bracket" ? buildBracketStage(scfg, sm) : buildSwissStage(scfg, sm));
+    stages.push(scfg.type === "bracket" ? buildBracketStage(scfg, sm)
+      : scfg.type === "series" ? buildSeriesStage(scfg, sm)
+        : buildSwissStage(scfg, sm));
   });
   if (!stages.length) return null;
   var anyMatch = stages.some(function (s) { return s.matches.length; });

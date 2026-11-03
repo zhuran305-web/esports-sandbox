@@ -43,7 +43,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.4";
+  var APP_VERSION = "1.3.5";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -2053,8 +2053,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
       var hit = !!(name && resNames && resNames.indexOf(name) >= 0);
       var miss = !!(name && resNames && !hit);
       var cls = "pickem-slot" + (name ? " is-filled" : "") + (hit ? " is-hit" : "") + (miss ? " is-miss" : "") + (!name && resName ? " is-result" : "");
+      // 已截止/已结束的桶槽位保持可点：点击由 body 委托给出提示（与场次同款处理）
       slots += '<button type="button" class="' + cls + '"' +
-        (editable ? ' data-pkslot="' + esc(bucket.k) + '" data-pkcur="' + esc(name) + '"' : ' disabled') + ">" +
+        (editable
+          ? ' data-pkslot="' + esc(bucket.k) + '" data-pkcur="' + esc(name) + '"'
+          : ' data-pkslot="' + esc(bucket.k) + '" data-pklocked="1"') + ">" +
         (name || resName
           ? avatarHTML(team) + '<span class="pickem-slot-name">' + esc(name || resName) +
               (hit ? '<i class="pickem-mark hit">✓</i>' : "") + (miss ? '<i class="pickem-mark miss">✗</i>' : "") + "</span>"
@@ -2105,8 +2108,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
     var team = pickemTeamOf(stage, name);
     var sel = myPick === side;
     var won = m.winner === side;
+    // 已截止/已结束的场次保持可点：点击由 pickemBracketPick 给出明确提示（避免「点了没反应」的困惑）
     return '<button type="button" class="pickem-side' + (sel ? " is-picked" : "") + (won ? " is-winner" : "") + '"' +
-      (open ? ' data-pkmatch="' + esc(m.id) + '" data-pkside="' + side + '"' : " disabled") + ">" +
+      ' data-pkmatch="' + esc(m.id) + '" data-pkside="' + side + '"' + (open ? "" : ' data-pklocked="1"') + ">" +
       avatarHTML(team) + "<span>" + esc(name) + "</span>" +
       (won && m.winner ? '<i class="pickem-mark ' + (sel ? "hit" : "plain") + '">' + (sel ? "✓" : "胜") + "</i>" : "") +
       "</button>";
@@ -2365,8 +2369,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
     stage.matches.forEach(function (x) { if (x.id === matchId) m = x; });
     if (!m) return;
     var start = new Date(m.startAt).getTime();
-    if (m.winner || isNaN(start) || Date.now() >= start - PICKEM_DEADLINE_MS) {
-      toast("该场竞猜已截止");
+    // 已结束/已截止的点击给明确反馈（1.3.5：按钮不再 disabled，靠 toast 说明为什么不能改）
+    if (m.winner) {
+      toast("该场已结束，赛果 " + (m.score || "") + " · 胜 " + (m.winner === "A" ? m.a : m.b));
+      return;
+    }
+    if (isNaN(start) || Date.now() >= start - PICKEM_DEADLINE_MS) {
+      toast("该场竞猜已于开赛前 1 小时截止");
       renderPickem();
       return;
     }
@@ -2417,6 +2426,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
         if (!box) return;
         var key = box.dataset.pstage;
         var sep = key.indexOf(":");
+        if (slot.dataset.pklocked) {
+          // 已截止/已结束阶段的槽位：给明确反馈而不是无反应（1.3.5）
+          var lockedHit = pickemStageByKey(key);
+          toast(lockedHit && stageAllDone(lockedHit.stage) ? "该阶段已结束" : "该阶段已于开赛前 1 小时截止");
+          return;
+        }
         openPickemPicker(key.slice(0, sep), key.slice(sep + 1), slot.dataset.pkslot, slot.dataset.pkcur || "");
         return;
       }

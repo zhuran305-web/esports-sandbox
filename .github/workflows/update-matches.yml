@@ -1,11 +1,12 @@
 name: Update match data
 
-# 公开仓库 + 30 分钟采集（2026-11-03 由 15 分钟再降频：实测 GitHub 对公开仓库的 schedule
-# 严重节流——15 分钟 cron 实际每 4-7 小时才触发一轮，与频率无关地跳过；30 分钟档降被跳概率，
-# 并配合 FC 定时兜底（esports-sandbox-cron/dispatch：检查 OSS 数据陈旧 >35 分钟即 workflow_dispatch）。
+# 公开仓库 + 每小时整点采集（2026-11-03 定档：GitHub 对公开仓库 schedule 严重节流——
+# 实测 15/30 分钟档每 4-7 小时才触发一轮，与频率无关地跳过；每小时档占额度 3%，
+# 配合 FC 定时兜底（esports-sandbox-cron/dispatch：每小时第 5 分钟检查 OSS 数据陈旧
+# >35 分钟即 workflow_dispatch，错开整点轮）。
 # 数据不提交到 Git：每次先恢复 Release 资产里的上一份快照，采集合并后只有内容变化才覆盖上传，
 # 因此仓库体积不会增长。小程序仍是构建时打包数据，用户端要看到新赛程需重新构建发布。
-# 每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次；2 轮/小时约 66 次，占额度 7%。
+# 每轮至少 30 次请求（15 个游戏 × upcoming/past），含翻页通常约 33 次，占小时配额 3%。
 # 需要在仓库 Secrets 配置：
 #   PANDASCORE_TOKEN（必填）、LIQUIPEDIA_API_KEY（可选）
 #   LIQUIPEDIA_CONTACT（可选，填邮箱或主页，Liquipedia 要求 UA 带联系方式）
@@ -18,7 +19,7 @@ name: Update match data
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:

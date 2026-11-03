@@ -96,6 +96,8 @@ function buildSwissStage(cfg, matches) {
   var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
   var teams = {};
   var order = [];
+  // round = 按北京时间日期聚类的轮次（0 起）——树状展示用（1.3.6）；计分不看它
+  var lastDay = "", round = 0;
   var compact = list.map(function (m) {
     var a = compactTeam(m.teamA), b = compactTeam(m.teamB);
     [a, b].forEach(function (t) {
@@ -103,12 +105,15 @@ function buildSwissStage(cfg, matches) {
       if (!teams[t.name]) { teams[t.name] = t; teams[t.name].w = 0; teams[t.name].l = 0; order.push(t.name); }
       else if (!teams[t.name].short && t.short) teams[t.name].short = t.short;
     });
+    var day = m.startAt ? new Date(new Date(m.startAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : "";
+    if (lastDay && day && day !== lastDay) round += 1;
+    if (day) lastDay = day;
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
     if (winner === "A" && a) teams[a.name].w += 1;
     if (winner === "A" && b) teams[b.name].l += 1;
     if (winner === "B" && b) teams[b.name].w += 1;
     if (winner === "B" && a) teams[a.name].l += 1;
-    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "" };
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round };
   });
   var teamList = order.map(function (n) { return teams[n]; })
     .sort(function (x, y) { return (y.w - x.w) || (x.l - y.l) || (x.name < y.name ? -1 : 1); });

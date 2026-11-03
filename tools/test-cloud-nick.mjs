@@ -658,22 +658,29 @@ check("硬币云合并：逐键 max（只增不减，脏值清零）",
     var m = PK.mergePickemCoins({ c: 0, s: 0, g: 0, d: 0 }, { c: -5, s: "x", g: 1.7, d: 1e9 });
     return m.c === 0 && m.s === 0 && m.g === 2 && m.d === 1e6; // 脏值/取整/封顶
   })());
-check("云合并：pickedAt 较新者胜选择内容 + settled 取 OR 且奖励随已结算侧",
+check("云合并：pickedAt 较新者胜选择内容 + settled 取 OR 且奖励随已结算侧 + 旧键迁移（: → ##）",
   (function () {
-    var local = { "e:s": { type: "swiss", picks: { adv30: ["队1"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 100, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 } };
-    var cloud = { "e:s": { type: "swiss", picks: { adv30: ["队2"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 200, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 } };
-    return PK.mergePickem(local, cloud)["e:s"].picks.adv30[0] === "队2";
+    var local = { "e:s": { type: "swiss", picks: { adv30: ["队1"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 100, settled: false, settledAt: 0, score: 0, total: 0 } };
+    var cloud = { "e:s": { type: "swiss", picks: { adv30: ["队2"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 200, settled: false, settledAt: 0, score: 0, total: 0 } };
+    var m = PK.mergePickem(local, cloud);
+    // 旧键（无 ##）经 normalizePickemState 迁移为 ## 键；手工 id 无冒号故拆分安全
+    return m["e##s"] && m["e##s"].picks.adv30[0] === "队2";
   })() &&
   (function () {
     var local = { "e:s": { type: "swiss", picks: { adv30: ["队1"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 300, settled: false, settledAt: 0, score: 0, total: 0 } };
     var cloud = { "e:s": { type: "swiss", picks: { adv30: ["队2"], adv: [], out23: [], out13: [], out03: [] }, pickedAt: 100, settled: true, settledAt: 50, score: 7, total: 10 } };
-    var m = PK.mergePickem(local, cloud)["e:s"];
+    var m = PK.mergePickem(local, cloud)["e##s"];
     return m.settled === true && m.score === 7 && m.prize === 0; // 1.3.5 起沙粒奖励移除，prize 恒 0
   })() &&
   (function () {
     // 脏记录（未知 type / picks 形状错）整条丢弃，不污染本地
     var m = PK.mergePickem({}, { bad: { type: "???", picks: {} }, "e:s": { type: "swiss", picks: "垃圾", pickedAt: 1, settled: false } });
-    return !m.bad && m["e:s"] && Array.isArray(m["e:s"].picks.adv30);
+    return !m.bad && m["e##s"] && Array.isArray(m["e##s"].picks.adv30);
+  })() &&
+  (function () {
+    // 新格式键（##）原样保留——自动赛事 id 含冒号（auto:XXX）不再撞拆分
+    var m = PK.normalizePickemState({ "auto:X Major##Group A": { type: "series", picks: { w: { m1: "A" } }, pickedAt: 5, settled: false } });
+    return m["auto:X Major##Group A"] && m["auto:X Major##Group A"].picks.w.m1 === "A";
   })());
 
 check("series 逐场计分（1.3.4）：只算猜过的场次（中途接入公平）+ 不发全对加成 + 逐场截止",

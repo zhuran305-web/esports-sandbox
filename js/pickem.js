@@ -205,13 +205,20 @@ function normalizePlacementPicks(raw) {
   };
 }
 
-/** 规范化 state.pickem（loadState/云合并入口）。形状不对的阶段记录整条丢弃；记录数封顶防膨胀 */
+/** 规范化 state.pickem（loadState/云合并入口）。形状不对的阶段记录整条丢弃；记录数封顶防膨胀。
+ *  键迁移（1.3.6）：recKey 分隔符从 ":" 改 "##"（自动赛事 id "auto:XXX" 含冒号会撞拆分）——
+ *  旧键（无 ##）按第一个冒号拆（手工 id 无冒号，安全）迁移。 */
 export function normalizePickemState(raw) {
   var out = {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
-  Object.keys(raw).forEach(function (key) {
-    if (out[key] || Object.keys(out).length >= 24) return;
-    var rec = raw[key];
+  Object.keys(raw).forEach(function (origKey) {
+    if (Object.keys(out).length >= 24) return;
+    var key = origKey;
+    if (key.indexOf("##") < 0 && key.indexOf(":") >= 0) {
+      key = key.replace(":", "##"); // 旧格式迁移（只换第一个冒号；手工事件 id 无冒号）
+      if (out[key]) key = origKey; // 迁移撞键（理论不发生）：保留原键防丢
+    }
+    var rec = raw[origKey];
     if (!rec || typeof rec !== "object" ||
         (rec.type !== "swiss" && rec.type !== "bracket" && rec.type !== "series" && rec.type !== "placement")) return;
     var clean = {

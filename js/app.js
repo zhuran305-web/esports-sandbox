@@ -1962,7 +1962,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return null;
   }
 
-  function pickemRecKey(evId, stageId) { return evId + ":" + stageId; }
+  function pickemRecKey(evId, stageId) { return evId + "##" + stageId; } // 1.3.6 起用 ## 分隔（自动赛事 id 含冒号会撞 ":" 拆分）
 
   function pickemRec(evId, stageId) {
     return state.pickem[pickemRecKey(evId, stageId)] || null;
@@ -2053,12 +2053,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     Object.keys(state.pickem).forEach(function (key) {
       var rec = state.pickem[key];
       if (!rec || rec.settled) return;
-      var sep = key.indexOf(":");
-      if (sep < 1) return;
+      var sep = key.indexOf("##"); // 1.3.6 recKey 分隔符（自动赛事 id 含冒号）
+      if (sep < 0) return;
       var ev = pickemEventById(key.slice(0, sep));
       if (!ev) return;
       var stage = null;
-      ev.stages.forEach(function (s) { if (s.id === key.slice(sep + 1)) stage = s; });
+      ev.stages.forEach(function (s) { if (s.id === key.slice(sep + 2)) stage = s; });
       if (!stage) return;
       var r = scorePhase(stage, rec);
       if (!r) return; // 阶段未完赛（results 缺失 / 无已猜的完赛场次）
@@ -2228,6 +2228,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
      计分只算「用户猜过的」场次（中途接入公平），不发全对加成 */
   /* ---------- 树状展示（1.3.6，更接近官方 Major Pick'Em） ----------
      比赛节点卡：两队（队标+缩写）+ 比分/胜方高亮；series 可点选（点哪侧猜哪侧），
+     已截止/已结束的侧也带 data-pkmatch（点击走 pickemBracketPick 的 toast，不做无反应按钮）；
      swiss/placement 纯展示（交互在桶/名次槽）。 */
   function pickemMatchNodeHTML(stage, m, rec, interactive) {
     var myW = rec && rec.picks && rec.picks.w ? rec.picks.w : {};
@@ -2242,18 +2243,18 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       var team = pickemTeamOf(stage, name);
       var pts = m.score ? (side === "A" ? (scoreParts[0] || "") : (scoreParts[1] || "")) : "";
       var sel = my === side;
+      var mark = "";
+      if (m.winner && my) mark = sel && won ? '<em class="pickem-mark hit">✓</em>' : (sel ? '<em class="pickem-mark miss">✗</em>' : (won ? '<em class="pickem-mark plain">胜</em>' : ""));
+      // open=可点选；locked=点击给截止/赛果提示（不做无反应按钮）
       return '<button type="button" class="pk-node-side' + (won ? " is-win" : "") + (sel ? " is-picked" : "") + '"' +
-        (open ? ' data-pkmatch="' + esc(m.id) + '" data-pkside="' + side + '"' : "") + ">" +
+        (open ? ' data-pkmatch="' + esc(m.id) + '" data-pkside="' + side + '"'
+          : (interactive && m.a && m.b ? ' data-pkmatch="' + esc(m.id) + '" data-pkside="' + side + '" data-pklocked="1"' : "")) + ">" +
         avatarHTML(team) + "<span>" + esc(team.short || name) + "</span>" +
-        (pts !== "" ? "<i>" + esc(pts) + "</i>" : "") +
-        (won && my ? '<em class="pickem-mark ' + (my === side ? "hit" : "plain") + '">' + (my === side ? "✓" : "胜") + "</em>" : "") +
+        (pts !== "" ? "<i>" + esc(pts) + "</i>" : "") + mark +
         "</button>";
     }
-    var hit = !!(m.winner && my && my === m.winner);
-    var miss = !!(m.winner && my && !hit);
     return '<div class="pk-node' + (m.winner ? " is-done" : "") + '">' + sideRow("A") + sideRow("B") +
-      (m.startAt && !m.winner ? '<span class="pk-node-time">' + esc(fmtTime(m.startAt)) + "</span>" : "") +
-      (hit ? '<em class="pickem-mark hit">✓</em>' : "") + (miss ? '<em class="pickem-mark miss">✗</em>' : "") +
+      (m.startAt ? '<span class="pk-node-time">' + esc(fmtTime(m.startAt)) + "</span>" : "") +
       "</div>";
   }
 
@@ -2466,11 +2467,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var pickemClearTimer = 0;
 
   function pickemStageByKey(key) {
-    var sep = key.indexOf(":");
-    if (sep < 1) return null;
+    var sep = key.indexOf("##"); // 1.3.6 recKey 分隔符（自动赛事 id 含冒号）
+    if (sep < 0) return null;
     var ev = pickemEventById(key.slice(0, sep));
     if (!ev) return null;
-    var stageId = key.slice(sep + 1);
+    var stageId = key.slice(sep + 2);
     for (var i = 0; i < ev.stages.length; i++) {
       if (ev.stages[i].id === stageId) return { ev: ev, stage: ev.stages[i] };
     }
@@ -2480,7 +2481,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   function renderPickemSheet() {
     var ctx = pickemSheetCtx;
     if (!ctx) return;
-    var hit = pickemStageByKey(ctx.evId + ":" + ctx.stageId);
+    var hit = pickemStageByKey(pickemRecKey(ctx.evId, ctx.stageId));
     if (!hit) return;
     var stage = hit.stage;
     if (ctx.kind === "placement") {
@@ -2574,7 +2575,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   function pickemSheetPick(name) {
     var ctx = pickemSheetCtx;
     if (!ctx) return;
-    var hit = pickemStageByKey(ctx.evId + ":" + ctx.stageId);
+    var hit = pickemStageByKey(pickemRecKey(ctx.evId, ctx.stageId));
     if (!hit) { closePickemSheet(); return; }
     var stage = hit.stage;
     var rec = pickemEnsureRec(stage, ctx.evId, ctx.stageId);
@@ -2630,7 +2631,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   }
 
   function pickemBracketPick(evId, stageId, matchId, side) {
-    var hit = pickemStageByKey(evId + ":" + stageId);
+    var hit = pickemStageByKey(pickemRecKey(evId, stageId));
     if (!hit) return;
     var stage = hit.stage;
     var m = null;
@@ -2708,17 +2709,18 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       }
     });
     $("#pickemBody").addEventListener("click", function (e) {
+      // recKey 分隔符 = "##"（1.3.6：自动赛事 id "auto:XXX" 含冒号，":" 拆分会错位）
       var place = e.target.closest("[data-pkplace]");
       if (place) {
         var pbox = place.closest("[data-pstage]");
         if (!pbox) return;
         var pkey = pbox.dataset.pstage;
-        var psep = pkey.indexOf(":");
+        var psep = pkey.indexOf("##");
         if (place.dataset.pklocked) {
           toast("该阶段已于第一场开赛前 1 小时截止");
           return;
         }
-        openPickemPlacePicker(pkey.slice(0, psep), pkey.slice(psep + 1), place.dataset.pkplace, place.dataset.pkcur || "");
+        openPickemPlacePicker(pkey.slice(0, psep), pkey.slice(psep + 2), place.dataset.pkplace, place.dataset.pkcur || "");
         return;
       }
       var slot = e.target.closest("[data-pkslot]");
@@ -2726,14 +2728,14 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         var box = slot.closest("[data-pstage]");
         if (!box) return;
         var key = box.dataset.pstage;
-        var sep = key.indexOf(":");
+        var sep = key.indexOf("##");
         if (slot.dataset.pklocked) {
           // 已截止/已结束阶段的槽位：给明确反馈而不是无反应（1.3.5）
           var lockedHit = pickemStageByKey(key);
           toast(lockedHit && stageAllDone(lockedHit.stage) ? "该阶段已结束" : "该阶段已于开赛前 1 小时截止");
           return;
         }
-        openPickemPicker(key.slice(0, sep), key.slice(sep + 1), slot.dataset.pkslot, slot.dataset.pkcur || "");
+        openPickemPicker(key.slice(0, sep), key.slice(sep + 2), slot.dataset.pkslot, slot.dataset.pkcur || "");
         return;
       }
       var pick = e.target.closest("[data-pkmatch]");
@@ -2741,8 +2743,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         var mbox = pick.closest("[data-pstage]");
         if (!mbox) return;
         var mkey = mbox.dataset.pstage;
-        var msep = mkey.indexOf(":");
-        pickemBracketPick(mkey.slice(0, msep), mkey.slice(msep + 1), pick.dataset.pkmatch, pick.dataset.pkside);
+        var msep = mkey.indexOf("##");
+        pickemBracketPick(mkey.slice(0, msep), mkey.slice(msep + 2), pick.dataset.pkmatch, pick.dataset.pkside);
         return;
       }
       var act = e.target.closest("[data-pkact]");
@@ -2750,8 +2752,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         var cbox = act.closest("[data-pstage]");
         if (!cbox) return;
         var ckey = cbox.dataset.pstage;
-        var csep = ckey.indexOf(":");
-        pickemClearStage(ckey.slice(0, csep), ckey.slice(csep + 1));
+        var csep = ckey.indexOf("##");
+        pickemClearStage(ckey.slice(0, csep), ckey.slice(csep + 2));
       }
     });
     $("#pickemSheetClose").addEventListener("click", closePickemSheet);

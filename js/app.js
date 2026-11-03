@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -1909,12 +1909,56 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
      开赛前 1 小时截止（镜像单场竞猜），阶段完赛自动结算发沙粒。
      数据形状单一来源 = tools/fetch-pickem.mjs 头注释；桶定义/计分/云合并 = js/pickem.js。 */
 
+  var pickemAutoCache = null;   // 自动收录赛事缓存（MATCHES 变化才重算）
+  var pickemAutoCacheKey = "";
+  var pickemGame = "all";       // 作业页游戏筛选（1.3.6，仿主页）
+  var pickemQuery = "";         // 作业页搜索词（与 chips/主体同源，假设 75/76）
+  var pickemSearchTimer = null;
+
+  /** 手工配置赛事占用的 tournament 匹配串（自动收录去重用——手工配置的精细模式优先）。
+   *  注意按 tournament 串去重而非 id：自动赛事 id 是 "auto:"+tournament，与手工 id 天然不同。 */
+  function pickemManualTournaments() {
+    var set = {};
+    PICKEM.forEach(function (ev) {
+      if (ev && ev.stages && ev.stages.length && ev.tournament) set[ev.tournament] = 1;
+    });
+    return Object.keys(set);
+  }
+
+  /** 全部可浏览赛事 = 手工聚合（major/IEM 精细模式）+ 自动收录（tier=s/a，客户端现算） */
   function pickemEvents() {
-    return PICKEM.filter(function (ev) { return ev && ev.stages && ev.stages.length; });
+    var key = DATA_UPDATED_AT + "|" + MATCHES.length + "|" + PICKEM.length;
+    if (!pickemAutoCache || pickemAutoCacheKey !== key) {
+      pickemAutoCache = buildAutoEvents(MATCHES, pickemManualTournaments());
+      pickemAutoCacheKey = key;
+    }
+    var merged = PICKEM.filter(function (ev) { return ev && ev.stages && ev.stages.length; })
+      .concat(pickemAutoCache);
+    // 排序：进行中 > 未开始 > 已结束；同级按结束时间近的在前
+    var rank = { active: 0, upcoming: 1, done: 2 };
+    return merged.sort(function (a, b) {
+      var d = (rank[a.status] || 3) - (rank[b.status] || 3);
+      if (d) return d;
+      return String(b.endsAt || "").localeCompare(String(a.endsAt || ""));
+    });
+  }
+
+  /** 作业页统一口径（1.3.6，假设 75/76）：游戏筛选 + 搜索词过滤后的赛事列表——chips 与主体同源 */
+  function pickemFilteredEvents() {
+    var q = pickemQuery.trim().toLowerCase();
+    return pickemEvents().filter(function (ev) {
+      if (pickemGame !== "all" && ev.game !== pickemGame) return false;
+      if (!q) return true;
+      var g = gameMeta(ev.game);
+      var hay = [ev.name, ev.game, g.label, g.chip,
+        ev.stages.map(function (s) { return s.label; }).join(" ")].join(" ").toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
   }
 
   function pickemEventById(id) {
-    for (var i = 0; i < PICKEM.length; i++) { if (PICKEM[i].id === id) return PICKEM[i]; }
+    var all = pickemEvents();
+    for (var i = 0; i < all.length; i++) { if (all[i].id === id) return all[i]; }
     return null;
   }
 
@@ -2342,29 +2386,53 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       var chtml = pickemCoinsHTML();
       coin.textContent = chtml ? "硬币 " + chtml : "";
     }
+    var gamesEl = $("#pickemGames");
     var tabs = $("#pickemEvtabs");
     var body = $("#pickemBody");
     if (!body) return;
-    var evs = pickemEvents();
-    if (!evs.length) {
+    var all = pickemEvents();
+    // 游戏 tiles：只列有赛事的游戏（按 GAME_ORDER 排序）
+    if (gamesEl) {
+      var seen = {};
+      var games = [];
+      all.forEach(function (e) {
+        if (!seen[e.game]) { seen[e.game] = 1; games.push(e.game); }
+      });
+      games.sort(function (a, b) {
+        var xa = GAME_ORDER.indexOf(a), xb = GAME_ORDER.indexOf(b);
+        return (xa < 0 ? 99 : xa) - (xb < 0 ? 99 : xb);
+      });
+      gamesEl.innerHTML =
+        '<button type="button" class="pk-game' + (pickemGame === "all" ? " is-active" : "") + '" data-pkg="all">全部 ' + all.length + "</button>" +
+        games.map(function (g) {
+          var n = all.filter(function (e) { return e.game === g; }).length;
+          return '<button type="button" class="pk-game' + (pickemGame === g ? " is-active" : "") + '" data-pkg="' + esc(g) + '">' + esc(gameMeta(g).label) + " " + n + "</button>";
+        }).join("");
+    }
+    // 统一口径过滤（游戏 + 搜索）——chips 与主体同源（假设 75/76）
+    var evs = pickemFilteredEvents();
+    if (!all.length) {
+      if (gamesEl) gamesEl.innerHTML = "";
       if (tabs) tabs.hidden = true;
-      body.innerHTML = '<div class="empty-state"><strong>暂无进行中的赛事</strong>大型赛事（Major 级）确认排期后，这里会开放整赛程竞猜</div>';
+      body.innerHTML = '<div class="empty-state"><strong>暂无可竞猜的赛事</strong>S/A 级赛事确认排期后，这里会自动收录作业</div>';
       return;
     }
-    if (!pickemEventById(pickemEventId)) {
+    if (!evs.length) {
+      if (tabs) tabs.hidden = true;
+      body.innerHTML = '<div class="empty-state"><strong>没有匹配的赛事</strong>换个搜索词或游戏筛选试试</div>';
+      return;
+    }
+    if (!pickemEventById(pickemEventId) || !evs.some(function (e) { return e.id === pickemEventId; })) {
       var first = evs.filter(function (e) { return e.status !== "done"; })[0] || evs[0];
       pickemEventId = first.id;
     }
     var ev = pickemEventById(pickemEventId);
     if (tabs) {
-      if (evs.length > 1) {
-        tabs.hidden = false;
-        tabs.innerHTML = evs.map(function (e) {
-          return '<button type="button" class="pickem-evtab' + (e.id === pickemEventId ? " is-active" : "") + '" data-pevt="' + esc(e.id) + '">' + esc(e.name) + "</button>";
-        }).join("");
-      } else {
-        tabs.hidden = true;
-      }
+      tabs.hidden = false;
+      tabs.innerHTML = evs.map(function (e) {
+        var stTag = e.status === "active" ? " ●" : "";
+        return '<button type="button" class="pickem-evtab' + (e.id === pickemEventId ? " is-active" : "") + '" data-pevt="' + esc(e.id) + '">' + esc(e.name) + stTag + "</button>";
+      }).join("");
     }
     body.innerHTML = pickemEventHTML(ev);
   }
@@ -2613,6 +2681,25 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#labsBackBtn").addEventListener("click", function () { goBack("about"); });
     $("#coinboardBackBtn").addEventListener("click", function () { goBack("labs"); });
     $("#pickemBackBtn").addEventListener("click", function () { goBack("labs"); });
+    // 作业页筛选与搜索（1.3.6，仿主页）：搜索防抖 + 游戏 tiles + 清空
+    $("#pickemSearch").addEventListener("input", function () {
+      var el = this;
+      $("#pickemSearchClear").hidden = !el.value;
+      clearTimeout(pickemSearchTimer);
+      pickemSearchTimer = setTimeout(function () { pickemQuery = el.value; renderPickem(); }, 250);
+    });
+    $("#pickemSearchClear").addEventListener("click", function () {
+      $("#pickemSearch").value = "";
+      pickemQuery = "";
+      this.hidden = true;
+      renderPickem();
+    });
+    $("#pickemGames").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-pkg]");
+      if (!b || b.dataset.pkg === pickemGame) return;
+      pickemGame = b.dataset.pkg;
+      renderPickem();
+    });
     $("#pickemEvtabs").addEventListener("click", function (e) {
       var t = e.target.closest("[data-pevt]");
       if (t && t.dataset.pevt !== pickemEventId) {

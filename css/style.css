@@ -3461,3 +3461,31 @@ html[data-theme="light"] .cer-quote input {
   .pk-node-side { font-size: 9.5px; }
   .pk-node-side .avatar { width: 16px; height: 16px; }
 }
+
+/* 作业页游戏筛选行（1.3.6，仿主页选择器） */
+.pk-games {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px 0 4px;
+  scrollbar-width: none;
+}
+.pk-games::-webkit-scrollbar { display: none; }
+.pk-game {
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pk-game.is-active {
+  border-color: rgba(var(--accent-rgb), .5);
+  background: rgba(var(--accent-rgb), .1);
+  color: var(--accent);
+}

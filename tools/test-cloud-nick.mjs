@@ -698,6 +698,35 @@ check("series 逐场计分（1.3.4）：只算猜过的场次（中途接入公�
       { id: "s-m2", a: "队3", b: "队4", startAt: iso(3 * 3600000), winner: "", score: "" } ] };
     return PK.stageOpenForPicks(stage) === true && PK.pickableSeriesMatches(stage).length === 1;
   })());
+check("自动收录 S/A 赛事（1.3.6）：tier 筛选 + stage 分组 series + 手工去重 + 日期聚类轮次 + 状态推断",
+  (function () {
+    var now = Date.now();
+    function m(id, tier, tn, st, a, b, startAtMs, winner) {
+      return { id: id, game: "cs2", tier: tier, tournament: tn, stage: st,
+        teamA: { name: a, short: a.slice(0, 3) }, teamB: { name: b, short: b.slice(0, 3) },
+        startAt: iso(startAtMs), result: winner ? { winner: winner, score: "2:0" } : null };
+    }
+    var matches = [
+      m("1", "s", "X Major", "Stage 1", "甲", "乙", -86400000, "A"),
+      m("2", "s", "X Major", "Stage 1", "丙", "丁", -60000000, "B"),
+      m("3", "a", "X Major", "Playoffs", "甲", "丙", 3 * 3600000, null),
+      m("4", "b", "X Major", "Stage 1", "戊", "己", -50000000, "A"),   // tier=b 不收录
+      m("5", "b", "Y Cup", "Group A", "甲", "乙", -86400000, "A"),     // 全组 tier=b → 整赛事不收录
+      m("6", "s", "手工赛事", "Stage 1", "甲", "乙", -86400000, "A")   // 手工配置去重
+    ];
+    var evs = PK.buildAutoEvents(matches, ["手工赛事"]);
+    var xm = evs.filter(function (e) { return e.name === "X Major"; })[0];
+    if (!xm || evs.some(function (e) { return e.name === "手工赛事"; })) return false;
+    if (xm.status !== "active" || xm.stages.length !== 2) return false; // Stage 1 + Playoffs 两个 series 阶段
+    var s1 = xm.stages.filter(function (s) { return s.id === "Stage 1"; })[0];
+    var po = xm.stages.filter(function (s) { return s.id === "Playoffs"; })[0];
+    if (!s1 || !po || s1.type !== "series" || po.type !== "series") return false;
+    if (s1.matches.length !== 2 || po.matches.length !== 1) return false;
+    if (s1.matches[0].round !== 0 || po.matches[0].round !== 0) return false;
+    if (s1.coinTier !== 1 || po.coinTier !== 1) return false;
+    // Y Cup 组内只有 tier=b → 不收录
+    return !evs.some(function (e) { return e.name === "Y Cup"; });
+  })());
 
 /* ---------- 场景 W：1.4.0 Pick'Em 接线静态断言 ---------- */
 console.log("W. Pick'Em 接线：");
@@ -716,6 +745,7 @@ check("数据链路：fetch-pickem 聚合 → build/trim 切片（hash 计入）
 check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册（[hidden] 补丁随 sheet-backdrop 继承）",
   /id="view-labs"/.test(htmlSrc) && /id="view-pickem"/.test(htmlSrc) && /id="labsList"/.test(htmlSrc) &&
   /id="pickemEvtabs"/.test(htmlSrc) && /id="pickemBody"/.test(htmlSrc) &&
+  /id="pickemSearch"/.test(htmlSrc) && /id="pickemSearchClear"/.test(htmlSrc) && /id="pickemGames"/.test(htmlSrc) &&
   /id="pickemSheet"/.test(htmlSrc) && /id="pickemSheetList"/.test(htmlSrc) &&
   /id="openLabsBtn"/.test(htmlSrc) && /id="labsBackBtn"/.test(htmlSrc) && /id="pickemBackBtn"/.test(htmlSrc) &&
   /name === "labs" \|\| name === "pickem"/.test(appSrc) &&
@@ -723,6 +753,14 @@ check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册
   /name === "labs"\) renderLabs/.test(appSrc) && /name === "pickem"\) renderPickem/.test(appSrc) &&
   /function bindPickem/.test(appSrc) && /bindPickem\(\);/.test(appSrc) &&
   /"#pickemSheet"/.test(appSrc));
+check("作业页筛选与搜索（1.3.6，假设 75/76 同源）：搜索防抖 + 游戏 tiles + 统一口径函数",
+  /"#pickemSearch"\)\.addEventListener/.test(appSrc) && /"#pickemSearchClear"\)\.addEventListener/.test(appSrc) &&
+  /"#pickemGames"\)\.addEventListener/.test(appSrc) &&
+  /function pickemFilteredEvents/.test(appSrc) && // 统一口径：chips 与主体都走它
+  (appSrc.match(/pickemFilteredEvents\(\)/g) || []).length >= 1 &&
+  /var pickemGame = "all"/.test(appSrc) && /var pickemQuery = ""/.test(appSrc) &&
+  /function buildAutoEvents/.test(pickemJsSrc) && /buildAutoEvents\(MATCHES, pickemManualTournaments\(\)\)/.test(appSrc) &&
+  /pk-games/.test(cssSrc));
 check("状态与结算：state.pickem 全链（init/load/快照/校验/云合并）+ settlePickem 四挂点 + Sync.pack 白名单",
   /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}/.test(appSrc) &&
   /pickem: normalizePickemState\(parsed\.pickem\)/.test(appSrc) &&

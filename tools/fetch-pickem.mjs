@@ -272,6 +272,7 @@ function buildEvent(cfg, allMatches) {
   }
   return {
     id: cfg.id, game: cfg.game, name: cfg.name || cfg.id,
+    tournament: cfg.tournament, // 自动收录去重键（客户端 pickemManualTournaments 收集）
     status: allDone ? "done" : (anyStarted ? "active" : "upcoming"),
     endsAt: lastStart ? new Date(lastStart + 12 * 3600000).toISOString() : "",
     stages: stages

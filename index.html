@@ -342,7 +342,7 @@
         <p class="settings-footer">实验功能可能随时调整或下线 · 欢迎在评论区反馈</p>
       </section>
 
-      <!-- 赛事竞猜 Pick'Em（实验功能 1.4.0：瑞士轮五桶 + 淘汰赛逐场） -->
+      <!-- 赛事竞猜 Pick'Em（实验功能：瑞士轮五桶 + 名次竞猜 + 树状展示；1.3.6 起自动收录 S/A 级赛事） -->
       <section class="view" id="view-pickem" hidden>
         <div class="subpage-head">
           <button class="back-btn" id="pickemBackBtn" type="button" aria-label="返回实验功能">
@@ -351,6 +351,14 @@
           <h1 class="page-title">赛事竞猜</h1>
           <span class="section-sub" id="pickemCoin"></span>
         </div>
+        <div class="schedule-search">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="pickemSearch" type="search" placeholder="搜索赛事 / 游戏" autocomplete="off" enterkeyhint="search">
+          <button class="search-clear" id="pickemSearchClear" type="button" aria-label="清空搜索" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="pk-games" id="pickemGames"></div>
         <div class="pickem-evtabs" id="pickemEvtabs" hidden></div>
         <div id="pickemBody"></div>
       </section>

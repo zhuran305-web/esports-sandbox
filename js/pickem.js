@@ -164,6 +164,7 @@ export function normalizePickemData(raw) {
       id: ev.id,
       game: typeof ev.game === "string" && ev.game ? ev.game : "cs2",
       name: typeof ev.name === "string" && ev.name ? ev.name : ev.id,
+      tournament: typeof ev.tournament === "string" ? ev.tournament : "", // 手工配置的匹配串（自动收录去重用）
       status: ev.status === "done" || ev.status === "active" || ev.status === "upcoming" ? ev.status : "upcoming",
       endsAt: typeof ev.endsAt === "string" ? ev.endsAt : "",
       stages: stages
@@ -392,6 +393,70 @@ export function settleRewards(stage, rec) {
     bySource.push({ label: stage.label + " · " + tierLabel, coin: PICKEM_COINS[k], count: info.count });
   });
   return { coins: coins, bySource: bySource };
+}
+
+/* ---------- 自动收录（1.3.6）：所有 tier=s/a 赛事的 series 视图 ----------
+   采集端聚合（pickem.json）只装手工配置的赛事（major/IEM 精细模式）；其余 S/A 赛事由客户端
+   从 MATCHES 现算（45 天窗口内数据本来就全，避免 pickem.json 膨胀数百 KB）。手工配置优先去重。 */
+
+/** 从 matches 现算自动赛事：按 tournament 归并 tier=s/a 比赛，按 stage 值分组为多个 series 阶段，
+ *  round 按北京时间日期聚类（与聚合器同口径）。返回 normalizePickemData 形状的事件数组。 */
+export function buildAutoEvents(matches, excludeTournaments) {
+  var excluded = {};
+  (excludeTournaments || []).forEach(function (t) { excluded[t] = 1; });
+  var byEvent = {};
+  (matches || []).forEach(function (m) {
+    if (!m || (m.tier !== "s" && m.tier !== "a")) return;
+    if (!m.tournament || excluded[m.tournament]) return;
+    if (!m.teamA || !m.teamA.name || !m.teamB || !m.teamB.name) return;
+    var ev = byEvent[m.tournament];
+    if (!ev) { ev = byEvent[m.tournament] = { game: m.game, stages: {} }; }
+    if (m.game !== ev.game) return; // 同名跨游戏（罕见）：归首个游戏
+    var sk = m.stage || "赛程";
+    if (!ev.stages[sk]) ev.stages[sk] = [];
+    ev.stages[sk].push(m);
+  });
+  var events = [];
+  Object.keys(byEvent).forEach(function (tn) {
+    var ev = byEvent[tn];
+    var stageKeys = Object.keys(ev.stages);
+    if (!stageKeys.length) return;
+    var stages = [];
+    var lastStart = 0, allDone = true, anyStarted = false;
+    stageKeys.forEach(function (sk) {
+      var list = ev.stages[sk].slice().sort(function (a, b) { return new Date(a.startAt) - new Date(b.startAt); });
+      var teamsSeen = {};
+      var lastDay = "", round = 0;
+      var ms = list.map(function (m) {
+        var day = m.startAt ? new Date(new Date(m.startAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : "";
+        if (lastDay && day && day !== lastDay) round += 1;
+        if (day) lastDay = day;
+        var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
+        var startT = new Date(m.startAt).getTime();
+        if (winner || (!isNaN(startT) && startT <= Date.now())) anyStarted = true;
+        if (!winner) allDone = false;
+        if (!isNaN(startT)) lastStart = Math.max(lastStart, startT);
+        teamsSeen[m.teamA.name] = { name: m.teamA.name, short: m.teamA.short || "" };
+        teamsSeen[m.teamB.name] = { name: m.teamB.name, short: m.teamB.short || "" };
+        return { id: m.id, a: m.teamA.name, b: m.teamB.name, startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round };
+      });
+      stages.push({
+        id: sk, type: "series", label: sk,
+        coinTier: 1,
+        startsAt: list[0].startAt, endsAt: list[list.length - 1].startAt,
+        teams: Object.keys(teamsSeen).map(function (n) { return teamsSeen[n]; }),
+        matches: ms
+      });
+    });
+    if (!stages.length) return;
+    events.push({
+      id: "auto:" + tn, game: ev.game, name: tn,
+      status: allDone ? "done" : anyStarted ? "active" : "upcoming",
+      endsAt: lastStart ? new Date(lastStart + 12 * 3600000).toISOString() : "",
+      stages: stages, auto: true
+    });
+  });
+  return events;
 }
 
 /* ---------- 云合并（仿 mergeCollection：记录级冲突消解） ---------- */

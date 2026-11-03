@@ -9,7 +9,7 @@
       "stages": [
         { "id": "groupA", "type": "series", "label": "Group A · 双败", "stageNames": ["Group A"] },
         { "id": "groupB", "type": "series", "label": "Group B · 双败", "stageNames": ["Group B"] },
-        { "id": "playoffs", "type": "series", "label": "淘汰赛", "stageNames": ["Playoffs"] }
+        { "id": "playoffs", "type": "placement", "label": "淘汰赛", "stageNames": ["Playoffs"] }
       ]
     }
   ]

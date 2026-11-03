@@ -81,15 +81,15 @@ export var ACHV_DEFS = [
   { id: "temple_5", g: "转生", icon: "🕯", name: "殿里常客", desc: "封神与破产合计 5 次", title: "殿里常客", hidden: false,
     test: function (s) { return s.gods + s.bankrupts >= 5; } },
 
-  /* ---------- 赛事（1.4.0 Pick'Em 挑战币：铜=提交过、银/金/钻=全对阶段数 1/2/3+） ---------- */
+  /* ---------- 赛事（1.3.5 Pick'Em 硬币体系：阶段/轮次猜对发铜银金币，淘汰赛冠军发钻石币） ---------- */
   { id: "pickem_first", g: "赛事", icon: "🎟", name: "大赛首票", desc: "参与一次赛事竞猜（Pick'Em）", title: "竞猜新人", hidden: false,
     test: function (s) { return s.pickemSubmitted === true; } },
-  { id: "pickem_silver", g: "赛事", icon: "🥈", name: "银币达成", desc: "赛事竞猜单阶段全对", title: "银币玩家", hidden: false,
-    test: function (s) { return s.pickemPerfect >= 1; } },
-  { id: "pickem_gold", g: "赛事", icon: "🥇", name: "金币达成", desc: "赛事竞猜两个阶段全对", title: "金币玩家", hidden: false,
-    test: function (s) { return s.pickemPerfect >= 2; } },
-  { id: "pickem_diamond", g: "赛事", icon: "💎", name: "钻石达成", desc: "赛事竞猜三个阶段全对", title: "钻石玩家", hidden: false,
-    test: function (s) { return s.pickemPerfect >= 3; } },
+  { id: "pickem_silver", g: "赛事", icon: "🥈", name: "银币入手", desc: "获得第一枚银币（第 2 阶段/轮猜对）", title: "银币玩家", hidden: false,
+    test: function (s) { return !!(s.pickemCoins && s.pickemCoins.s >= 1); } },
+  { id: "pickem_gold", g: "赛事", icon: "🥇", name: "金币入手", desc: "获得第一枚金币（第 3 阶段/轮或淘汰赛亚/季军）", title: "金币玩家", hidden: false,
+    test: function (s) { return !!(s.pickemCoins && s.pickemCoins.g >= 1); } },
+  { id: "pickem_diamond", g: "赛事", icon: "💎", name: "钻石入手", desc: "猜中一次淘汰赛冠军", title: "钻石玩家", hidden: false,
+    test: function (s) { return !!(s.pickemCoins && s.pickemCoins.d >= 1); } },
 
   /* ---------- 隐藏 ---------- */
   { id: "loss_10", g: "隐藏", icon: "🎭", name: "反向预言家", desc: "连续猜错 10 场（这也是一种天赋）", title: "反向预言家", hidden: true,

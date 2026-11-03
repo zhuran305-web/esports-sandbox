@@ -27,7 +27,8 @@
  *     }]
  *   }]
  * }
- * 阶段类型：swiss（16 队 10 选）/ bracket（单败淘汰树，按开赛时间分 [4,2,1] 轮）/ series（1.3.4 逐场猜，任何赛制）。
+ * 阶段类型：swiss（16 队 10 选，coinTier=swiss 序号 1铜/2银/3金）/ bracket（旧类型，兼容保留）/
+ * series（逐场猜，round=按北京日期聚类的轮次，轮 0铜/1银/2+金）/ placement（淘汰赛名次竞猜：冠军钻、亚/季军金）。
  *
  * 结算口径（客户端 scorePhase 用同一张表）：瑞士轮终局 3-0→adv30、3-1/3-2→adv、2-3→out23、1-3→out13、0-3→out03。
  * 已 done 的事件不再重建（matches 可能已被 retention 清掉，重建会丢数据），只随 30 天窗口淘汰。
@@ -157,19 +158,23 @@ function buildBracketStage(cfg, matches) {
 }
 
 function buildSeriesStage(cfg, matches) {
-  // 系列赛（1.3.4）：任意赛制逐场猜（双败/联赛/瑞士轮转写皆可）——不做轮次切块、不要求场次数，
-  // 已结束场次随 matches 一起带出（客户端只展示结果，不参与计分）
+  // 系列赛（逐场猜）：任意赛制皆可（双败/联赛/瑞士轮转写）——已结束场次随 matches 带出（只展示不参与计分）。
+  // round = 按北京时间日期聚类的小组轮次（0 起）：GSL 双败每轮集中在同一天，第 1/2/3 轮对应铜/银/金币
   var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
   var teams = {};
   var order = [];
+  var lastDay = "", round = 0;
   var compact = list.map(function (m) {
     var a = compactTeam(m.teamA), b = compactTeam(m.teamB);
     [a, b].forEach(function (t) {
       if (!t) return;
       if (!teams[t.name]) { teams[t.name] = t; order.push(t.name); }
     });
+    var day = m.startAt ? new Date(new Date(m.startAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : "";
+    if (lastDay && day && day !== lastDay) round += 1; // 跨天即下一轮（IEM 每轮集中在一天；跨天赛制后续再适配）
+    if (day) lastDay = day;
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
-    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "" };
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round };
   });
   return {
     id: cfg.id, type: "series", label: cfg.label || cfg.id,
@@ -179,17 +184,74 @@ function buildSeriesStage(cfg, matches) {
   };
 }
 
+function buildPlacementStage(cfg, matches) {
+  // 淘汰赛名次竞猜：猜冠军（钻石币）/亚军（金币）/季军（金币，半决赛败者并列两队）。
+  // 轮次结构复用 bracket 的 [4,2,1] 切块；全部完赛后推导 results。
+  var expect = Array.isArray(cfg.expectRounds) && cfg.expectRounds.length ? cfg.expectRounds : DEFAULT_EXPECT_ROUNDS;
+  var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
+  var teams = {};
+  var order = [];
+  var degraded = list.length !== expect.reduce(function (s, n) { return s + n; }, 0);
+  var roundLabels = [];
+  var roundOf = {};
+  if (!degraded) {
+    var idx = 0;
+    expect.forEach(function (n, ri) {
+      roundLabels.push(ROUND_LABELS[n] || "第 " + (ri + 1) + " 轮");
+      for (var i = 0; i < n; i++) roundOf[idx++] = ri;
+    });
+  }
+  var compact = list.map(function (m, i) {
+    var a = compactTeam(m.teamA), b = compactTeam(m.teamB);
+    [a, b].forEach(function (t) {
+      if (!t) return;
+      if (!teams[t.name]) { teams[t.name] = t; order.push(t.name); }
+    });
+    var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: degraded ? 0 : (roundOf[i] || 0) };
+  });
+  var results = null;
+  var allDone = list.length > 0 && compact.every(function (m) { return m.winner === "A" || m.winner === "B"; });
+  if (!degraded && allDone) {
+    var finalM = compact.filter(function (m) { return m.round === expect.length - 1; })[0];
+    var semis = compact.filter(function (m) { return m.round === expect.length - 2; });
+    if (finalM && semis.length === expect[expect.length - 2]) {
+      var champion = finalM.winner === "A" ? finalM.a : finalM.b;
+      var runnerUp = finalM.winner === "A" ? finalM.b : finalM.a;
+      var third = semis.map(function (s) { return s.winner === "A" ? s.b : s.a; });
+      results = { champion: champion, runnerUp: runnerUp, third: third };
+    }
+  }
+  return {
+    id: cfg.id, type: "placement", label: cfg.label || cfg.id,
+    startsAt: list.length ? list[0].startAt : "", endsAt: list.length ? list[list.length - 1].startAt : "",
+    teams: order.map(function (n) { return teams[n]; }),
+    matches: compact,
+    rounds: degraded ? [] : roundLabels,
+    degraded: degraded,
+    results: results
+  };
+}
+
 function buildEvent(cfg, allMatches) {
   var evMatches = allMatches.filter(function (m) {
     return m.game === cfg.game && m.tournament === cfg.tournament;
   });
   var stages = [];
+  var swissOrdinal = 0;
   (cfg.stages || []).forEach(function (scfg) {
     var sm = evMatches.filter(function (m) { return (scfg.stageNames || []).indexOf(m.stage) >= 0; });
     if (!sm.length) return; // 该阶段还没有任何数据（未排期/拼写对不上），宁缺勿滥
-    stages.push(scfg.type === "bracket" ? buildBracketStage(scfg, sm)
-      : scfg.type === "series" ? buildSeriesStage(scfg, sm)
-        : buildSwissStage(scfg, sm));
+    if (scfg.type === "bracket") stages.push(buildBracketStage(scfg, sm));
+    else if (scfg.type === "series") stages.push(buildSeriesStage(scfg, sm));
+    else if (scfg.type === "placement") stages.push(buildPlacementStage(scfg, sm));
+    else {
+      // 瑞士轮：coinTier 按 swiss 阶段序号（第 1 个=铜、第 2 个=银、第 3 个及以后=金）——major 三阶段对应
+      swissOrdinal += 1;
+      var stage = buildSwissStage(scfg, sm);
+      stage.coinTier = Math.min(swissOrdinal, 3);
+      stages.push(stage);
+    }
   });
   if (!stages.length) return null;
   var anyMatch = stages.some(function (s) { return s.matches.length; });

@@ -279,7 +279,8 @@ async function realTempleMy() {
   return { uid: e.appUserId, scoreRaw: e.score, gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, extra: e.extra || {}, isMe: true };
 }
 
-/** 魔神殿总榜提交：仅当（封神, 破产）字典序高于榜上时落库；昵称仅随次数变化刷新。 */
+/** 魔神殿总榜提交：仅当（封神, 破产）字典序高于榜上时落库；昵称仅随次数变化刷新。
+ *  1.3.5 起魔神殿页面下线（入口/视图移除），该榜改作硬币排行榜（见下）；submitHonor 保留但不再被调用。 */
 async function realSubmitTemple(gods, bankrupts, displayNick, quote) {
   var sdk = getSDK();
   if (!sdk || !sdk.cloud) return;
@@ -291,6 +292,116 @@ async function realSubmitTemple(gods, bankrupts, displayNick, quote) {
     score: encodeTemple(gods, bankrupts),
     extra: extra
   });
+}
+
+/* ============================== 硬币排行榜（1.3.5 实验功能） ==============================
+ * 复用 sha_board_god 榜（魔神殿下线）。score 编码：1e12 + d×1e10 + g×1e7 + s×1e4 + c×10 + tick(0-9)
+ *   - 偏移 1e12 与旧魔神殿编码（封神×1e9+破产，实测 ≤几 e9）天然隔离：decode <1e12 返回 null（旧条目过滤）
+ *   - 尾数 tick 承载 extra 刷新（昵称/头像变化时 +1 mod 10，不改币值解码；extra 门控四连坑同族预防）
+ *   - 硬币只增不减 → 去掉 tick 后单调递增，兼容 only-if-better
+ *   - 量级界：d<100、g<1000、s<1000、c<10000（现实远低于），进位不串位 */
+var COIN_SCORE_BASE = 1e12;
+
+function encodeCoinScore(coins, tick) {
+  return COIN_SCORE_BASE +
+    (coins.d || 0) * 1e10 + (coins.g || 0) * 1e7 + (coins.s || 0) * 1e4 + (coins.c || 0) * 10 +
+    Math.max(0, Math.min(9, tick || 0));
+}
+
+function decodeCoinScore(score) {
+  if (typeof score !== "number" || score < COIN_SCORE_BASE) return null; // 旧魔神殿条目：过滤
+  var rest = Math.floor((score - COIN_SCORE_BASE) / 10);
+  return {
+    d: Math.floor(rest / 1e10),
+    g: Math.floor((rest % 1e10) / 1e7),
+    s: Math.floor((rest % 1e7) / 1e4),
+    c: rest % 1e4
+  };
+}
+
+function coinExtra(displayNick, avatar, title, mainTeam, mtLevel) {
+  var extra = {};
+  if (displayNick) extra.nick = displayNick;
+  if (avatar) extra.avatar = String(avatar).slice(0, 300);
+  if (title) extra.title = String(title).slice(0, 24);
+  if (mainTeam) extra.mt = String(mainTeam).slice(0, 48);
+  if (mtLevel) extra.ml = Math.min(8, Math.max(1, Math.round(mtLevel)));
+  return extra;
+}
+
+async function realCoinSubmit(coins, tick, displayNick, avatar, title, mainTeam, mtLevel) {
+  var sdk = getSDK();
+  if (!sdk || !sdk.cloud) return;
+  await sdk.cloud.leaderboard.submit({
+    key: BOARD_KEYS.temple,
+    score: encodeCoinScore(coins, tick),
+    extra: coinExtra(displayNick, avatar, title, mainTeam, mtLevel)
+  });
+}
+
+async function realCoinMy() {
+  var sdk = getSDK();
+  if (!sdk || !sdk.cloud) return null;
+  var e = await sdk.cloud.leaderboard.getCurrentUserEntry({ key: BOARD_KEYS.temple });
+  if (!e) return null;
+  myUid = e.appUserId;
+  return { uid: e.appUserId, scoreRaw: e.score, coins: decodeCoinScore(e.score), extra: e.extra || {}, rank: e.rank, isMe: true };
+}
+
+async function realCoinList(limit) {
+  var sdk = getSDK();
+  if (!sdk || !sdk.cloud) return { entries: [] };
+  var page = await sdk.cloud.leaderboard.getList({ key: BOARD_KEYS.temple, limit: limit });
+  var entries = (page && page.entries) || [];
+  var out = [];
+  entries.forEach(function (e) {
+    var coins = decodeCoinScore(e.score);
+    if (!coins) return; // 旧魔神殿条目过滤（编码偏移外的 score）
+    var extra = e.extra || {};
+    out.push({
+      uid: e.appUserId,
+      nick: extra.nick || "盒友",
+      avatar: typeof extra.avatar === "string" ? extra.avatar : "",
+      coins: coins,
+      rank: e.rank,
+      isMe: myUid ? e.appUserId === myUid : false
+    });
+  });
+  return { entries: out };
+}
+
+/** 硬币榜提交：币更优（字典序 d→g→s→c）才落库；币未变优但展示字段变化时 tick+1 刷 extra。
+ *  0 硬币不提交（不上榜）。 */
+async function submitCoinBoardWithNick(coins, displayNick, avatar, title, mainTeam, mtLevel) {
+  var total = coins ? (coins.c || 0) + (coins.s || 0) + (coins.g || 0) + (coins.d || 0) : 0;
+  if (!total) return;
+  var cur = await realCoinMy().catch(function () { return null; });
+  var curCoins = cur && cur.coins ? cur.coins : { c: 0, s: 0, g: 0, d: 0 };
+  var coinBetter = (coins.d || 0) > (curCoins.d || 0) ||
+    ((coins.d || 0) === (curCoins.d || 0) && ((coins.g || 0) > (curCoins.g || 0) ||
+      ((coins.g || 0) === (curCoins.g || 0) && ((coins.s || 0) > (curCoins.s || 0) ||
+        ((coins.s || 0) === (curCoins.s || 0) && (coins.c || 0) > (curCoins.c || 0))))));
+  if (!cur || coinBetter) {
+    await realCoinSubmit(coins, 0, displayNick, avatar, title, mainTeam, mtLevel);
+    return;
+  }
+  var curTick = cur ? (cur.scoreRaw - COIN_SCORE_BASE) % 10 : 0;
+  var ex = cur.extra || {};
+  var changed = (displayNick && displayNick !== (ex.nick || "")) ||
+    (avatar !== undefined && avatar !== (typeof ex.avatar === "string" ? ex.avatar : "")) ||
+    (title !== undefined && title !== (typeof ex.title === "string" ? ex.title : "")) ||
+    (mainTeam !== undefined && mainTeam !== (typeof ex.mt === "string" ? ex.mt : "")) ||
+    (mtLevel !== undefined && mtLevel !== (typeof ex.ml === "number" ? ex.ml : 0));
+  if (cur && changed) {
+    var merged = {
+      nick: displayNick || ex.nick || "",
+      avatar: avatar !== undefined ? avatar : (typeof ex.avatar === "string" ? ex.avatar : ""),
+      title: title !== undefined ? title : (typeof ex.title === "string" ? ex.title : ""),
+      mt: mainTeam !== undefined ? mainTeam : (typeof ex.mt === "string" ? ex.mt : ""),
+      ml: mtLevel !== undefined ? mtLevel : (typeof ex.ml === "number" ? ex.ml : 0)
+    };
+    await realCoinSubmit(curCoins, (curTick + 1) % 10, merged.nick, merged.avatar, merged.title, merged.mt, merged.ml);
+  }
 }
 
 /* ============================== 对外接口 ============================== */
@@ -346,6 +457,17 @@ export var Cloud = {
 
   decodeTemple: decodeTemple,
 
+  /** 硬币排行榜（1.3.5 实验功能）：提交/读取。0 硬币不提交；mock 层暂不支持（浏览器调试用真实宿主或跳过） */
+  submitCoinBoard: async function (coins, displayNick, avatar, title, mainTeam, mtLevel) {
+    if (!isMiniProgram()) return; // mock 层不做硬币榜（实验功能，调试台验证走真实宿主受限——静态断言+真机验收）
+    return submitCoinBoardWithNick(coins, displayNick, avatar, title, mainTeam, mtLevel);
+  },
+
+  getCoinBoard: async function (limit) {
+    if (!isMiniProgram()) return { entries: [] };
+    return realCoinList(limit || 100);
+  },
+
   /** 与沙粒数封顶同源的转生阈值（10 亿）：余额≥CAP 可封神、≤-CAP 可破产 */
   CAP: AMOUNT_CAP,
 
@@ -385,8 +507,13 @@ export var Cloud = {
         mainTeam: typeof extra.mt === "string" ? extra.mt.slice(0, 48) : "",
         mtLevel: typeof extra.ml === "number" && extra.ml >= 1 ? Math.min(8, Math.round(extra.ml)) : 0,
             quote: typeof extra.quote === "string" ? extra.quote : "",
-            gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, isMe: myUid ? e.appUserId === myUid : false
+            gods: d.gods, bankrupts: d.bankrupts, rank: e.rank, isMe: myUid ? e.appUserId === myUid : false,
+            scoreRaw: e.score
           };
+        }).filter(function (e) {
+          // 1.3.5 硬币排行榜与魔神殿共榜：硬币编码（≥1e12）不是魔神数据——
+          // decodeTemple 会把它解成「封神上千次」，污染胜败榜的功成身退过滤，这里排除
+          return typeof e.scoreRaw !== "number" || e.scoreRaw < 1e12;
         })
       };
     } catch (e) {
@@ -473,7 +600,8 @@ export var Sync = {
           title: typeof state.title === "string" ? state.title : undefined,          // 装备称号（undefined=未配置，沿用榜上旧值）
           mainTeam: typeof state.mainTeam === "string" ? state.mainTeam : undefined, // 主队三态：undefined=从未设置（不碰榜上旧值）、""=已取消（权威清空）
           mainLevels: state.mainLevels || {}, // 主队等级累计（1.2.12，{键: 押过场次}，逐键 max 合并）
-          pickem: state.pickem || {}          // Pick'Em 竞猜记录（1.4.0，选择极小；冲突合并见 app.js#applyCloudRecord）
+          pickem: state.pickem || {},          // Pick'Em 竞猜记录（1.4.0，选择极小；冲突合并见 app.js#applyCloudRecord）
+          pickemCoins: state.pickemCoins || {} // Pick'Em 硬币（1.3.5，逐键 max 合并；纯荣誉货币）
         }
       });
     }

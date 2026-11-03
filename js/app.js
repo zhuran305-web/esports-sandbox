@@ -2218,7 +2218,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         "</div>";
     });
     if (st === "locked") html += '<div class="pickem-note">对阵确定后逐轮开放，各场开赛前 1 小时截止</div>';
-    if (st === "open" && !pickableBracketMatches(stage).length) {
+    if (st === "open" && !pickableSeriesMatches(stage).length) {
       html += '<div class="pickem-note">对阵待上一轮赛果确定，确定后开放竞猜</div>';
     }
     return html;

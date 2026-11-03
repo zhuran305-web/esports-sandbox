@@ -1,11 +1,12 @@
 name: Publish runtime data to Pages
 
 # 把 data Release 里的 runtime-matches.json / runtime-meta.json 发布到 GitHub Pages。
-# 每 10 分钟一次（Pages 对发布频率有限制，约 10 次/小时；5 分钟会超）。
+# 每 30 分钟一次（2026-11-03 由 10 分钟降频：公开仓库 schedule 被 GitHub 严重节流，
+# 且同仓库多个高频 cron 会互相挤占；Pages 只是开发镜像，30 分钟足够）。
 # 需要仓库 Settings → Pages → Source 选择 "GitHub Actions"。
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:

@@ -4991,7 +4991,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_PER_PIC
 
   var NET_BLOCK_KEY = "esports_sandbox_net_block";
   var NET_BLOCK_TTL = 24 * 60 * 60 * 1000;
-  var POLL_INTERVAL = 15 * 60 * 1000;     // 轮询节奏：与采集器 15 分钟更新对齐（2026-11-02 降频）
+  var POLL_INTERVAL = 15 * 60 * 1000;     // 轮询节奏：探测 meta（很小），采集 30 分钟一轮（GitHub schedule 被节流，另有 FC 兜底）
   var POLL_MAX_AGE = 10 * 60 * 1000;      // 轮询/回前台节流：10 分钟内查过就只走本地缓存
   var POLL_BACKOFF = 15 * 60 * 1000;      // 限流退避：RATE_LIMITED 后暂停自动轮询
   var pollBackoffUntil = 0;

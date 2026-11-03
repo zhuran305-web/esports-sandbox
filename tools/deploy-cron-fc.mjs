@@ -17,7 +17,7 @@ const SERVICE = "esports-sandbox-cron";
 const FUNCTION = "dispatch";
 const TRIGGER = "every30";
 const REGION = "cn-hangzhou";
-const CRON_EXPRESSION = "0 0,30 * * * *"; // FC 6 段 cron：每小时 0/30 分（秒 分 时 日 月 周）
+const CRON_EXPRESSION = "0 0 */2 * * *"; // FC 6 段 cron：每 2 小时的第 0 分钟（秒 分 时 日 月 周）——每小时最低消费下的成本取舍（~1.8 元/月增量）
 
 const env = {};
 fs.readFileSync(".env", "utf8").split(/\r?\n/).forEach((l) => {
@@ -36,6 +36,9 @@ const client = new FC.default(
     accessKeyId: env.OSS_ACCESS_KEY_ID,
     accessKeySecret: env.OSS_ACCESS_KEY_SECRET,
     endpoint: `fc.${REGION}.aliyuncs.com`,
+    // 默认 3s 读超时：函数冷启动 + OSS meta + GitHub dispatch 可能超过，调大到 25s
+    readTimeout: 25000,
+    connectTimeout: 10000,
   })
 );
 
@@ -125,7 +128,7 @@ async function main() {
     console.log(`[fc-cron] timer trigger 已存在并更新：${TRIGGER}`);
   }
 
-  console.log("[fc-cron] 部署完成 · 每 30 分钟检查一次（数据陈旧 >35 分钟才触发采集）");
+  console.log("[fc-cron] 部署完成 · 每 2 小时检查一次（数据陈旧 >35 分钟才触发采集，最坏延迟 ~2.5 小时）");
   console.log("[fc-cron] 立即验证：node tools/deploy-cron-fc.mjs --test");
 }
 

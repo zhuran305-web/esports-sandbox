@@ -5,6 +5,8 @@
  * （两个 schedule workflow 同时停、workflow 状态 active、无 incident，见 2026-11-03 排查）。
  * 本函数兜底：每次先读 OSS meta.json 判断数据新鲜度，陈旧（> STALE_MINUTES）才 POST
  * workflow_dispatch 触发 update-matches，避免与 GitHub 自身 cron 重复触发。
+ * （timer 节奏 2026-11-03 由 30 分钟调为每 2 小时：FC 每小时最低消费 0.01 元，全时段
+ *   30 分钟档月增 ~7 元；2 小时档月增 ~1.8 元，代价是兜底最坏延迟 ~2.5 小时。）
  *
  * 环境变量（只有两项，且都不参与 URL 构造）：
  *   GITHUB_DISPATCH_TOKEN  fine-grained PAT（仅 Actions: write，只授权本仓库）——必填

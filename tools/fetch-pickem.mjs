@@ -108,7 +108,9 @@ function buildSwissStage(cfg, matches) {
       if (!teams[t.name]) { teams[t.name] = t; teams[t.name].w = 0; teams[t.name].l = 0; order.push(t.name); }
       else if (!teams[t.name].short && t.short) teams[t.name].short = t.short;
     });
-    var day = m.startAt ? new Date(new Date(m.startAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : "";
+    // 脏 startAt 防炸（同 buildSeriesStage——new Date(NaN).toISOString() 抛 RangeError）
+    var startT = new Date(m.startAt).getTime();
+    var day = !isNaN(startT) ? new Date(startT + 8 * 3600000).toISOString().slice(0, 10) : "";
     if (lastDay && day && day !== lastDay) round += 1;
     if (day) lastDay = day;
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
@@ -178,7 +180,9 @@ function buildSeriesStage(cfg, matches) {
       if (!t) return;
       if (!teams[t.name]) { teams[t.name] = t; order.push(t.name); }
     });
-    var day = m.startAt ? new Date(new Date(m.startAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : "";
+    // 脏 startAt 防炸：new Date(NaN).toISOString() 会抛 RangeError——CI 一条脏数据会炸掉当轮采集
+    var startT = new Date(m.startAt).getTime();
+    var day = !isNaN(startT) ? new Date(startT + 8 * 3600000).toISOString().slice(0, 10) : "";
     if (lastDay && day && day !== lastDay) round += 1; // 跨天即下一轮（IEM 每轮集中在一天；跨天赛制后续再适配）
     if (day) lastDay = day;
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";

@@ -445,11 +445,13 @@ export function buildAutoEvents(matches, excludeTournaments) {
       var teamsSeen = {};
       var lastDay = "", round = 0;
       var ms = list.map(function (m) {
-        var day = m.startAt ? new Date(new Date(m.startAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : "";
+        // 脏 startAt（非法日期）防炸：new Date(NaN).toISOString() 会抛 RangeError——
+        // 内嵌快照不经 normalizeMatches 过滤，一条脏数据不能崩掉整次 boot（夜间自查 R5 定案）
+        var startT = new Date(m.startAt).getTime();
+        var day = !isNaN(startT) ? new Date(startT + 8 * 3600000).toISOString().slice(0, 10) : "";
         if (lastDay && day && day !== lastDay) round += 1;
         if (day) lastDay = day;
         var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
-        var startT = new Date(m.startAt).getTime();
         if (winner || (!isNaN(startT) && startT <= Date.now())) anyStarted = true;
         if (!winner) allDone = false;
         if (m.tier !== "a") allA = false;

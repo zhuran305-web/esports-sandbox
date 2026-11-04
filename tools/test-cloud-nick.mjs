@@ -967,6 +967,31 @@ check("③ 旧魔神条目过滤（<1e12 → null）与 1e12 边界",
   (function () { var b = decodeCoinScore(1e12); return b.d === 0 && b.g === 0 && b.s === 0 && b.c === 0; })() &&
   decodeCoinScore(2000) === null);
 
+/* ---------- 场景 Z（夜间自查 R5）：buildAutoEvents 日期聚类边界 ---------- */
+console.log("Z. buildAutoEvents 日期聚类（北京时间 +8h）边界：");
+check("① 跨天聚类：23:50 与次日 00:10（北京）分属两轮；同日两场同轮", (function () {
+  function mk(id, utcIso) {
+    return { id: id, game: "cs2", tier: "s", tournament: "聚类测试赛", stage: "Group A",
+      teamA: { name: "甲" + id }, teamB: { name: "乙" + id }, startAt: utcIso, result: null };
+  }
+  var evs = PK.buildAutoEvents([
+    mk("a", "2026-11-10T15:50:00.000Z"), // 北京 11-10 23:50
+    mk("b", "2026-11-10T16:10:00.000Z"), // 北京 11-11 00:10
+    mk("c", "2026-11-10T10:00:00.000Z")  // 北京 11-10 18:00（与 a 同轮）
+  ], []);
+  var ev = evs[0];
+  if (!ev || ev.stages.length !== 1) return false;
+  var rounds = {};
+  ev.stages[0].matches.forEach(function (m) { rounds[m.id] = m.round; });
+  return rounds["a"] === 0 && rounds["c"] === 0 && rounds["b"] === 1;
+})());
+check("② 脏 startAt 场次 round 归 0 且不抛错", (function () {
+  var evs = PK.buildAutoEvents([
+    { id: "x", game: "cs2", tier: "s", tournament: "脏数据赛", stage: "G", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: "not-a-date", result: null }
+  ], []);
+  return evs.length === 1 && evs[0].stages[0].matches[0].round === 0;
+})());
+
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
 function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }

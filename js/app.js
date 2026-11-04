@@ -2064,7 +2064,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (!r) return; // 阶段未完赛（results 缺失 / 无已猜的完赛场次）
       // series/placement（逐段竞猜）必须整段结束才结算——中途部分结果提前置 settled 会漏计后续奖励
       if ((stage.type === "series" || stage.type === "placement") && !stageAllDone(stage)) return;
-      var rw = settleRewards(stage, rec);
+      var rw = settleRewards(stage, rec, ev.tier);
       if (!rw) return;
       rec.settled = true;
       rec.settledAt = Date.now();
@@ -2285,15 +2285,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
      不要在换轮开头再闭合一次：双重闭合会把 .pickem-stage[data-pstage] 包裹层提前关掉，
      round 1+ 的比赛卡溢出到包裹层外，点击 closest("[data-pstage]") 落空 → 预测静默无法保存
      （1.3.6 线上「蒙古对阵黑豹无法保存预测」根因；round 0 场次在包裹层内所以能存，症状更具迷惑性） */
-  function pickemRoundFlowHTML(stage, rec, interactive) {
+  function pickemRoundFlowHTML(stage, rec, interactive, eventTier) {
     var html = "";
     var lastRound = -1;
+    // 币级按赛事等级（1.3.6 改版）：A 级每场铜币，其余（S 级/Major/未知）每场银币——不再按轮数
+    var coin = PICKEM_COINS[eventTier === "a" ? "c" : "s"];
     stage.matches.forEach(function (m, i) {
       var next = stage.matches[i + 1];
       if (m.round !== lastRound) {
         lastRound = m.round;
-        var tier = Math.min((m.round || 0) + 1, 3);
-        var coin = PICKEM_COINS[tier === 1 ? "c" : tier === 2 ? "s" : "g"];
         html += '<div class="pickem-round-label">第 ' + ((m.round || 0) + 1) + " 轮 · 猜对每场得 " + coin.icon + " " + coin.name + "</div>" +
           '<div class="pk-round-grid">';
       }
@@ -2310,7 +2310,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     Object.keys(myW).forEach(function (k) { if (myW[k]) picked++; });
     return '<div class="pickem-note">逐场竞猜：已结束场次只展示结果，剩余场次各场开赛前 1 小时截止；只统计你猜过的场次</div>' +
       '<div class="pickem-progress">已结束 ' + doneCount + "/" + stage.matches.length + " 场 · 你已猜 " + picked + " 场</div>" +
-      pickemRoundFlowHTML(stage, rec, true);
+      pickemRoundFlowHTML(stage, rec, true, ev.tier);
   }
 
   /* placement（淘汰赛名次竞猜）：猜冠军（💎）/亚军（🥇）/季军（🥇，半决赛败者并列两队猜中任一即对） */
@@ -2325,7 +2325,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       return '<div class="pickem-note">该阶段赛制结构与预期不符，暂只展示赛程</div>' + pickemTeamStrip(stage);
     }
     var editable = st === "open";
-    var html = '<div class="pickem-note">预测最终名次：猜对冠军得 💎 钻石币，猜对亚军/季军各得 🥇 金币（季军=半决赛败者并列两队，猜中任一即对）；第一场开赛前 1 小时截止后锁定</div>';
+    // A 级赛事币级整体降一级（1.3.6 改版）：冠军金币/亚季军银币；Major 与 S 级不变（冠军钻石/亚季军金币）
+    var isA = ev.tier === "a";
+    var champCoin = isA ? PICKEM_COINS.g : PICKEM_COINS.d;
+    var placeCoin = isA ? PICKEM_COINS.s : PICKEM_COINS.g;
+    var html = '<div class="pickem-note">预测最终名次：猜对冠军得 ' + champCoin.icon + " " + esc(champCoin.name) +
+      "，猜对亚军/季军各得 " + placeCoin.icon + " " + esc(placeCoin.name) +
+      "（季军=半决赛败者并列两队，猜中任一即对）；第一场开赛前 1 小时截止后锁定</div>";
     if (st === "done" && stage.results) {
       html += '<div class="pickem-note">终局：冠军 ' + esc(stage.results.champion) + " · 亚军 " + esc(stage.results.runnerUp) + " · 季军 " + esc((stage.results.third || []).join(" / ")) + "</div>";
     }
@@ -2335,7 +2341,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       var resList = st === "done" && stage.results ? (f.k === "third" ? (stage.results.third || []) : [stage.results[f.k]]) : null;
       var hit = !!(picked && resList && resList.indexOf(picked) >= 0);
       var miss = !!(picked && resList && !hit);
-      var coin = f.k === "champion" ? PICKEM_COINS.d : PICKEM_COINS.g;
+      var coin = f.k === "champion" ? champCoin : placeCoin;
       html += '<div class="pickem-place">' +
         '<div class="pickem-place-head"><b>' + esc(f.label) + "</b><i>" + coin.icon + " " + esc(coin.name) + "</i>" +
           (hit ? '<span class="pickem-mark hit">✓</span>' : "") + (miss ? '<span class="pickem-mark miss">✗</span>' : "") + "</div>" +
@@ -2369,6 +2375,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return PICKEM_COINS.c.icon + c.c + " " + PICKEM_COINS.s.icon + c.s + " " + PICKEM_COINS.g.icon + c.g + " " + PICKEM_COINS.d.icon + c.d;
   }
 
+  /** 赛事硬币规则说明（1.3.6 改版，按赛事形态）：Major（有瑞士轮阶段）规则不变；
+   *  其余按赛事等级：A 级整体降一级（小组赛铜币/冠军金币/亚季军银币），S 级小组赛银币/冠军钻石/亚季军金币 */
+  function pickemCoinRuleText(ev) {
+    var hasSwiss = ev.stages.some(function (s) { return s.type === "swiss"; });
+    if (hasSwiss) return "Major 规则：瑞士轮第 1/2/3 阶段猜对得 🥉/🥈/🥇 · 淘汰赛冠军 💎 亚/季军 🥇";
+    if (ev.tier === "a") return "A 级赛事：小组赛猜对每场得 🥉 铜币 · 淘汰赛冠军 🥇 亚/季军 🥈";
+    return "S 级赛事：小组赛猜对每场得 🥈 银币 · 淘汰赛冠军 💎 亚/季军 🥇";
+  }
+
   function pickemEventHTML(ev) {
     var stLabel = ev.status === "done" ? "已结束" : ev.status === "active" ? "进行中" : "未开始";
     var coins = state.pickemCoins || { c: 0, s: 0, g: 0, d: 0 };
@@ -2380,7 +2395,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       '<div class="pickem-coin' + (totalCoins ? " has" : "") + '">' +
         (totalCoins
           ? "我的硬币：" + pickemCoinsHTML() + " · 不可交易/不可压注，仅荣誉展示（硬币排行榜在实验功能内）"
-          : "猜对队伍位置得硬币：第 1 阶段/轮 🥉 铜币 · 第 2 🥈 银币 · 第 3 🥇 金币 · 淘汰赛猜中冠军 💎 钻石币") +
+          : esc(pickemCoinRuleText(ev))) +
       "</div>";
     ev.stages.forEach(function (stage) { html += pickemStageHTML(ev, stage); });
     html += '<p class="data-note">参赛名单与赛果以赛事官方公布为准 · 实验功能可能随时调整或下线</p>';

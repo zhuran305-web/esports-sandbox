@@ -610,7 +610,7 @@ check("计分（瑞士轮）：逐桶位置语义——猜进 3:0 桶的队必�
     var r = PK.scorePhase({ id: "s1", type: "swiss", label: "L", teams: T16, matches: [], results: SWISS_RESULTS }, { type: "swiss", picks: p });
     return r && r.correct === 8 && !r.perfect;
   })());
-check("硬币奖励（1.3.5）：swiss 按阶段币级 / series 按轮次币级 / placement 冠军钻亚季军金",
+check("硬币奖励（1.3.6 改版）：swiss 按阶段币级（Major 不变）/ series 按赛事等级（S银 A铜）/ placement 冠军钻亚季军金（A 级降一级）",
   (function () {
     // swiss coinTier=1（第一阶段）猜对 10 → 10 铜币
     var w1 = PK.settleRewards({ id: "s1", type: "swiss", label: "第一阶段", coinTier: 1, teams: T16, matches: [], results: SWISS_RESULTS }, { type: "swiss", picks: fullPicks() });
@@ -623,26 +623,32 @@ check("硬币奖励（1.3.5）：swiss 按阶段币级 / series 按轮次币级 
     return w2 && w2.coins.g === 2;
   })() &&
   (function () {
-    // series 按轮次币级：第 1 轮猜对 2 → 2 铜；第 2 轮猜对 1 → 1 银；第 3 轮猜对 1 → 1 金
+    // series 按赛事等级币级（1.3.6 改版，不再按轮数）：猜对 4 场 → S 级/未知 4 银；A 级 4 铜
     var stage = { id: "gA", type: "series", label: "Group A", teams: T16, matches: [
       { id: "r1a", a: "队1", b: "队2", startAt: iso(-7200000), winner: "A", score: "", round: 0 },
       { id: "r1b", a: "队3", b: "队4", startAt: iso(-7000000), winner: "B", score: "", round: 0 },
       { id: "r2a", a: "队5", b: "队6", startAt: iso(-3600000), winner: "B", score: "", round: 1 },
       { id: "r3a", a: "队7", b: "队8", startAt: iso(-1800000), winner: "A", score: "", round: 2 }
     ] };
-    var w = PK.settleRewards(stage, { type: "series", picks: { w: { r1a: "A", r1b: "B", r2a: "B", r3a: "A" } } });
-    return w && w.coins.c === 2 && w.coins.s === 1 && w.coins.g === 1 && w.coins.d === 0;
+    var picks = { type: "series", picks: { w: { r1a: "A", r1b: "B", r2a: "B", r3a: "A" } } };
+    var wS = PK.settleRewards(stage, picks, ""); // S 级/未知 → 每场银币
+    var wA = PK.settleRewards(stage, picks, "a"); // A 级 → 每场铜币
+    return wS && wS.coins.c === 0 && wS.coins.s === 4 && wS.coins.g === 0 && wS.coins.d === 0 &&
+      wA && wA.coins.c === 4 && wA.coins.s === 0 && wA.coins.g === 0 && wA.coins.d === 0;
   })() &&
   (function () {
-    // placement：冠军→钻、亚军→金、季军（并列两队猜中任一）→金；未猜名次不计分母
+    // placement：冠军→钻、亚军→金、季军（并列两队猜中任一）→金；未猜名次不计分母；
+    // A 级赛事整体降一级（1.3.6 改版）：冠军→金、亚军/季军→银
     var stage = { id: "po", type: "placement", label: "淘汰赛", startsAt: iso(-86400000), teams: T16.slice(0, 8), matches: [
       { id: "f", a: "队1", b: "队2", startAt: iso(-3600000), winner: "A", score: "", round: 2 }
     ], rounds: ["决赛"], degraded: false, results: { champion: "队1", runnerUp: "队2", third: ["队3", "队4"] } };
-    var w = PK.settleRewards(stage, { type: "placement", picks: { champion: "队1", runnerUp: "队2", third: "队4" } });
-    var w2 = PK.settleRewards(stage, { type: "placement", picks: { champion: "队2", runnerUp: "", third: "" } });
+    var w = PK.settleRewards(stage, { type: "placement", picks: { champion: "队1", runnerUp: "队2", third: "队4" } }, "");
+    var w2 = PK.settleRewards(stage, { type: "placement", picks: { champion: "队2", runnerUp: "", third: "" } }, "");
+    var wA = PK.settleRewards(stage, { type: "placement", picks: { champion: "队1", runnerUp: "队2", third: "队4" } }, "a");
     var sc = PK.scorePhase(stage, { type: "placement", picks: { champion: "队1", runnerUp: "队2", third: "队4" } });
     var sc2 = PK.scorePhase(stage, { type: "placement", picks: { champion: "队2", runnerUp: "", third: "" } });
     return w && w.coins.d === 1 && w.coins.g === 2 && w2 && w2.coins.d === 0 && w2.coins.g === 0 &&
+      wA && wA.coins.d === 0 && wA.coins.g === 1 && wA.coins.s === 2 &&
       sc && sc.correct === 3 && sc.total === 3 && sc2 && sc2.correct === 0 && sc2.total === 1;
   })());
 check("placement 选择完整性：三名次齐且互异才完整；归一化形状校验",
@@ -719,18 +725,23 @@ check("自动收录 S/A 赛事（1.3.6）：tier 筛选 + stage 分组 series + 
       m("3", "a", "X Major", "Playoffs", "甲", "丙", 3 * 3600000, null),
       m("4", "b", "X Major", "Stage 1", "戊", "己", -50000000, "A"),   // tier=b 不收录
       m("5", "b", "Y Cup", "Group A", "甲", "乙", -86400000, "A"),     // 全组 tier=b → 整赛事不收录
-      m("6", "s", "手工赛事", "Stage 1", "甲", "乙", -86400000, "A")   // 手工配置去重
+      m("6", "s", "手工赛事", "Stage 1", "甲", "乙", -86400000, "A"),  // 手工配置去重
+      m("7", "a", "A 级杯", "Group A", "庚", "辛", -86400000, "A"),     // 全 a → 事件 tier="a"
+      m("8", "a", "A 级杯", "Group A", "壬", "癸", -60000000, "B")
     ];
     var evs = PK.buildAutoEvents(matches, ["手工赛事"]);
     var xm = evs.filter(function (e) { return e.name === "X Major"; })[0];
     if (!xm || evs.some(function (e) { return e.name === "手工赛事"; })) return false;
     if (xm.status !== "active" || xm.stages.length !== 2) return false; // Stage 1 + Playoffs 两个 series 阶段
+    if (xm.tier !== "") return false; // s+a 混合 → 按 S 级处理
     var s1 = xm.stages.filter(function (s) { return s.id === "Stage 1"; })[0];
     var po = xm.stages.filter(function (s) { return s.id === "Playoffs"; })[0];
     if (!s1 || !po || s1.type !== "series" || po.type !== "series") return false;
     if (s1.matches.length !== 2 || po.matches.length !== 1) return false;
     if (s1.matches[0].round !== 0 || po.matches[0].round !== 0) return false;
     if (s1.coinTier !== 1 || po.coinTier !== 1) return false;
+    var acup = evs.filter(function (e) { return e.name === "A 级杯"; })[0];
+    if (!acup || acup.tier !== "a") return false; // 全 a → A 级（币级整体降一级）
     // Y Cup 组内只有 tier=b → 不收录
     return !evs.some(function (e) { return e.name === "Y Cup"; });
   })());

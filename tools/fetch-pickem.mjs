@@ -17,6 +17,7 @@
  *   v: 1, generatedAt,
  *   events: [{
  *     id, game, name, status: "upcoming"|"active"|"done", endsAt,
+ *     tier: "a"|""（1.3.6 硬币改版：A 级币级整体降一级；s/Major/未知=""按 S 级）,
  *     stages: [{
  *       id, type: "swiss"|"bracket", label, startsAt, endsAt,
  *       teams: [{ name, short, region, logo, w, l }],          // 瑞士轮含胜负；bracket 为参赛 8 队
@@ -28,7 +29,8 @@
  *   }]
  * }
  * 阶段类型：swiss（16 队 10 选，coinTier=swiss 序号 1铜/2银/3金）/ bracket（旧类型，兼容保留）/
- * series（逐场猜，round=按北京日期聚类的轮次，轮 0铜/1银/2+金）/ placement（淘汰赛名次竞猜：冠军钻、亚/季军金）。
+ * series（逐场猜，round=按北京日期聚类的轮次；币级按赛事 tier：a→铜、其余→银，1.3.6 起不再按轮数）/
+ * placement（淘汰赛名次竞猜：冠军钻、亚/季军金；A 级整体降一级：冠军金、亚/季军银）。
  *
  * 结算口径（客户端 scorePhase 用同一张表）：瑞士轮终局 3-0→adv30、3-1/3-2→adv、2-3→out23、1-3→out13、0-3→out03。
  * 已 done 的事件不再重建（matches 可能已被 retention 清掉，重建会丢数据），只随 30 天窗口淘汰。
@@ -190,7 +192,8 @@ function buildSeriesStage(cfg, matches) {
 }
 
 function buildPlacementStage(cfg, matches) {
-  // 淘汰赛名次竞猜：猜冠军（钻石币）/亚军（金币）/季军（金币，半决赛败者并列两队）。
+  // 淘汰赛名次竞猜：猜冠军（钻石币）/亚军（金币）/季军（金币，半决赛败者并列两队）；
+  // A 级赛事（event.tier="a"）币级整体降一级：冠军金币/亚季军银币（币级在客户端 settleRewards 按 tier 决定）。
   // 轮次结构复用 bracket 的 [4,2,1] 切块；全部完赛后推导 results。
   var expect = Array.isArray(cfg.expectRounds) && cfg.expectRounds.length ? cfg.expectRounds : DEFAULT_EXPECT_ROUNDS;
   var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
@@ -273,6 +276,8 @@ function buildEvent(cfg, allMatches) {
   return {
     id: cfg.id, game: cfg.game, name: cfg.name || cfg.id,
     tournament: cfg.tournament, // 自动收录去重键（客户端 pickemManualTournaments 收集）
+    // 赛事等级（1.3.6 硬币改版）：全部场次 tier=a 才算 A 级（币级整体降一级）；s/Major/混合一律 "" 按 S 级
+    tier: evMatches.length && evMatches.every(function (m) { return m.tier === "a"; }) ? "a" : "",
     status: allDone ? "done" : (anyStarted ? "active" : "upcoming"),
     endsAt: lastStart ? new Date(lastStart + 12 * 3600000).toISOString() : "",
     stages: stages

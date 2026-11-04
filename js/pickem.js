@@ -17,10 +17,11 @@
  *   硬币（state.pickemCoins）：{ c 铜币, s 银币, g 金币, d 钻石币 }——纯荣誉货币：
  *     不可交易、不可压注、只在硬币排行榜（实验功能）展示。
  *
- * 奖励（1.3.5 硬币体系，替代旧沙粒奖励）：
- *   - swiss：每猜对 1 个队伍位置 = 1 枚「阶段币」（coinTier：第 1 阶段铜、第 2 银、第 3 金）
- *   - series：第 N 轮每猜对 1 场 = 1 枚对应币（轮 0=铜、1=银、2+=金；IEM 双败三轮与 major 三阶段对应）
- *   - placement（淘汰赛）：猜对冠军 = 1 枚钻石币；猜对亚军/季军 = 各 1 枚金币（季军=半决赛败者并列两队，猜中任意一支算对）
+ * 奖励（1.3.6 硬币改版：S/A 级按赛事等级定币级，Major 规则不变）：
+ *   - swiss（Major 瑞士轮）：每猜对 1 个队伍位置 = 1 枚「阶段币」（coinTier：第 1 阶段铜、第 2 银、第 3 金）——不变
+ *   - series（小组赛逐场）：每猜对 1 场 = 1 枚固定币级（赛事 tier=a → 铜币；其余 S 级/未知 → 银币）——不再按轮数
+ *   - placement（淘汰赛）：猜对冠军 = 1 枚钻石币、亚军/季军 = 各 1 枚金币（季军=半决赛败者并列两队，猜中任意一支算对）；
+ *     A 级赛事整体降一级：冠军=金币、亚军/季军=银币
  *   - 无沙粒奖励、无全对加成。
  * 截止：阶段/场次开赛前 1 小时（镜像单场竞猜 statusOf 的 3600000 语义）。
  */
@@ -165,6 +166,7 @@ export function normalizePickemData(raw) {
       game: typeof ev.game === "string" && ev.game ? ev.game : "cs2",
       name: typeof ev.name === "string" && ev.name ? ev.name : ev.id,
       tournament: typeof ev.tournament === "string" ? ev.tournament : "", // 手工配置的匹配串（自动收录去重用）
+      tier: ev.tier === "a" ? "a" : "", // 赛事等级（1.3.6 硬币改版）：a=A 级（币级整体降一级）；s/Major/未知一律 "" 按 S 级处理
       status: ev.status === "done" || ev.status === "active" || ev.status === "upcoming" ? ev.status : "upcoming",
       endsAt: typeof ev.endsAt === "string" ? ev.endsAt : "",
       stages: stages
@@ -350,8 +352,10 @@ export function scorePhase(stage, rec) {
 /* ---------- 硬币奖励（1.3.5）：按阶段/轮次币级发放 ---------- */
 
 /** 结算应发硬币。返回 { coins:{c,s,g,d}, bySource:[{label,coin,icon,count}] }——阶段未完赛返回 null。
- *  币级：swiss=stage.coinTier（1铜/2银/3金）；series=match.round（0铜/1银/2+金）；placement=冠军钻、亚/季军金。 */
-export function settleRewards(stage, rec) {
+ *  币级（1.3.6 改版，eventTier = 赛事 tier："a" | ""）：
+ *  swiss=stage.coinTier（1铜/2银/3金，Major 不变）；series=按赛事等级（a→铜、其余→银），不再按轮数；
+ *  placement=A 级冠军金/亚季军银，其余（Major/S/未知）冠军钻、亚/季军金。 */
+export function settleRewards(stage, rec, eventTier) {
   if (!stage || !rec) return null;
   var coins = zeroCoins();
   var bySource = [];
@@ -365,40 +369,37 @@ export function settleRewards(stage, rec) {
   }
   if (stage.type === "placement") {
     if (!stage.results) return null;
+    var isA = eventTier === "a"; // A 级整体降一级；Major/S 级不变（冠军钻、亚/季军金）
+    var champCoin = isA ? PICKEM_COINS.g : PICKEM_COINS.d;
+    var placeCoin = isA ? PICKEM_COINS.s : PICKEM_COINS.g;
     var p = rec.picks || {};
     var c = 0, t = 0;
     if (p.champion) {
       t += 1;
-      if (p.champion === stage.results.champion) { coins.d += 1; c += 1; bySource.push({ label: "猜中冠军", coin: PICKEM_COINS.d, count: 1 }); }
+      if (p.champion === stage.results.champion) { coins[champCoin.key] += 1; c += 1; bySource.push({ label: "猜中冠军", coin: champCoin, count: 1 }); }
     }
     if (p.runnerUp) {
       t += 1;
-      if (p.runnerUp === stage.results.runnerUp) { coins.g += 1; c += 1; bySource.push({ label: "猜中亚军", coin: PICKEM_COINS.g, count: 1 }); }
+      if (p.runnerUp === stage.results.runnerUp) { coins[placeCoin.key] += 1; c += 1; bySource.push({ label: "猜中亚军", coin: placeCoin, count: 1 }); }
     }
     if (p.third) {
       t += 1;
-      if ((stage.results.third || []).indexOf(p.third) >= 0) { coins.g += 1; c += 1; bySource.push({ label: "猜中季军", coin: PICKEM_COINS.g, count: 1 }); }
+      if ((stage.results.third || []).indexOf(p.third) >= 0) { coins[placeCoin.key] += 1; c += 1; bySource.push({ label: "猜中季军", coin: placeCoin, count: 1 }); }
     }
     return { coins: coins, bySource: bySource, correct: c, total: t };
   }
-  // series（逐场猜）：按每场的轮次币级发放；bracket 走同路径（旧类型兼容）
+  // series/bracket（逐场猜）：每猜对 1 场 = 1 枚赛事等级币（A 级铜币，其余银币），不再按轮数；
+  // 只算「用户猜过的、且已有结果的」场次——中途接入公平
   var mine = rec.picks && rec.picks.w ? rec.picks.w : {};
-  var perTier = {}; // tier → {label, count}
+  var k2 = eventTier === "a" ? "c" : "s";
+  var n = 0;
   stage.matches.forEach(function (m) {
     if ((m.winner !== "A" && m.winner !== "B") || !mine[m.id]) return;
     if (mine[m.id] !== m.winner) return;
-    var tier = stage.type === "series" ? ((m.round || 0) + 1) : 1;
-    if (tier > 3) tier = 3;
-    var k = coinKeyForTier(tier);
-    coins[k] += 1;
-    if (!perTier[k]) perTier[k] = { tier: tier, count: 0 };
-    perTier[k].count += 1;
+    coins[k2] += 1;
+    n += 1;
   });
-  Object.keys(perTier).forEach(function (k) {
-    var info = perTier[k];
-    var tierLabel = info.tier === 1 ? "第 1 轮" : info.tier === 2 ? "第 2 轮" : "第 3 轮及以后";
-    bySource.push({ label: stage.label + " · " + tierLabel, coin: PICKEM_COINS[k], count: info.count });
-  });
+  if (n) bySource.push({ label: stage.label, coin: PICKEM_COINS[k2], count: n });
   return { coins: coins, bySource: bySource };
 }
 
@@ -430,6 +431,7 @@ export function buildAutoEvents(matches, excludeTournaments) {
     if (!stageKeys.length) return;
     var stages = [];
     var lastStart = 0, allDone = true, anyStarted = false;
+    var allA = true; // 赛事等级：全部场次 tier=a 才算 A 级（同赛事 tier 一致，防御混合）
     stageKeys.forEach(function (sk) {
       var list = ev.stages[sk].slice().sort(function (a, b) { return new Date(a.startAt) - new Date(b.startAt); });
       var teamsSeen = {};
@@ -442,6 +444,7 @@ export function buildAutoEvents(matches, excludeTournaments) {
         var startT = new Date(m.startAt).getTime();
         if (winner || (!isNaN(startT) && startT <= Date.now())) anyStarted = true;
         if (!winner) allDone = false;
+        if (m.tier !== "a") allA = false;
         if (!isNaN(startT)) lastStart = Math.max(lastStart, startT);
         teamsSeen[m.teamA.name] = { name: m.teamA.name, short: m.teamA.short || "" };
         teamsSeen[m.teamB.name] = { name: m.teamB.name, short: m.teamB.short || "" };
@@ -458,6 +461,7 @@ export function buildAutoEvents(matches, excludeTournaments) {
     if (!stages.length) return;
     events.push({
       id: "auto:" + tn, game: ev.game, name: tn,
+      tier: allA ? "a" : "", // 1.3.6 硬币改版：A 级币级整体降一级
       status: allDone ? "done" : anyStarted ? "active" : "upcoming",
       endsAt: lastStart ? new Date(lastStart + 12 * 3600000).toISOString() : "",
       stages: stages, auto: true

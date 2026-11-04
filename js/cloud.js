@@ -299,23 +299,27 @@ async function realSubmitTemple(gods, bankrupts, displayNick, quote) {
  *   - 偏移 1e12 与旧魔神殿编码（封神×1e9+破产，实测 ≤几 e9）天然隔离：decode <1e12 返回 null（旧条目过滤）
  *   - 尾数 tick 承载 extra 刷新（昵称/头像变化时 +1 mod 10，不改币值解码；extra 门控四连坑同族预防）
  *   - 硬币只增不减 → 去掉 tick 后单调递增，兼容 only-if-better
- *   - 量级界：d<100、g<1000、s<1000、c<10000（现实远低于），进位不串位 */
+ *   - 量级界：d<100、g<1000、s<1000、**c<1000**（c×10 必须留在 1e4 段内，c≥1000 会溢出到 s 段；
+ *     现实铜币为个位数）——夜间自查 R4 修正（原注释误写 c<10000），decode 按乘位一一对应 */
 var COIN_SCORE_BASE = 1e12;
 
-function encodeCoinScore(coins, tick) {
+export function encodeCoinScore(coins, tick) {
   return COIN_SCORE_BASE +
     (coins.d || 0) * 1e10 + (coins.g || 0) * 1e7 + (coins.s || 0) * 1e4 + (coins.c || 0) * 10 +
     Math.max(0, Math.min(9, tick || 0));
 }
 
-function decodeCoinScore(score) {
+/** 解码：rest = score − 1e12，个位=tick、十位起=c（×10）、1e4 位=s、1e7 位=g、1e10 位=d——
+ *  与 encode 的乘位一一对应。历史坑（夜间自查 R4 定案）：旧实现先整除 10 再拆位，
+ *  s×1e4 会错位落到 c 段（s=2 被读成 🥉2000，1.3.6 线上硬币榜实测抓到）。 */
+export function decodeCoinScore(score) {
   if (typeof score !== "number" || score < COIN_SCORE_BASE) return null; // 旧魔神殿条目：过滤
-  var rest = Math.floor((score - COIN_SCORE_BASE) / 10);
+  var rest = score - COIN_SCORE_BASE;
   return {
     d: Math.floor(rest / 1e10),
     g: Math.floor((rest % 1e10) / 1e7),
     s: Math.floor((rest % 1e7) / 1e4),
-    c: rest % 1e4
+    c: Math.floor((rest % 1e4) / 10)
   };
 }
 

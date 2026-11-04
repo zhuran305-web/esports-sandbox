@@ -30,7 +30,7 @@ globalThis.localStorage = {
   removeItem(k) { delete this._s[k]; }
 };
 
-var { Cloud, Sync } = await import(pathToFileURL(path.join(tmp, "cloud.js")).href);
+var { Cloud, Sync, encodeCoinScore, decodeCoinScore } = await import(pathToFileURL(path.join(tmp, "cloud.js")).href);
 
 var WIN = "sha_board_win";
 var LOSE = "sha_board_lose";
@@ -940,6 +940,32 @@ var r4 = await Sync.write(smallState, 9000);
 check("④ UNAUTHORIZED → 只 set 一次无恢复（lastKind=nologin）",
   r4 === false && calls.join(",") === "set" && Sync.lastKind === "nologin",
   "got calls=" + calls.join(",") + " lastKind=" + Sync.lastKind);
+
+/* ---------- 场景 Y（夜间自查 R4）：硬币榜编解码往返 ----------
+   encode: 1e12 + d×1e10 + g×1e7 + s×1e4 + c×10 + tick；decode 必须按同乘位拆回。
+   历史坑：旧 decode 先整除 10 再拆位，s×1e4 错位落进 c 段（s=2 被读成 🥉2000，
+   1.3.6 硬币榜实测抓到——E2E 结算发 2 枚银币、榜上显示铜币 2000）。 */
+console.log("Y. 硬币榜编解码往返：");
+check("① s=2 回归（银币 2 枚不再错显为铜币 2000）",
+  (function () { var b = decodeCoinScore(encodeCoinScore({ s: 2 }, 0)); return b.d === 0 && b.g === 0 && b.s === 2 && b.c === 0; })());
+check("② 混合组合往返（含 tick 0-9 不串位）",
+  (function () {
+    var combos = [
+      { c: 1, s: 0, g: 0, d: 0 }, { c: 0, s: 1, g: 0, d: 0 }, { c: 0, s: 0, g: 1, d: 0 },
+      { c: 0, s: 0, g: 0, d: 1 }, { c: 123, s: 45, g: 6, d: 7 }, { c: 999, s: 999, g: 999, d: 99 }
+    ];
+    return combos.every(function (coins) {
+      for (var tick = 0; tick <= 9; tick++) {
+        var back = decodeCoinScore(encodeCoinScore(coins, tick));
+        if (back.d !== (coins.d || 0) || back.g !== (coins.g || 0) || back.s !== (coins.s || 0) || back.c !== (coins.c || 0)) return false;
+      }
+      return true;
+    });
+  })());
+check("③ 旧魔神条目过滤（<1e12 → null）与 1e12 边界",
+  decodeCoinScore(999999999999) === null && decodeCoinScore(1e12) !== null &&
+  (function () { var b = decodeCoinScore(1e12); return b.d === 0 && b.g === 0 && b.s === 0 && b.c === 0; })() &&
+  decodeCoinScore(2000) === null);
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

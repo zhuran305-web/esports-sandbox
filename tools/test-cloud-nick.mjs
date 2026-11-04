@@ -847,18 +847,21 @@ check("series 逐场链路（1.3.4）：聚合器 + 渲染 + 逐场点选 + 结�
   /function buildSeriesStage/.test(fpkSrc) && /scfg\.type === "series"\) stages\.push\(buildSeriesStage/.test(fpkSrc) &&
   /function buildPlacementStage/.test(fpkSrc) && /scfg\.type === "placement"\) stages\.push\(buildPlacementStage/.test(fpkSrc) &&
   /function pickableSeriesMatches/.test(pickemJsSrc) && /stage\.type === "series"\) \{\s*return pickableSeriesMatches/.test(pickemJsSrc) &&
-  /function pickemSeriesBody/.test(appSrc) && /pickableSeriesMatches/.test(appSrc) &&
+  /function pickemMergedSeriesHTML/.test(appSrc) && /pickableSeriesMatches/.test(appSrc) &&
   /stage\.type === "series" \|\| stage\.type === "placement"\) && !stageAllDone\(stage\)\) return/.test(appSrc) &&
-  /pickemSeriesBody\(ev, stage, st, rec\)/.test(appSrc) && /pickemPlacementBody\(ev, stage, st, rec\)/.test(appSrc));
+  /pickemMergedSeriesHTML\(ev, seriesStages\)/.test(appSrc) && /pickemPlacementBody\(ev, stage, st, rec\)/.test(appSrc));
 
-check("轮次流 HTML 包裹层平衡（1.3.6 修：双重闭合把 .pickem-stage 提前关掉，round 1+ 场次点击静默无法保存）" +
+check("轮次优先合并布局（1.3.6 任务 4）：series 阶段合并单面板 + 每轮子块各带 data-pstage 包裹层 + 轮头日期" +
   " + 已截止卡视觉（is-locked + 已截止·开赛）",
-  /function pickemRoundFlowHTML/.test(appSrc) &&
-  appSrc.indexOf('if (lastRound >= 0) html += "</div>"') < 0 && // 换轮开头不得再闭合（网格只在每轮最后一场关一次）
-  (appSrc.match(/if \(!next \|\| next\.round !== m\.round\) html \+= "<\/div>";/g) || []).length === 1 &&
+  /function pickemMergedSeriesHTML/.test(appSrc) &&
+  /pk-day-group" data-pstage=/.test(appSrc) && // (轮,阶段) 子块必须自带委托包裹层（双重闭合事故的现行防御结构）
+  /pk-stage-row" data-pstage=/.test(appSrc) && // 阶段摘要行同键包裹
+  appSrc.indexOf('if (lastRound >= 0) html += "</div>"') < 0 && // 旧双重闭合写法不得回潮
+  /pickemDayIso/.test(appSrc) && /pickemDayLabel/.test(appSrc) &&
   /locked \? " is-locked" : ""/.test(appSrc) &&
   /已截止 · 开赛 /.test(appSrc) &&
   /pk-node\.is-locked/.test(cssSrc) &&
+  /pickem-merged/.test(cssSrc) && /pk-group-head/.test(cssSrc) &&
   /data-pklocked/.test(appSrc));
 
 check("作业页赛程自动更新（1.3.6）：refreshData 两个 applySnapshot 挂点透传 pickem + 可见视图即时重渲染",

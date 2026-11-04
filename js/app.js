@@ -2282,37 +2282,77 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return html;
   }
 
-  /* 竖向轮次流（series/swiss）：每轮一组比赛卡网格，轮头带币级。
-     网格只在「每轮最后一场」闭合一次（!next || next.round !== m.round）——
-     不要在换轮开头再闭合一次：双重闭合会把 .pickem-stage[data-pstage] 包裹层提前关掉，
-     round 1+ 的比赛卡溢出到包裹层外，点击 closest("[data-pstage]") 落空 → 预测静默无法保存
-     （1.3.6 线上「蒙古对阵黑豹无法保存预测」根因；round 0 场次在包裹层内所以能存，症状更具迷惑性） */
-  function pickemRoundFlowHTML(stage, rec, interactive, eventTier) {
-    var html = "";
-    var lastRound = -1;
-    // 币级按赛事等级（1.3.6 改版）：A 级每场铜币，其余（S 级/Major/未知）每场银币——不再按轮数
-    var coin = PICKEM_COINS[eventTier === "a" ? "c" : "s"];
-    stage.matches.forEach(function (m, i) {
-      var next = stage.matches[i + 1];
-      if (m.round !== lastRound) {
-        lastRound = m.round;
-        html += '<div class="pickem-round-label">第 ' + ((m.round || 0) + 1) + " 轮 · 猜对每场得 " + coin.icon + " " + coin.name + "</div>" +
-          '<div class="pk-round-grid">';
-      }
-      html += pickemMatchNodeHTML(stage, m, rec, interactive);
-      if (!next || next.round !== m.round) html += "</div>";
-    });
-    return html;
+  /* 轮次优先合并布局（1.3.6 任务 4）：event 的全部 series 阶段（Group A/B…）合并成
+     「第 N 轮（北京日期）→ 组内子块（配置顺序=A 组在前）→ 场次（时间序）」——阅读顺序与时间顺序一致。
+     历史（1.3.6 首提事故）：旧的 per-stage 轮次流在换轮处双重闭合 </div>，把 .pickem-stage[data-pstage]
+     包裹层提前关掉，round 1+ 比赛卡溢出到包裹层外，点击 closest("[data-pstage]") 落空 → 预测静默无法保存
+     （「蒙古对阵黑豹」根因）。现行：每个 (轮,阶段) 子块与阶段摘要行各自带 data-pstage 包裹层，
+     closest 取最近祖先兜住卡片点击；摘要行承载 label/badge/进度。 */
+  function pickemDayIso(startAt) {
+    var d = new Date(new Date(startAt).getTime() + 8 * 3600000); // 北京日期（与聚合器 round 聚类同口径）
+    return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
   }
-
-  function pickemSeriesBody(ev, stage, st, rec) {
-    var myW = rec && rec.picks ? rec.picks.w : {};
+  function pickemDayLabel(iso) {
+    var p = (iso || "").split("-");
+    return p.length === 3 ? parseInt(p[1], 10) + "月" + parseInt(p[2], 10) + "日" : "对阵";
+  }
+  function pickemSeriesProgressText(stage, rec) {
     var doneCount = stage.matches.filter(function (m) { return m.winner === "A" || m.winner === "B"; }).length;
+    var myW = rec && rec.picks && rec.picks.w ? rec.picks.w : {};
     var picked = 0;
     Object.keys(myW).forEach(function (k) { if (myW[k]) picked++; });
-    return '<div class="pickem-note">逐场竞猜：已结束场次只展示结果，剩余场次各场开赛前 1 小时截止；只统计你猜过的场次</div>' +
-      '<div class="pickem-progress">已结束 ' + doneCount + "/" + stage.matches.length + " 场 · 你已猜 " + picked + " 场</div>" +
-      pickemRoundFlowHTML(stage, rec, true, ev.tier);
+    return "已结束 " + doneCount + "/" + stage.matches.length + " 场 · 你已猜 " + picked + " 场";
+  }
+  function pickemMergedSeriesHTML(ev, stages) {
+    var coin = PICKEM_COINS[ev.tier === "a" ? "c" : "s"];
+    var html = '<div class="pickem-merged">' +
+      '<div class="pickem-note">逐场竞猜：已结束场次只展示结果，剩余场次各场开赛前 1 小时截止；只统计你猜过的场次</div>';
+    // 阶段摘要行（label + 状态徽章 + 进度）——行本身带 data-pstage
+    html += '<div class="pk-stage-rows">';
+    stages.forEach(function (stage) {
+      var st = pickemStageStatus(stage);
+      var rec = pickemRec(ev.id, stage.id);
+      html += '<div class="pk-stage-row" data-pstage="' + esc(pickemRecKey(ev.id, stage.id)) + '">' +
+        "<b>" + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) +
+        '<span class="pk-stage-progress">' + esc(pickemSeriesProgressText(stage, rec)) + "</span></div>";
+    });
+    html += "</div>";
+    // 按北京日期归并各阶段的轮次块（day key 用 ISO 串保证时间排序，展示标签单独格式化）
+    var days = {}, dayOrder = [];
+    stages.forEach(function (stage) {
+      var byRound = {}, roundOrder = [];
+      stage.matches.forEach(function (m) {
+        var r = m.round || 0;
+        if (!byRound[r]) { byRound[r] = []; roundOrder.push(r); }
+        byRound[r].push(m);
+      });
+      roundOrder.forEach(function (r) {
+        var ms = byRound[r];
+        var day = ms.length && ms[0].startAt ? pickemDayIso(ms[0].startAt) : "";
+        if (!days[day]) { days[day] = []; dayOrder.push(day); }
+        days[day].push({ stage: stage, matches: ms });
+      });
+    });
+    dayOrder.sort();
+    dayOrder = dayOrder.filter(function (d) { return d; }).concat(dayOrder.filter(function (d) { return !d; })); // 无日期排最后
+    dayOrder.forEach(function (day, i) {
+      var dayBlocks = days[day];
+      html += '<div class="pk-day">' +
+        '<div class="pickem-round-label">第 ' + (i + 1) + " 轮 · " + esc(day ? pickemDayLabel(day) : "对阵") +
+        " · 猜对每场得 " + coin.icon + " " + coin.name + "</div>";
+      dayBlocks.forEach(function (blk) {
+        var key = pickemRecKey(ev.id, blk.stage.id);
+        var rec = pickemRec(ev.id, blk.stage.id);
+        html += '<div class="pk-day-group" data-pstage="' + esc(key) + '">' +
+          '<div class="pk-group-head">' + esc(blk.stage.label) + "</div>" +
+          '<div class="pk-round-grid">' +
+          blk.matches.map(function (m) { return pickemMatchNodeHTML(blk.stage, m, rec, true); }).join("") +
+          "</div></div>";
+      });
+      html += "</div>";
+    });
+    html += "</div>";
+    return html;
   }
 
   /* placement（淘汰赛名次竞猜）：猜冠军（💎）/亚军（🥇）/季军（🥇，半决赛败者并列两队猜中任一即对） */
@@ -2365,12 +2405,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   function pickemStageHTML(ev, stage) {
     var st = pickemStageStatus(stage);
     var rec = pickemRec(ev.id, stage.id);
+    // series 阶段走 pickemEventHTML 的轮次优先合并布局（pickemMergedSeriesHTML），不进单阶段面板
     return '<div class="pickem-stage" data-pstage="' + esc(pickemRecKey(ev.id, stage.id)) + '">' +
       '<div class="pickem-stage-head"><b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) + "</div>" +
       (stage.type === "swiss" ? pickemSwissBody(ev, stage, st, rec)
         : stage.type === "placement" ? pickemPlacementBody(ev, stage, st, rec)
-          : stage.type === "series" ? pickemSeriesBody(ev, stage, st, rec)
-            : pickemBracketBody(ev, stage, st, rec)) +
+          : stage.type === "bracket" ? pickemBracketBody(ev, stage, st, rec)
+            : "") +
       "</div>";
   }
 
@@ -2403,7 +2444,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           ? "我的硬币：" + pickemCoinsHTML() + " · 不可交易/不可压注，仅荣誉展示（硬币排行榜在实验功能内）"
           : esc(pickemCoinRuleText(ev))) +
       "</div>";
-    ev.stages.forEach(function (stage) { html += pickemStageHTML(ev, stage); });
+    // series 阶段合并为「轮次优先」布局（第 N 轮 → 组内子块），swiss/placement/bracket 保持独立面板
+    var seriesStages = ev.stages.filter(function (s) { return s.type === "series"; });
+    var restStages = ev.stages.filter(function (s) { return s.type !== "series"; });
+    if (seriesStages.length) html += pickemMergedSeriesHTML(ev, seriesStages);
+    restStages.forEach(function (stage) { html += pickemStageHTML(ev, stage); });
     html += '<p class="data-note">参赛名单与赛果以赛事官方公布为准 · 实验功能可能随时调整或下线</p>';
     return html;
   }

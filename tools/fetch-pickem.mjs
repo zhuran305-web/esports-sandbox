@@ -23,7 +23,8 @@
  *       teams: [{ name, short, region, logo, w, l }],          // 瑞士轮含胜负；bracket 为参赛 8 队
  *       matches: [{ id, a, b, startAt, winner: "A"|"B"|"", score, round? }], // round 仅 bracket（0 起）
  *       rounds?: ["四分之一决赛", "半决赛", "决赛"],             // 仅 bracket
- *       degraded?: true,                                        // bracket 场次数与 expectRounds 不符（只展示不可猜）
+ *       degraded?: true,                                        // 场次数与 expectRounds 不符（bracket 只展示不可猜；
+ *                                                               // placement 名单齐 8 队仍可名次竞猜，1.3.6）
  *       results?: { adv30: [队名], adv: [], out23: [], out13: [], out03: [] } // 仅 swiss，阶段全部结束后填写
  *     }]
  *   }]

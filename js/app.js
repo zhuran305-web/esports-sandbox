@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -2000,7 +2000,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
   function pickemStageStatus(stage) {
     // open=可竞猜 / locked=已截止待赛果 / wait=赛程未齐（队伍未定或结构降级）/ done=已完赛
-    if (stageAllDone(stage)) return "done";
+    // placement：部分对阵（degraded）也算完赛只有赛果推导出来才行——QF 完赛但半决赛未排期时显示「等待赛果」
+    if (stageAllDone(stage) && (stage.type !== "placement" || stage.results)) return "done";
     if (stage.type === "series") {
       // 逐场截止：阶段开打后只要有剩余可猜场次就是 open；全部过期且未完赛 = locked
       if (pickableSeriesMatches(stage).length) return "open";
@@ -2011,8 +2012,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
     if (stage.type === "swiss") {
       if (stage.teams.length !== PICKEM_SWISS_TEAMS) return "wait";
-    } else if (stage.degraded) {
-      return "wait";
+    } else if (stage.degraded &&
+        !(stage.type === "placement" && stage.teams.length >= PICKEM_PLACEMENT_TEAMS)) {
+      return "wait"; // 结构降级：placement 名单齐除外（名次竞猜与对阵无关，1.3.6）
     }
     var start = new Date(stage.startsAt).getTime();
     if (isNaN(start)) return "wait";
@@ -2321,7 +2323,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   ];
 
   function pickemPlacementBody(ev, stage, st, rec) {
-    if (stage.degraded) {
+    // 名单未齐（首轮未排完）才降级只展示；名单齐但部分对阵未排期可正常名次竞猜（1.3.6）
+    if (stage.degraded && stage.teams.length < PICKEM_PLACEMENT_TEAMS) {
       return '<div class="pickem-note">该阶段赛制结构与预期不符，暂只展示赛程</div>' + pickemTeamStrip(stage);
     }
     var editable = st === "open";
@@ -2332,6 +2335,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var html = '<div class="pickem-note">预测最终名次：猜对冠军得 ' + champCoin.icon + " " + esc(champCoin.name) +
       "，猜对亚军/季军各得 " + placeCoin.icon + " " + esc(placeCoin.name) +
       "（季军=半决赛败者并列两队，猜中任一即对）；第一场开赛前 1 小时截止后锁定</div>";
+    if (stage.degraded) {
+      html += '<div class="pickem-note">淘汰赛名单已确定（部分对阵待公布）——名次竞猜与对阵无关；对阵树随官方公布补全</div>';
+    }
     if (st === "done" && stage.results) {
       html += '<div class="pickem-note">终局：冠军 ' + esc(stage.results.champion) + " · 亚军 " + esc(stage.results.runnerUp) + " · 季军 " + esc((stage.results.third || []).join(" / ")) + "</div>";
     }
@@ -5285,6 +5291,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     renderSettings();
     if (!$("#view-schedule").hidden) renderSchedule();
     if (!$("#view-board").hidden) renderBoard();
+    // 作业页随赛程即时更新（1.3.6）：淘汰赛名单/赛果一到，正在浏览的作业页立刻重渲染并结算
+    if (!$("#view-pickem").hidden) renderPickem();
+    if (!$("#view-labs").hidden) renderLabs(); // 实验功能行「N 个赛事进行中」跟随
+    if (!$("#view-coinboard").hidden) renderCoinBoard(); // 硬币榜（结算可能改变硬币数）
     resolveDeepLink();
     resolveVersusLink();
 
@@ -5326,7 +5336,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       var cached = await loadCachedSnapshot();
       if (cached && cached.meta && cached.meta.updatedAt &&
           cached.meta.updatedAt !== DATA_UPDATED_AT) {
-        applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors, cached.rosters);
+        applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors, cached.rosters, cached.pickem);
       }
 
       // 宿主明确拒绝服务端 API 时，24 小时内不再自动重试，避免每次启动弹原生错误框
@@ -5348,7 +5358,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         pollBackoffUntil = 0;
         await storageSet(NET_BLOCK_KEY, { at: 0, version: APP_VERSION });
         if (remote.meta.updatedAt && remote.meta.updatedAt !== DATA_UPDATED_AT) {
-          applySnapshot(remote.matches, remote.meta, remote.teams, remote.teamColors, remote.rosters);
+          applySnapshot(remote.matches, remote.meta, remote.teams, remote.teamColors, remote.rosters, remote.pickem);
           if (manual) toast("赛程已更新");
         } else if (manual) {
           toast("赛程已是最新");

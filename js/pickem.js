@@ -9,6 +9,7 @@
  *                    （round=按本地日期聚类的小组轮次 0 起：IEM 双败第 1/2/3 轮 → 铜币/银币/金币）
  *          | placement { id, type:"placement", label, ..., matches:[{...,round}], rounds:[labels], degraded,
  *                    results:{champion, runnerUp, third:[队名,队名]}|null }   // 淘汰赛名次竞猜
+ *                    （degraded=部分对阵未排期：名单齐（8 队）仍可名次竞猜，结算仍需完整 7 场推导 results）
  *          | bracket { ... 旧类型，兼容保留；淘汰赛应使用 placement }
  *   用户侧记录（state.pickem，键 = eventId + ":" + stageId）：
  *     swiss     rec = { type:"swiss", picks:{adv30:[],adv:[],out03:[]}, pickedAt, settled, settledAt, score, total, prize }
@@ -259,19 +260,26 @@ export function pickableSeriesMatches(stage, now) {
   });
 }
 
+/** 标准单败淘汰赛的参赛队数（8 强 = 首轮 4 场全排定即名单齐）。名次竞猜与对阵无关，
+ *  淘汰赛名单一确定（哪怕半决赛/决赛尚未排期）就应可预测——1.3.6 放宽 degraded 一票否决。 */
+export var PICKEM_PLACEMENT_TEAMS = 8;
+
 /** 该阶段是否可参与竞猜（赛程齐备 + 未截止）。
  *  swiss：16 队齐 + 阶段级 1h 截止；series/bracket：逐场截止（有可猜场次即可）；
- *  placement：7 场全排定且双方确定 + 阶段级 1h 截止（整段竞猜，赛果齐前一次锁定）。 */
+ *  placement：参赛名单齐（标准 8 强；degraded=部分对阵未排期也允许，名次与对阵无关）+ 第一场开赛前 1h 截止。 */
 export function stageOpenForPicks(stage, now) {
   now = now || Date.now();
   if (!stage || stageAllDone(stage)) return false;
   if (stage.type === "swiss") {
     if (stage.teams.length !== PICKEM_SWISS_TEAMS) return false;
   } else if (stage.type === "placement") {
-    if (stage.degraded) return false;
     if (!stage.matches.length) return false;
-    var allSet = stage.matches.every(function (m) { return m.a && m.b; });
-    if (!allSet) return false; // 对阵未全部确定（等上一轮）
+    if (!stage.degraded) {
+      var allSet = stage.matches.every(function (m) { return m.a && m.b; });
+      if (!allSet) return false; // 对阵未全部确定（等上一轮）
+    } else if (stage.teams.length < PICKEM_PLACEMENT_TEAMS) {
+      return false; // 名单未齐（首轮还没排完）——与对阵无关的名次竞猜无从选起
+    }
   } else if (stage.type === "series") {
     return pickableSeriesMatches(stage, now).length > 0; // 逐场截止：阶段已开打也能猜剩余场次
   } else if (stage.degraded) {

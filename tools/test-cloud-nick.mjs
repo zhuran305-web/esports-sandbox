@@ -655,6 +655,34 @@ check("placement 选择完整性：三名次齐且互异才完整；归一化形
   PK.placementPicksComplete({ champion: "队1", runnerUp: "队2", third: "队3" }) === true &&
   PK.placementPicksComplete({ champion: "队1", runnerUp: "队1", third: "队3" }) === false &&
   PK.placementPicksComplete({ champion: "队1", runnerUp: "", third: "队3" }) === false);
+check("placement 部分对阵可猜（1.3.6 修）：名单齐 8 队（哪怕仅 4 场 QF、半决赛/决赛未排期）即可名次竞猜；名单未齐仍不可猜；事件 tier 透传",
+  (function () {
+    var T8 = [];
+    for (var i = 0; i < 8; i++) T8.push({ name: "队" + (i + 1), short: "D" + (i + 1) });
+    function poStage(nTeams, nMatches) {
+      var ms = [];
+      for (var i = 0; i < nMatches; i++) {
+        ms.push({ id: "qf" + i, a: "队" + (i * 2 + 1), b: "队" + (i * 2 + 2), startAt: iso(24 * 3600000), winner: "", score: "", round: 0 });
+      }
+      return { id: "po", type: "placement", label: "淘汰赛", startsAt: iso(24 * 3600000),
+        teams: T8.slice(0, nTeams), matches: ms, rounds: [], degraded: nMatches < 7, results: null };
+    }
+    // 仅 4 场 QF（degraded）+ 名单 8 队 → 可猜
+    if (PK.stageOpenForPicks(poStage(8, 4)) !== true) return false;
+    // 名单只 4 队（首轮没排完）→ 不可猜
+    if (PK.stageOpenForPicks(poStage(4, 2)) !== false) return false;
+    // 名单齐但已过截止（第一场 1h 内开赛）→ 不可猜
+    var soon = poStage(8, 4);
+    soon.matches[0].startAt = iso(30 * 60000);
+    soon.startsAt = soon.matches[0].startAt;
+    if (PK.stageOpenForPicks(soon) !== false) return false;
+    // normalizePickemData 透传事件 tier（a 保留、其余归 ""）
+    var nd = PK.normalizePickemData({ events: [
+      { id: "ea", game: "cs2", name: "A 级", tier: "a", stages: [{ id: "s", type: "series", label: "G", teams: [], matches: [] }] },
+      { id: "es", game: "cs2", name: "S 级", tier: "s", stages: [{ id: "s", type: "series", label: "G", teams: [], matches: [] }] }
+    ] });
+    return nd.events[0].tier === "a" && nd.events[1].tier === "";
+  })());
 check("硬币云合并：逐键 max（只增不减，脏值清零）",
   (function () {
     var m = PK.mergePickemCoins({ c: 3, s: 1, g: 0, d: 0 }, { c: 1, s: 2, g: 1, d: 0 });
@@ -832,6 +860,14 @@ check("轮次流 HTML 包裹层平衡（1.3.6 修：双重闭合把 .pickem-stag
   /已截止 · 开赛 /.test(appSrc) &&
   /pk-node\.is-locked/.test(cssSrc) &&
   /data-pklocked/.test(appSrc));
+
+check("作业页赛程自动更新（1.3.6）：refreshData 两个 applySnapshot 挂点透传 pickem + 可见视图即时重渲染",
+  /applySnapshot\(cached\.matches, cached\.meta, cached\.teams, cached\.teamColors, cached\.rosters, cached\.pickem\)/.test(appSrc) &&
+  /applySnapshot\(remote\.matches, remote\.meta, remote\.teams, remote\.teamColors, remote\.rosters, remote\.pickem\)/.test(appSrc) &&
+  /if \(!\$\("#view-pickem"\)\.hidden\) renderPickem\(\)/.test(appSrc) &&
+  /if \(!\$\("#view-labs"\)\.hidden\) renderLabs\(\)/.test(appSrc) &&
+  /if \(!\$\("#view-coinboard"\)\.hidden\) renderCoinBoard\(\)/.test(appSrc) &&
+  /Pick'Em 赛事只增不减/.test(appSrc));
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

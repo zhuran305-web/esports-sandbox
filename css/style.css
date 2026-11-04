@@ -3414,6 +3414,8 @@ html[data-theme="light"] .cer-quote input {
   position: relative;
 }
 .pk-node.is-done { border-color: var(--border); }
+.pk-node.is-locked { opacity: .62; }
+.pk-node.is-locked .pk-node-time { color: var(--text-dim); }
 .pk-node .pk-node-time {
   font-size: 10px;
   color: var(--text-faint);

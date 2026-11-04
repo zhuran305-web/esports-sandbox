@@ -2235,6 +2235,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var my = myW[m.id] || "";
     var start = new Date(m.startAt).getTime();
     var open = interactive && !m.winner && !!m.a && !!m.b && !isNaN(start) && Date.now() < start - PICKEM_DEADLINE_MS;
+    // 已截止待赛果：视觉上与可竞猜卡区分（1.3.4 线上「蒙古对阵黑豹无法保存预测」的用户侧根因——
+    // 已截止卡与可猜卡长得一样、点了又无反应，用户无从知道已过各场开赛前 1 小时截止线）
+    var locked = interactive && !m.winner && !!m.a && !!m.b && !isNaN(start) && Date.now() >= start - PICKEM_DEADLINE_MS;
     var scoreParts = String(m.score || "").split(":");
     function sideRow(side) {
       var name = side === "A" ? m.a : m.b;
@@ -2253,8 +2256,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         (pts !== "" ? "<i>" + esc(pts) + "</i>" : "") + mark +
         "</button>";
     }
-    return '<div class="pk-node' + (m.winner ? " is-done" : "") + '">' + sideRow("A") + sideRow("B") +
-      (m.startAt ? '<span class="pk-node-time">' + esc(fmtTime(m.startAt)) + "</span>" : "") +
+    return '<div class="pk-node' + (m.winner ? " is-done" : "") + (locked ? " is-locked" : "") + '">' + sideRow("A") + sideRow("B") +
+      (m.startAt ? '<span class="pk-node-time">' + esc(locked ? "已截止 · 开赛 " + fmtTime(m.startAt) : fmtTime(m.startAt)) + "</span>" : "") +
       "</div>";
   }
 
@@ -2277,14 +2280,17 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return html;
   }
 
-  /* 竖向轮次流（series/swiss）：每轮一组比赛卡网格，轮头带币级 */
+  /* 竖向轮次流（series/swiss）：每轮一组比赛卡网格，轮头带币级。
+     网格只在「每轮最后一场」闭合一次（!next || next.round !== m.round）——
+     不要在换轮开头再闭合一次：双重闭合会把 .pickem-stage[data-pstage] 包裹层提前关掉，
+     round 1+ 的比赛卡溢出到包裹层外，点击 closest("[data-pstage]") 落空 → 预测静默无法保存
+     （1.3.6 线上「蒙古对阵黑豹无法保存预测」根因；round 0 场次在包裹层内所以能存，症状更具迷惑性） */
   function pickemRoundFlowHTML(stage, rec, interactive) {
     var html = "";
     var lastRound = -1;
     stage.matches.forEach(function (m, i) {
       var next = stage.matches[i + 1];
       if (m.round !== lastRound) {
-        if (lastRound >= 0) html += "</div>"; // 闭合上一组网格
         lastRound = m.round;
         var tier = Math.min((m.round || 0) + 1, 3);
         var coin = PICKEM_COINS[tier === 1 ? "c" : tier === 2 ? "s" : "g"];

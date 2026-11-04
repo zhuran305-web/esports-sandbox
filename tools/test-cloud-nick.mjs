@@ -812,6 +812,16 @@ check("series 逐场链路（1.3.4）：聚合器 + 渲染 + 逐场点选 + 结�
   /stage\.type === "series" \|\| stage\.type === "placement"\) && !stageAllDone\(stage\)\) return/.test(appSrc) &&
   /pickemSeriesBody\(ev, stage, st, rec\)/.test(appSrc) && /pickemPlacementBody\(ev, stage, st, rec\)/.test(appSrc));
 
+check("轮次流 HTML 包裹层平衡（1.3.6 修：双重闭合把 .pickem-stage 提前关掉，round 1+ 场次点击静默无法保存）" +
+  " + 已截止卡视觉（is-locked + 已截止·开赛）",
+  /function pickemRoundFlowHTML/.test(appSrc) &&
+  appSrc.indexOf('if (lastRound >= 0) html += "</div>"') < 0 && // 换轮开头不得再闭合（网格只在每轮最后一场关一次）
+  (appSrc.match(/if \(!next \|\| next\.round !== m\.round\) html \+= "<\/div>";/g) || []).length === 1 &&
+  /locked \? " is-locked" : ""/.test(appSrc) &&
+  /已截止 · 开赛 /.test(appSrc) &&
+  /pk-node\.is-locked/.test(cssSrc) &&
+  /data-pklocked/.test(appSrc));
+
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
 function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }

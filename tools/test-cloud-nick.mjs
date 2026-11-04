@@ -30,7 +30,7 @@ globalThis.localStorage = {
   removeItem(k) { delete this._s[k]; }
 };
 
-var { Cloud } = await import(pathToFileURL(path.join(tmp, "cloud.js")).href);
+var { Cloud, Sync } = await import(pathToFileURL(path.join(tmp, "cloud.js")).href);
 
 var WIN = "sha_board_win";
 var LOSE = "sha_board_lose";
@@ -878,6 +878,68 @@ check("已删函数零残留（夜间自查 1 轮：swiss 正文残留 pickemRou
   }) &&
   /function pickemStaticRoundFlowHTML/.test(appSrc) && // swiss 对阵展示的替代实现
   /pickemStaticRoundFlowHTML\(stage, rec\)/.test(appSrc));
+
+/* ---------- 场景 X（夜间自查 R2）：Sync.write 冲突恢复路径 ----------
+   官方契约：写失败（含 VERSION_CONFLICT）清掉版本凭证缓存，必须先成功 get 一次才能再 set——
+   盲目重试 set 永远失败（陷阱条目「cloud.storage 写入失败后重试 set 一直失败」）。
+   此前该路径零测试覆盖，只有线上行为背书。 */
+console.log("X. Sync.write 冲突恢复：");
+var calls = [];
+var cloudRec = null;
+function makeSyncSdk(mode, failCode) {
+  // mode: "always" = 每次都失败；"first" = 仅首次失败；failCode 缺省 VERSION_CONFLICT
+  failCode = failCode || "VERSION_CONFLICT";
+  var failAlways = mode === "always";
+  var failFirst = mode === "first";
+  calls = [];
+  globalThis.__TEST_SDK = {
+    cloud: {
+      storage: {
+        setStorage: async function () {
+          calls.push("set");
+          if (failAlways || failFirst) {
+            if (failFirst) failFirst = false;
+            var e = new Error("sim"); e.code = failCode; throw e;
+          }
+        },
+        getStorage: async function () {
+          calls.push("get");
+          return cloudRec ? JSON.stringify(cloudRec) : null;
+        }
+      }
+    }
+  };
+}
+var smallState = { bankroll: 100, digs: 0, predictions: [], pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 } };
+// 顶层 await（文件为 ESM）：保证用例跑完再进文末汇总
+// ① VERSION_CONFLICT + 云端较新 → {conflict:true}，调用序 set→get（绝不盲试第二次 set）
+makeSyncSdk("always", "VERSION_CONFLICT");
+cloudRec = { v: 1, updatedAt: 5000, state: { bankroll: 1, digs: 0, predictions: [] } };
+var r1 = await Sync.write(smallState, 4000);
+check("① 写冲突+云端较新 → 返回 {conflict:true, cloud} 且调用序 set→get（无第二次 set）",
+  !!(r1 && r1.conflict === true && r1.cloud && r1.cloud.updatedAt === 5000) &&
+  calls.join(",") === "set,get",
+  "got calls=" + calls.join(",") + " r1=" + JSON.stringify(r1 && { conflict: r1.conflict }));
+// ② 写冲突 + 云端无记录 → get 恢复凭证后重写一次成功：set→get→set
+makeSyncSdk("first", "VERSION_CONFLICT");
+cloudRec = null;
+var r2 = await Sync.write(smallState, 9000);
+check("② 写冲突+云端无记录 → get 恢复凭证后重写成功：调用序 set→get→set",
+  r2 === true && calls.join(",") === "set,get,set",
+  "got calls=" + calls.join(",") + " r2=" + r2);
+// ③ 重写仍失败 → false（放弃，等下次防抖收敛）
+makeSyncSdk("always", "VERSION_CONFLICT");
+cloudRec = { v: 1, updatedAt: 1000, state: { bankroll: 1, digs: 0, predictions: [] } };
+var r3 = await Sync.write(smallState, 9000);
+check("③ 写冲突+云端较旧+重写仍失败 → false 放弃（调用序 set→get→set）",
+  r3 === false && calls.join(",") === "set,get,set",
+  "got calls=" + calls.join(",") + " r3=" + r3);
+// ④ UNAUTHORIZED → 无恢复动作：只 set 一次，进入 nologin 停用
+makeSyncSdk("always", "UNAUTHORIZED");
+var r4 = await Sync.write(smallState, 9000);
+check("④ UNAUTHORIZED → 只 set 一次无恢复（lastKind=nologin）",
+  r4 === false && calls.join(",") === "set" && Sync.lastKind === "nologin",
+  "got calls=" + calls.join(",") + " lastKind=" + Sync.lastKind);
 
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }

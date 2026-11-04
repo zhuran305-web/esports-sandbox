@@ -872,6 +872,13 @@ check("作业页赛程自动更新（1.3.6）：refreshData 两个 applySnapshot
   /if \(!\$\("#view-coinboard"\)\.hidden\) renderCoinBoard\(\)/.test(appSrc) &&
   /Pick'Em 赛事只增不减/.test(appSrc));
 
+check("已删函数零残留（夜间自查 1 轮：swiss 正文残留 pickemRoundFlowHTML 调用——Major 作业页运行时 ReferenceError，与 pickableBracketMatches 同类）",
+  ["pickableBracketMatches", "pickemSeriesBody", "pickemRoundFlowHTML"].every(function (fn) {
+    return appSrc.indexOf(fn + "(") < 0 && appSrc.indexOf("function " + fn) < 0;
+  }) &&
+  /function pickemStaticRoundFlowHTML/.test(appSrc) && // swiss 对阵展示的替代实现
+  /pickemStaticRoundFlowHTML\(stage, rec\)/.test(appSrc));
+
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
 function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }

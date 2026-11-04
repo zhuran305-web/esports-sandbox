@@ -2173,8 +2173,26 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
     // 轮次流（1.3.6）：对阵与赛果按轮展示（纯展示，选择交互在上方桶）
     if (stage.matches.length) {
-      html += '<div class="pickem-round-label">对阵与赛果</div>' + pickemRoundFlowHTML(stage, rec, false);
+      html += '<div class="pickem-round-label">对阵与赛果</div>' + pickemStaticRoundFlowHTML(stage, rec);
     }
+    return html;
+  }
+
+  /** 瑞士轮「对阵与赛果」纯展示流（1.3.6 轮次优先改版后保留：桶位选择在上方，此处按轮只读）。
+   *  网格只在每轮最后一场闭合一次——勿在换轮开头再闭合（双重闭合会关掉 data-pstage 包裹层，
+   *  「蒙古对阵黑豹无法保存预测」根因，见 pickemMergedSeriesHTML 注释）。 */
+  function pickemStaticRoundFlowHTML(stage, rec) {
+    var html = "";
+    var lastRound = -1;
+    stage.matches.forEach(function (m, i) {
+      var next = stage.matches[i + 1];
+      if (m.round !== lastRound) {
+        lastRound = m.round;
+        html += '<div class="pickem-round-label">第 ' + ((m.round || 0) + 1) + " 轮</div>" + '<div class="pk-round-grid">';
+      }
+      html += pickemMatchNodeHTML(stage, m, rec, false);
+      if (!next || next.round !== m.round) html += "</div>";
+    });
     return html;
   }
 

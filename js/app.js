@@ -1913,6 +1913,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var pickemAutoCacheKey = "";
   var pickemGame = "all";       // 作业页游戏筛选（1.3.6，仿主页）
   var pickemQuery = "";         // 作业页搜索词（与 chips/主体同源，假设 75/76）
+  // 公测直入口（1.3.10）：主页「IEM 作业」=只显示该手工赛事、隐藏 tabs/游戏筛选——其他赛事不展示（公测范围仅 IEM）；
+  // 实验功能入口仍显示全部
+  var PICKEM_SCOPED_EVENT = "iem-beijing-2026";
+  var pickemScoped = false;
   var pickemSearchTimer = null;
 
   /** 手工配置赛事占用的 tournament 匹配串（自动收录去重用——手工配置的精细模式优先）。
@@ -1943,10 +1947,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     });
   }
 
-  /** 作业页统一口径（1.3.6，假设 75/76）：游戏筛选 + 搜索词过滤后的赛事列表——chips 与主体同源 */
+  /** 作业页统一口径（1.3.6，假设 75/76）：游戏筛选 + 搜索词过滤后的赛事列表——chips 与主体同源。
+   *  公测直入口（1.3.10）锁定 IEM 事件：scoped 时其余赛事一律不出现。 */
   function pickemFilteredEvents() {
     var q = pickemQuery.trim().toLowerCase();
-    return pickemEvents().filter(function (ev) {
+    var base = pickemEvents();
+    if (pickemScoped) base = base.filter(function (ev) { return ev.id === PICKEM_SCOPED_EVENT; });
+    return base.filter(function (ev) {
       if (pickemGame !== "all" && ev.game !== pickemGame) return false;
       if (!q) return true;
       var g = gameMeta(ev.game);
@@ -2362,12 +2369,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     dayOrder.forEach(function (day, i) {
       var dayBlocks = days[day];
       var dayKey = ev.id + "##day##" + (day || "na" + i);
-      var allDone = dayBlocks.every(function (blk) {
-        return blk.matches.every(matchResolved);
-      });
-      var collapsed = pickemCollapseOverrides.hasOwnProperty(dayKey)
-        ? pickemCollapseOverrides[dayKey] === true
-        : allDone; // 已完赛轮次默认收起
+      var collapsed = pickemCollapseOverrides[dayKey] === true; // 1.3.10：默认全部展开（1.3.9 因「完赛默认收起=首屏内容不可见」被平台拒），保留手动折叠
       html += '<div class="pk-day">' +
         '<div class="pickem-round-label is-toggle" data-pkday="' + esc(dayKey) + '" role="button">第 ' + (i + 1) + " 轮 · " + esc(day ? pickemDayLabel(day) : "对阵") +
         " · 猜对每场得 " + coin.icon + " " + coin.name +
@@ -2448,11 +2450,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
             : "") +
         "</div>";
     }
-    // placement（淘汰赛）：头部可折叠，已完赛默认收起（手动开合记入覆盖，1.3.8）
+    // placement（淘汰赛）：头部可折叠，默认展开（1.3.10：完赛默认收起被平台拒——首屏内容不可见；保留手动折叠）
     var sk = key + "##stage";
-    var collapsed = pickemCollapseOverrides.hasOwnProperty(sk)
-      ? pickemCollapseOverrides[sk] === true
-      : st === "done";
+    var collapsed = pickemCollapseOverrides[sk] === true;
     head = '<div class="pickem-stage-head is-toggle" data-pkstage="' + esc(sk) + '" role="button">' +
       '<b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) +
       '<i class="pk-chev">' + (collapsed ? "▸" : "▾") + "</i></div>";
@@ -2511,8 +2511,14 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var body = $("#pickemBody");
     if (!body) return;
     var all = pickemEvents();
-    // 游戏 tiles：只列有赛事的游戏（按 GAME_ORDER 排序）
-    if (gamesEl) {
+    if (pickemScoped) {
+      // 公测直入口：只显示 IEM 作业赛事——游戏 tiles/赛事 tabs 一律隐藏（其他赛事不展示）
+      all = all.filter(function (e) { return e.id === PICKEM_SCOPED_EVENT; });
+      if (gamesEl) gamesEl.innerHTML = "";
+      if (pickemEventId !== PICKEM_SCOPED_EVENT) pickemEventId = PICKEM_SCOPED_EVENT;
+    }
+    // 游戏 tiles：只列有赛事的游戏（按 GAME_ORDER 排序）；scoped 跳过（上面已清空）
+    if (gamesEl && !pickemScoped) {
       var seen = {};
       var games = [];
       all.forEach(function (e) {
@@ -2548,7 +2554,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
     var ev = pickemEventById(pickemEventId);
     if (tabs) {
-      tabs.hidden = false;
+      // 公测直入口隐藏赛事 tabs（scoped 时只有 IEM 一个事件，无需切换）
+      tabs.hidden = pickemScoped || evs.length < 2;
       tabs.innerHTML = evs.map(function (e) {
         var stTag = e.status === "active" ? " ●" : "";
         return '<button type="button" class="pickem-evtab' + (e.id === pickemEventId ? " is-active" : "") + '" data-pevt="' + esc(e.id) + '">' + esc(e.name) + stTag + "</button>";
@@ -2800,7 +2807,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   function bindPickem() {
     $("#labsList").addEventListener("click", function (e) {
       var row = e.target.closest("[data-labs]");
-      if (row && row.dataset.labs) switchView(row.dataset.labs);
+      if (row && row.dataset.labs) {
+        if (row.dataset.labs === "pickem") pickemScoped = false; // 实验功能入口=完整列表（主页「IEM 作业」才是公测直入口）
+        switchView(row.dataset.labs);
+      }
     });
     $("#labsBackBtn").addEventListener("click", function () { goBack("about"); });
     $("#coinboardBackBtn").addEventListener("click", function () { goBack("labs"); });
@@ -5187,6 +5197,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#openLabsBtn").addEventListener("click", function () { switchView("labs"); });
     bindPickem();
     $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
+    $("#homePickemBtn").addEventListener("click", function () {
+      pickemScoped = true; // 公测直入口：锁定 IEM 作业，其他赛事不展示
+      switchView("pickem");
+    });
 
     $("#openScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
     $("#scheduleBackBtn").addEventListener("click", function () { goBack("settings"); });

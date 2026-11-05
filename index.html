@@ -66,45 +66,57 @@
         </div>
 
         <div class="selectors">
-          <div class="selector">
-            <button class="game-select-btn" id="gameSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
-              <span class="game-dot" id="gameSelectDot"></span>
-              <span class="select-label" id="gameSelectCurrent">全部游戏</span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
+          <div class="selectors-row1">
+            <div class="selector">
+              <button class="game-select-btn" id="gameSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+                <span class="game-dot" id="gameSelectDot"></span>
+                <span class="select-label" id="gameSelectCurrent">全部游戏</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
 
-            <div class="game-popover" id="gamePopover" role="dialog" aria-labelledby="gamePopoverTitle" hidden>
-              <div class="game-popover-head">
-                <span id="gamePopoverTitle">选择游戏</span>
-                <span class="game-popover-meta" id="gamePopoverMeta"></span>
+              <div class="game-popover" id="gamePopover" role="dialog" aria-labelledby="gamePopoverTitle" hidden>
+                <div class="game-popover-head">
+                  <span id="gamePopoverTitle">选择游戏</span>
+                  <span class="game-popover-meta" id="gamePopoverMeta"></span>
+                </div>
+                <div class="game-grid" id="gameGrid"></div>
               </div>
-              <div class="game-grid" id="gameGrid"></div>
+            </div>
+
+            <div class="selector">
+              <button class="game-select-btn" id="tournamentSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+                <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/>
+                  <path d="M7 6H4a3 3 0 0 0 3 3M17 6h3a3 3 0 0 1-3 3"/>
+                  <path d="M12 13v4M9 20h6"/>
+                </svg>
+                <span class="select-label" id="tournamentSelectCurrent">全部赛事</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
             </div>
           </div>
 
-          <div class="selector">
-            <button class="game-select-btn" id="tournamentSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
-              <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/>
-                <path d="M7 6H4a3 3 0 0 0 3 3M17 6h3a3 3 0 0 1-3 3"/>
-                <path d="M12 13v4M9 20h6"/>
-              </svg>
-              <span class="select-label" id="tournamentSelectCurrent">全部赛事</span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
+          <div class="selectors-row2">
+            <div class="selector">
+              <button class="game-select-btn" id="homeScheduleBtn" type="button">
+                <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="4" y="5" width="16" height="16" rx="2"/>
+                  <path d="M8 3v4M16 3v4M4 10h16"/>
+                </svg>
+                <span class="select-label">赛程表</span>
+              </button>
+            </div>
+            <div class="selector">
+              <button class="game-select-btn" id="homePickemBtn" type="button">
+                <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z"/>
+                  <path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>
+                </svg>
+                <span class="select-label">IEM 作业</span>
+              </button>
+            </div>
+            <span class="game-select-count" id="gameSelectCount"></span>
           </div>
-
-          <div class="selector">
-            <button class="game-select-btn" id="homeScheduleBtn" type="button">
-              <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="4" y="5" width="16" height="16" rx="2"/>
-                <path d="M8 3v4M16 3v4M4 10h16"/>
-              </svg>
-              <span class="select-label">赛程表</span>
-            </button>
-          </div>
-
-          <span class="game-select-count" id="gameSelectCount"></span>
 
           <div class="game-popover tournament-popover" id="tournamentPopover" role="dialog" aria-labelledby="tournamentPopoverTitle" hidden>
             <div class="game-popover-head">
@@ -345,10 +357,11 @@
       <!-- 赛事竞猜 Pick'Em（实验功能：瑞士轮五桶 + 名次竞猜 + 树状展示；1.3.6 起自动收录 S/A 级赛事） -->
       <section class="view" id="view-pickem" hidden>
         <div class="subpage-head">
-          <button class="back-btn" id="pickemBackBtn" type="button" aria-label="返回实验功能">
+          <button class="back-btn" id="pickemBackBtn" type="button" aria-label="返回">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
           </button>
           <h1 class="page-title">赛事竞猜</h1>
+          <span class="labs-badge">实验功能 · 公测</span>
           <span class="section-sub" id="pickemCoin"></span>
         </div>
         <div class="schedule-search">

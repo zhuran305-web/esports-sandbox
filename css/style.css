@@ -3453,7 +3453,8 @@ html[data-theme="light"] .cer-quote input {
 .pk-node-side[data-pkmatch]:active { border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .14); }
 .pk-node-side[data-pklocked] { cursor: default; opacity: .8; }
 .pk-node-side .pickem-mark { font-size: 11px; }
-/* 轮次优先合并布局（1.3.6 任务 4）：series 阶段统一一个面板，摘要行 + 逐轮（日期）分组 */
+/* 轮次优先合并布局（1.3.8 折叠版）：series 阶段统一一个面板，摘要行 + 逐轮（日期）分组；
+   轮头/淘汰赛阶段头可折叠（已完赛默认收起，手动开合记会话覆盖） */
 .pickem-merged {
   margin-top: 12px;
   padding: 14px;
@@ -3461,6 +3462,18 @@ html[data-theme="light"] .cer-quote input {
   border: 1px solid var(--border-soft);
   background: var(--surface);
 }
+.pickem-round-label.is-toggle,
+.pickem-stage-head.is-toggle { cursor: pointer; user-select: none; }
+.pickem-stage-head.is-toggle { flex-wrap: wrap; }
+.pk-chev {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: 4px;
+}
+.pickem-stage-head.is-toggle .pk-chev { margin-left: auto; }
+.pk-day-body[hidden],
+.pickem-stage-body[hidden] { display: none; }
 .pk-stage-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .pk-stage-row {
   display: flex;

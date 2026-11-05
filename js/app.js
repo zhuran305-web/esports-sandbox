@@ -2321,6 +2321,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     Object.keys(myW).forEach(function (k) { if (myW[k]) picked++; });
     return "已结束 " + doneCount + "/" + stage.matches.length + " 场 · 你已猜 " + picked + " 场";
   }
+
+  /* 折叠状态（1.3.8）：轮次/淘汰赛阶段可折叠；默认「全部完赛的轮次收起、其余展开」，
+     手动点开/收起记录进 pickemCollapseOverrides（会话内有效），优先于默认值 */
+  var pickemCollapseOverrides = {};
+  function matchResolved(m) { return m.winner === "A" || m.winner === "B" || m.canceled === true; }
+
   function pickemMergedSeriesHTML(ev, stages) {
     var coin = PICKEM_COINS[ev.tier === "a" ? "c" : "s"];
     var html = '<div class="pickem-merged">' +
@@ -2355,9 +2361,18 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     dayOrder = dayOrder.filter(function (d) { return d; }).concat(dayOrder.filter(function (d) { return !d; })); // 无日期排最后
     dayOrder.forEach(function (day, i) {
       var dayBlocks = days[day];
+      var dayKey = ev.id + "##day##" + (day || "na" + i);
+      var allDone = dayBlocks.every(function (blk) {
+        return blk.matches.every(matchResolved);
+      });
+      var collapsed = pickemCollapseOverrides.hasOwnProperty(dayKey)
+        ? pickemCollapseOverrides[dayKey] === true
+        : allDone; // 已完赛轮次默认收起
       html += '<div class="pk-day">' +
-        '<div class="pickem-round-label">第 ' + (i + 1) + " 轮 · " + esc(day ? pickemDayLabel(day) : "对阵") +
-        " · 猜对每场得 " + coin.icon + " " + coin.name + "</div>";
+        '<div class="pickem-round-label is-toggle" data-pkday="' + esc(dayKey) + '" role="button">第 ' + (i + 1) + " 轮 · " + esc(day ? pickemDayLabel(day) : "对阵") +
+        " · 猜对每场得 " + coin.icon + " " + coin.name +
+        '<i class="pk-chev">' + (collapsed ? "▸" : "▾") + "</i></div>";
+      html += '<div class="pk-day-body" data-daybody="' + esc(dayKey) + '"' + (collapsed ? " hidden" : "") + ">";
       dayBlocks.forEach(function (blk) {
         var key = pickemRecKey(ev.id, blk.stage.id);
         var rec = pickemRec(ev.id, blk.stage.id);
@@ -2367,7 +2382,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           blk.matches.map(function (m) { return pickemMatchNodeHTML(blk.stage, m, rec, true); }).join("") +
           "</div></div>";
       });
-      html += "</div>";
+      html += "</div></div>";
     });
     html += "</div>";
     return html;
@@ -2424,13 +2439,27 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var st = pickemStageStatus(stage);
     var rec = pickemRec(ev.id, stage.id);
     // series 阶段走 pickemEventHTML 的轮次优先合并布局（pickemMergedSeriesHTML），不进单阶段面板
-    return '<div class="pickem-stage" data-pstage="' + esc(pickemRecKey(ev.id, stage.id)) + '">' +
-      '<div class="pickem-stage-head"><b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) + "</div>" +
-      (stage.type === "swiss" ? pickemSwissBody(ev, stage, st, rec)
-        : stage.type === "placement" ? pickemPlacementBody(ev, stage, st, rec)
+    var key = pickemRecKey(ev.id, stage.id);
+    var head = '<div class="pickem-stage-head"><b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) + "</div>";
+    if (stage.type !== "placement") {
+      return '<div class="pickem-stage" data-pstage="' + esc(key) + '">' + head +
+        (stage.type === "swiss" ? pickemSwissBody(ev, stage, st, rec)
           : stage.type === "bracket" ? pickemBracketBody(ev, stage, st, rec)
             : "") +
-      "</div>";
+        "</div>";
+    }
+    // placement（淘汰赛）：头部可折叠，已完赛默认收起（手动开合记入覆盖，1.3.8）
+    var sk = key + "##stage";
+    var collapsed = pickemCollapseOverrides.hasOwnProperty(sk)
+      ? pickemCollapseOverrides[sk] === true
+      : st === "done";
+    head = '<div class="pickem-stage-head is-toggle" data-pkstage="' + esc(sk) + '" role="button">' +
+      '<b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) +
+      '<i class="pk-chev">' + (collapsed ? "▸" : "▾") + "</i></div>";
+    return '<div class="pickem-stage" data-pstage="' + esc(key) + '">' + head +
+      '<div class="pickem-stage-body" data-stagebody="' + esc(sk) + '"' + (collapsed ? " hidden" : "") + ">" +
+      pickemPlacementBody(ev, stage, st, rec) +
+      "</div></div>";
   }
 
   function pickemCoinsHTML() {
@@ -2803,6 +2832,33 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       }
     });
     $("#pickemBody").addEventListener("click", function (e) {
+      // 轮次/淘汰赛阶段折叠（1.3.8）：点头部翻转显隐并记录覆盖（直接 DOM 翻转，不整页重渲染）
+      var dayT = e.target.closest("[data-pkday]");
+      if (dayT) {
+        var dk = dayT.dataset.pkday;
+        var body = document.querySelector('[data-daybody="' + dk + '"]');
+        if (body) {
+          var wasHidden = body.hasAttribute("hidden");
+          pickemCollapseOverrides[dk] = !wasHidden; // 展开态点击→收起；收起态点击→展开
+          if (wasHidden) body.removeAttribute("hidden"); else body.setAttribute("hidden", "");
+          var chev = dayT.querySelector(".pk-chev");
+          if (chev) chev.textContent = wasHidden ? "▾" : "▸";
+        }
+        return;
+      }
+      var stageT = e.target.closest("[data-pkstage]");
+      if (stageT) {
+        var sk = stageT.dataset.pkstage;
+        var sbody = document.querySelector('[data-stagebody="' + sk + '"]');
+        if (sbody) {
+          var sw = sbody.hasAttribute("hidden");
+          pickemCollapseOverrides[sk] = !sw;
+          if (sw) sbody.removeAttribute("hidden"); else sbody.setAttribute("hidden", "");
+          var chev2 = stageT.querySelector(".pk-chev");
+          if (chev2) chev2.textContent = sw ? "▾" : "▸";
+        }
+        return;
+      }
       // recKey 分隔符 = "##"（1.3.6：自动赛事 id "auto:XXX" 含冒号，":" 拆分会错位）
       var place = e.target.closest("[data-pkplace]");
       if (place) {

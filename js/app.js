@@ -2733,6 +2733,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       toast("该场已结束，赛果 " + (m.score || "") + " · 胜 " + (m.winner === "A" ? m.a : m.b));
       return;
     }
+    if (m.canceled) {
+      toast("该场已取消（弃赛/轮空），不计入竞猜");
+      return;
+    }
     if (isNaN(start) || Date.now() >= start - PICKEM_DEADLINE_MS) {
       toast("该场竞猜已于开赛前 1 小时截止");
       renderPickem();

@@ -240,11 +240,23 @@ input { font-family: inherit; }
 .selectors {
   position: relative;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
   margin-bottom: 14px;
 }
+/* 固定两行（1.3.10）：第一行=游戏+赛事选择器（长标签省略），第二行=赛程表+IEM 作业常驻 */
+.selectors-row1 { display: flex; gap: 8px; min-width: 0; }
+.selectors-row1 .selector { flex: 1 1 0; min-width: 0; }
+.selectors-row1 .select-label {
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.selectors-row2 { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.selectors-row2 .selector { flex: 1 1 0; min-width: 0; }
+.selectors-row2 .game-select-btn { width: 100%; justify-content: center; }
+.selectors-row2 .game-select-count { margin-left: 0; }
 
 .selector { position: relative; flex: 0 0 auto; min-width: 0; }
 
@@ -932,6 +944,20 @@ input { font-family: inherit; }
 }
 .section-head h2 { margin: 0; font-size: 14px; letter-spacing: .3px; }
 .section-sub { font-size: 11.5px; color: var(--text-faint); }
+/* 实验功能公测标识（1.3.10，作业页头部） */
+.labs-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb), .4);
+  background: rgba(var(--accent-rgb), .1);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
 .section-head-more { display: inline-flex; align-items: baseline; gap: 8px; }
 .section-more-btn {
   font: inherit;
@@ -3030,6 +3056,8 @@ html[data-theme="light"] .cer-quote input {
   padding: 2px 0 4px;
   scrollbar-width: none;
 }
+/* display:flex 会压制 [hidden] 的 UA 隐藏（同 .game-popover[hidden] 先例）——scoped 公测入口显式补丁 */
+.pickem-evtabs[hidden] { display: none; }
 .pickem-evtabs::-webkit-scrollbar { display: none; }
 .pickem-evtab {
   flex: 0 0 auto;

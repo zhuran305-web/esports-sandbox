@@ -246,7 +246,7 @@ function buildPlacementStage(cfg, matches) {
   };
 }
 
-function buildEvent(cfg, allMatches) {
+function buildEvent(cfg, allMatches, cachedEvent) {
   var evMatches = allMatches.filter(function (m) {
     return m.game === cfg.game && m.tournament === cfg.tournament;
   });
@@ -266,15 +266,32 @@ function buildEvent(cfg, allMatches) {
       stages.push(stage);
     }
   });
-  if (!stages.length) return null;
-  var anyMatch = stages.some(function (s) { return s.matches.length; });
-  var allDone = stages.length && stages.every(function (s) {
+  // 按配置顺序逐段合并：本轮重建出的阶段优先；缓存里对应阶段（早期比赛被 retention 清掉、本轮重建不出时）保留。
+  // （旧逻辑对 done 事件整体跳过重建——小组赛先打完就把事件提前标成 done，之后排期出来的淘汰赛永远进不了
+  //   聚合数据，作业页一直显示「已结束」且名次竞猜被冻结。1.3.7 修复：改为逐段合并 + 状态考虑未排期阶段。）
+  var rebuiltById = {};
+  stages.forEach(function (s) { rebuiltById[s.id] = s; });
+  var mergedStages = [];
+  var pendingConfigured = false; // 配置声明了但本轮与缓存都没有的阶段：说明还有比赛未排期，事件不算完结
+  (cfg.stages || []).forEach(function (scfg) {
+    if (rebuiltById[scfg.id]) { mergedStages.push(rebuiltById[scfg.id]); return; }
+    var cs = cachedEvent && Array.isArray(cachedEvent.stages)
+      ? cachedEvent.stages.filter(function (s) { return s.id === scfg.id; })[0] : null;
+    if (cs) mergedStages.push(cs);
+    else pendingConfigured = true;
+  });
+  // 防御：重建出但配置没有的阶段保留在尾部（不丢数据）
+  stages.forEach(function (s) {
+    if (!mergedStages.some(function (m) { return m.id === s.id; })) mergedStages.push(s);
+  });
+  if (!mergedStages.length) return null;
+  var allDone = mergedStages.length > 0 && !pendingConfigured && mergedStages.every(function (s) {
     return s.matches.length > 0 && s.matches.every(function (m) { return m.winner === "A" || m.winner === "B"; });
   });
-  var anyStarted = stages.some(function (s) { return s.matches.some(function (m) { return m.winner || ts(m.startAt) <= Date.now(); }); });
+  var anyStarted = mergedStages.some(function (s) { return s.matches.some(function (m) { return m.winner || ts(m.startAt) <= Date.now(); }); });
   var lastStart = 0;
-  stages.forEach(function (s) { s.matches.forEach(function (m) { lastStart = Math.max(lastStart, ts(m.startAt)); }); });
-  var matched = stages.reduce(function (n, s) { return n + s.matches.length; }, 0);
+  mergedStages.forEach(function (s) { s.matches.forEach(function (m) { lastStart = Math.max(lastStart, ts(m.startAt)); }); });
+  var matched = mergedStages.reduce(function (n, s) { return n + s.matches.length; }, 0);
   if (evMatches.length !== matched) {
     log("  ! " + cfg.id + "：赛事共 " + evMatches.length + " 场，仅 " + matched + " 场匹配到已配置阶段（stage 原文核对配置）");
   }
@@ -285,7 +302,7 @@ function buildEvent(cfg, allMatches) {
     tier: evMatches.length && evMatches.every(function (m) { return m.tier === "a"; }) ? "a" : "",
     status: allDone ? "done" : (anyStarted ? "active" : "upcoming"),
     endsAt: lastStart ? new Date(lastStart + 12 * 3600000).toISOString() : "",
-    stages: stages
+    stages: mergedStages
   };
 }
 
@@ -305,9 +322,9 @@ async function main() {
   (cfg.events || []).forEach(function (c) {
     if (!c || !c.id || !c.game || !c.tournament || !Array.isArray(c.stages) || !c.stages.length) return;
     var cached = events[c.id];
-    // 已完结的事件不再重建（其早期比赛可能已被 retention 清掉，重建反而丢阶段）
-    if (cached && cached.status === "done") return;
-    var ev = buildEvent(c, src.matches);
+    // 每轮都重建并按阶段合并（buildEvent）：done 事件整体跳过的旧逻辑会把「小组赛先打完 → 提前 done →
+    // 之后排期出来的淘汰赛永远进不了聚合」冻结住（1.3.7 修复；retention 保护由逐段合并承担）
+    var ev = buildEvent(c, src.matches, cached);
     if (ev) { events[c.id] = ev; built++; }
     else if (!cached) log("  - " + c.id + "：暂无匹配比赛（未排期或 stage/tournament 原文对不上），跳过");
   });

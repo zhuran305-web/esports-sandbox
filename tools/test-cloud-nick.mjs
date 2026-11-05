@@ -992,6 +992,53 @@ check("② 脏 startAt 场次 round 归 0 且不抛错", (function () {
   return evs.length === 1 && evs[0].stages[0].matches[0].round === 0;
 })());
 
+/* ---------- 场景 W2（用户口径 2026-11-05）：placement 截止铁律 ----------
+   冠亚季竞猜必须在「整个淘汰赛开始前」（=阶段内最早一场开赛前 1 小时）锁定：
+   QF 打完后前四名可知、可排除其余队伍——任何时间轴场景都不得在 QF1-1h 之后仍可猜。 */
+console.log("W2. placement 截止铁律（冠亚季必须在淘汰赛开打前锁定）：");
+check("① 标准：4 场 QF 已排期+8 队 → 截止前可猜；截止后（QF1-1h 内/已开赛）不可猜", (function () {
+  var now = Date.now();
+  function po(qfOffsetMs, extra) {
+    var ms = [];
+    for (var i = 0; i < 4; i++) ms.push({ id: "qf" + i, a: "队" + (i*2+1), b: "队" + (i*2+2), startAt: new Date(now + qfOffsetMs + i * 40 * 60000).toISOString(), winner: "", score: "", round: 0 });
+    var st = { id: "po", type: "placement", label: "淘汰赛", startsAt: new Date(now + qfOffsetMs).toISOString(),
+      teams: Array.from({ length: 8 }, function (_, i) { return { name: "队" + (i + 1), short: "D" + (i + 1) }; }),
+      matches: ms, rounds: [], degraded: false, results: null };
+    if (extra) Object.assign(st, extra);
+    return st;
+  }
+  if (PK.stageOpenForPicks(po(48 * 3600000), now) !== true) return false;      // QF1 在 48h 后 → 可猜
+  if (PK.stageOpenForPicks(po(30 * 60000), now) !== false) return false;      // QF1 在 30min 后（不足 1h）→ 已截止
+  if (PK.stageOpenForPicks(po(-2 * 3600000), now) !== false) return false;    // QF1 已开赛 → 不可猜
+  return true;
+})());
+check("② QF 全部完赛且 SF 未排期（degraded、8 队、前四名已可知）→ 不可猜", (function () {
+  var now = Date.now();
+  var ms = [];
+  for (var i = 0; i < 4; i++) ms.push({ id: "qf" + i, a: "队" + (i*2+1), b: "队" + (i*2+2), startAt: new Date(now - 86400000).toISOString(), winner: "A", score: "2:0", round: 0 });
+  var st = { id: "po", type: "placement", label: "淘汰赛", startsAt: new Date(now - 86400000).toISOString(),
+    teams: Array.from({ length: 8 }, function (_, i) { return { name: "队" + (i + 1), short: "D" + (i + 1) }; }),
+    matches: ms, rounds: [], degraded: true, results: null };
+  return PK.stageOpenForPicks(st, now) === false; // stageAllDone：所列场次全有结果 → 关闭
+})());
+check("③ QF 完赛 + SF 已排期（deadline 早已过去）→ 不可猜；④ 只有 2 场 SF 数据（4 队，前四名已知）→ 名单未齐不可猜", (function () {
+  var now = Date.now();
+  function teamList(n) { return Array.from({ length: n }, function (_, i) { return { name: "队" + (i + 1), short: "D" + (i + 1) }; }); }
+  var st3 = { id: "po", type: "placement", label: "淘汰赛", startsAt: new Date(now - 86400000).toISOString(),
+    teams: teamList(8), matches: [
+      { id: "qf0", a: "队1", b: "队2", startAt: new Date(now - 86400000).toISOString(), winner: "A", score: "2:0", round: 0 },
+      { id: "qf1", a: "队3", b: "队4", startAt: new Date(now - 82800000).toISOString(), winner: "A", score: "2:0", round: 0 },
+      { id: "sf0", a: "队1", b: "队3", startAt: new Date(now + 86400000).toISOString(), winner: "", score: "", round: 1 }
+    ], rounds: [], degraded: true, results: null };
+  if (PK.stageOpenForPicks(st3, now) !== false) return false; // deadline=QF1(过去) → locked
+  var st4 = { id: "po", type: "placement", label: "淘汰赛", startsAt: new Date(now + 86400000).toISOString(),
+    teams: teamList(4), matches: [
+      { id: "sf0", a: "队1", b: "队2", startAt: new Date(now + 86400000).toISOString(), winner: "", score: "", round: 1 },
+      { id: "sf1", a: "队3", b: "队4", startAt: new Date(now + 88200000).toISOString(), winner: "", score: "", round: 1 }
+    ], rounds: [], degraded: true, results: null };
+  return PK.stageOpenForPicks(st4, now) === false; // 4 队 < 8 → 名单未齐（防「知道前四名排除其他队」）
+})());
+
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
 function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }

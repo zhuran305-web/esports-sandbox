@@ -1039,6 +1039,30 @@ check("③ QF 完赛 + SF 已排期（deadline 早已过去）→ 不可猜；�
   return PK.stageOpenForPicks(st4, now) === false; // 4 队 < 8 → 名单未齐（防「知道前四名排除其他队」）
 })());
 
+check("⑤ 6 队轮空制 placement（IEM 北京实测）：expectTeams=6 + 名单播种 → 2 场揭幕战即可猜；未播种 4 队不可猜", (function () {
+  var now = Date.now();
+  function po6(nTeams, expectTeams) {
+    var names = ["TheMongolz", "MOUZ", "PARIVISION", "Natus Vincere", "FURIA", "BetBoom Team"];
+    var ms = [
+      { id: "p0", a: "PARIVISION", b: "Natus Vincere", startAt: new Date(now + 24 * 3600000).toISOString(), winner: "", score: "", round: 0 },
+      { id: "p1", a: "FURIA", b: "BetBoom Team", startAt: new Date(now + 26 * 3600000).toISOString(), winner: "", score: "", round: 0 }
+    ];
+    return { id: "po", type: "placement", label: "淘汰赛", startsAt: ms[0].startAt,
+      teams: names.slice(0, nTeams).map(function (n) { return { name: n, short: "" }; }),
+      matches: ms, rounds: [], degraded: true, expectTeams: expectTeams || 0, results: null };
+  }
+  // expectTeams=6：播种 6 队（哪怕只有 2 场揭幕战）→ 可猜
+  if (PK.stageOpenForPicks(po6(6, 6), now) !== true) return false;
+  // 未播种（数据只有 4 队）且未声明 expectTeams → 默认 8 门槛 → 不可猜
+  if (PK.stageOpenForPicks(po6(4, 0), now) !== false) return false;
+  // normalizeStage 透传 expectTeams（含非法值归 0）
+  var nd = PK.normalizePickemData({ events: [{ id: "e", game: "cs2", name: "x", stages: [
+    { id: "po", type: "placement", label: "p", teams: [], matches: [], degraded: true, expectTeams: 6 },
+    { id: "po2", type: "placement", label: "p", teams: [], matches: [], degraded: true, expectTeams: 99 }
+  ] }] });
+  return nd.events[0].stages[0].expectTeams === 6 && nd.events[0].stages[1].expectTeams === 0;
+})());
+
 function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8"); }
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
 function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }

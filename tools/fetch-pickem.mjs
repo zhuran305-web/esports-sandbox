@@ -199,11 +199,18 @@ function buildSeriesStage(cfg, matches) {
 function buildPlacementStage(cfg, matches) {
   // 淘汰赛名次竞猜：猜冠军（钻石币）/亚军（金币）/季军（金币，半决赛败者并列两队）；
   // A 级赛事（event.tier="a"）币级整体降一级：冠军金币/亚季军银币（币级在客户端 settleRewards 按 tier 决定）。
-  // 轮次结构复用 bracket 的 [4,2,1] 切块；全部完赛后推导 results。
+  // 轮次结构复用 bracket 的 [4,2,1] 切块，可用 expectRounds 覆盖（6 队轮空制=[2,2,1]，IEM 北京实测）；
+  // expectTeams 声明参赛名单规模（轮空制=全部队伍数，与「首轮场次×2」不同），客户端按它判名单齐不齐；
+  // qualifiedTeams 显式名单——轮空队不打首轮，只有他们排上后续场次才会进数据，不播种则名单永远不齐、
+  // 而截止线（最早一场-1h）早已过去，名次竞猜永远开不了。全部完赛后推导 results。
   var expect = Array.isArray(cfg.expectRounds) && cfg.expectRounds.length ? cfg.expectRounds : DEFAULT_EXPECT_ROUNDS;
   var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
   var teams = {};
   var order = [];
+  var seedNames = Array.isArray(cfg.qualifiedTeams) ? cfg.qualifiedTeams.filter(function (n) { return typeof n === "string" && n; }) : [];
+  seedNames.forEach(function (n) {
+    if (!teams[n]) { teams[n] = { name: n, short: "", region: "", logo: "" }; order.push(n); }
+  });
   var degraded = list.length !== expect.reduce(function (s, n) { return s + n; }, 0);
   var roundLabels = [];
   var roundOf = {};
@@ -219,6 +226,11 @@ function buildPlacementStage(cfg, matches) {
     [a, b].forEach(function (t) {
       if (!t) return;
       if (!teams[t.name]) { teams[t.name] = t; order.push(t.name); }
+      else {
+        // 播种队被实际比赛补全缩写/地区
+        if (!teams[t.name].short && t.short) teams[t.name].short = t.short;
+        if (!teams[t.name].region && t.region) teams[t.name].region = t.region;
+      }
     });
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
     return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: degraded ? 0 : (roundOf[i] || 0) };
@@ -242,6 +254,7 @@ function buildPlacementStage(cfg, matches) {
     matches: compact,
     rounds: degraded ? [] : roundLabels,
     degraded: degraded,
+    expectTeams: typeof cfg.expectTeams === "number" && cfg.expectTeams >= 2 ? Math.min(16, Math.round(cfg.expectTeams)) : 0,
     results: results
   };
 }

@@ -118,7 +118,7 @@ function buildSwissStage(cfg, matches) {
     if (winner === "A" && b) teams[b.name].l += 1;
     if (winner === "B" && b) teams[b.name].w += 1;
     if (winner === "B" && a) teams[a.name].l += 1;
-    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round };
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round, canceled: m.canceled === true || undefined };
   });
   var teamList = order.map(function (n) { return teams[n]; })
     .sort(function (x, y) { return (y.w - x.w) || (x.l - y.l) || (x.name < y.name ? -1 : 1); });
@@ -155,7 +155,7 @@ function buildBracketStage(cfg, matches) {
       if (!teams[t.name]) { teams[t.name] = t; teams[t.name].w = 0; teams[t.name].l = 0; order.push(t.name); }
     });
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
-    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: degraded ? 0 : (roundOf[i] || 0) };
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: degraded ? 0 : (roundOf[i] || 0), canceled: m.canceled === true || undefined };
   });
   return {
     id: cfg.id, type: "bracket", label: cfg.label || cfg.id,
@@ -186,7 +186,7 @@ function buildSeriesStage(cfg, matches) {
     if (lastDay && day && day !== lastDay) round += 1; // 跨天即下一轮（IEM 每轮集中在一天；跨天赛制后续再适配）
     if (day) lastDay = day;
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
-    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round };
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round, canceled: m.canceled === true || undefined };
   });
   return {
     id: cfg.id, type: "series", label: cfg.label || cfg.id,
@@ -233,10 +233,10 @@ function buildPlacementStage(cfg, matches) {
       }
     });
     var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
-    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: degraded ? 0 : (roundOf[i] || 0) };
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: degraded ? 0 : (roundOf[i] || 0), canceled: m.canceled === true || undefined };
   });
   var results = null;
-  var allDone = list.length > 0 && compact.every(function (m) { return m.winner === "A" || m.winner === "B"; });
+  var allDone = list.length > 0 && compact.every(function (m) { return m.winner === "A" || m.winner === "B" || m.canceled === true; });
   if (!degraded && allDone) {
     var finalM = compact.filter(function (m) { return m.round === expect.length - 1; })[0];
     var semis = compact.filter(function (m) { return m.round === expect.length - 2; });

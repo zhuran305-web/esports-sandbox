@@ -105,7 +105,7 @@ function normalizeStage(raw) {
     return { name: t.name, short: typeof t.short === "string" ? t.short : "", region: typeof t.region === "string" ? t.region : "", logo: typeof t.logo === "string" ? t.logo : "", w: typeof t.w === "number" && isFinite(t.w) ? t.w : 0, l: typeof t.l === "number" && isFinite(t.l) ? t.l : 0 };
   });
   var matches = (Array.isArray(raw.matches) ? raw.matches : []).filter(validMatch).slice(0, 60).map(function (m) {
-    return { id: m.id, a: m.a, b: m.b, startAt: m.startAt, winner: m.winner === "A" || m.winner === "B" ? m.winner : "", score: typeof m.score === "string" ? m.score : "", round: typeof m.round === "number" && isFinite(m.round) ? m.round : 0 };
+    return { id: m.id, a: m.a, b: m.b, startAt: m.startAt, winner: m.winner === "A" || m.winner === "B" ? m.winner : "", score: typeof m.score === "string" ? m.score : "", round: typeof m.round === "number" && isFinite(m.round) ? m.round : 0, canceled: m.canceled === true || undefined };
   });
   var out = {
     id: raw.id, type: raw.type,
@@ -245,17 +245,21 @@ export function normalizePickemState(raw) {
 
 /* ---------- 阶段状态机（镜像 statusOf：开赛前 1 小时截止） ---------- */
 
-/** 阶段内全部比赛是否已完赛（results 可用 / 淘汰赛可判名次） */
+/** 阶段内全部比赛是否已完赛（results 可用 / 淘汰赛可判名次）。
+ *  弃赛/取消场次（canceled=true，无赛果）视为已解决：不再阻塞阶段完结与结算（1.3.7 应对轮空/弃赛）。 */
 export function stageAllDone(stage) {
-  return !!stage && stage.matches.length > 0 && stage.matches.every(function (m) { return m.winner === "A" || m.winner === "B"; });
+  return !!stage && stage.matches.length > 0 && stage.matches.every(function (m) {
+    return m.winner === "A" || m.winner === "B" || m.canceled === true;
+  });
 }
 
-/** 淘汰赛/系列赛里当前可猜的场次：双方确定 + 未完赛 + 未到自己开赛前 1 小时 */
+/** 淘汰赛/系列赛里当前可猜的场次：双方确定 + 未完赛未取消 + 未到自己开赛前 1 小时 */
 export function pickableSeriesMatches(stage, now) {
   now = now || Date.now();
   if (!stage || (stage.type !== "series" && stage.type !== "bracket")) return [];
   return stage.matches.filter(function (m) {
     if (!m.a || !m.b) return false;
+    if (m.canceled) return false; // 已取消/弃赛场次不可猜
     if (m.winner === "A" || m.winner === "B") return false;
     var start = new Date(m.startAt).getTime();
     return !isNaN(start) && now < start - PICKEM_DEADLINE_MS;

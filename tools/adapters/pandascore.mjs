@@ -74,7 +74,10 @@ function toRaw(item, game) {
     if (item.winner_id === op1.id) winner = "A";
     else if (item.winner_id === op2.id) winner = "B";
   }
-  var finished = item.status === "finished" && winner;
+  // 弃赛/取消识别（1.3.7）：PandaScore 对 walkover 通常给 status=canceled（+forfeit）且 winner_id=晋级方
+  // ——有 winner 按正常完赛落结果；真取消（无 winner）落 canceled 标记供下游「已解决」判定
+  var canceled = (item.status === "canceled" || item.forfeit === true) && !winner;
+  var finished = !!winner && (item.status === "finished" || item.status === "canceled" || item.forfeit === true);
 
   var result = finished
     ? { winner: winner, score: s1 !== null && s2 !== null ? s1 + ":" + s2 : "?:?" }
@@ -96,6 +99,7 @@ function toRaw(item, game) {
     teamB: { name: op2.name, short: op2.acronym || "", region: String(op2.location || "").toLowerCase(), logo: logoPath(op2.image_url) },
     status: result ? "finished" : undefined,
     result: result,
+    canceled: canceled || undefined,
     note: ""
   };
 }

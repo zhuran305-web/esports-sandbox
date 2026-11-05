@@ -2013,8 +2013,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (stage.type === "swiss") {
       if (stage.teams.length !== PICKEM_SWISS_TEAMS) return "wait";
     } else if (stage.degraded &&
-        !(stage.type === "placement" && stage.teams.length >= PICKEM_PLACEMENT_TEAMS)) {
-      return "wait"; // 结构降级：placement 名单齐除外（名次竞猜与对阵无关，1.3.6）
+        !(stage.type === "placement" && stage.teams.length >= (stage.expectTeams || PICKEM_PLACEMENT_TEAMS))) {
+      return "wait"; // 结构降级：placement 名单齐除外（名次竞猜与对阵无关，1.3.6；6 队轮空制按配置规模）
     }
     var start = new Date(stage.startsAt).getTime();
     if (isNaN(start)) return "wait";
@@ -2381,8 +2381,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   ];
 
   function pickemPlacementBody(ev, stage, st, rec) {
-    // 名单未齐（首轮未排完）才降级只展示；名单齐但部分对阵未排期可正常名次竞猜（1.3.6）
-    if (stage.degraded && stage.teams.length < PICKEM_PLACEMENT_TEAMS) {
+    // 名单未齐（首轮未排完）才降级只展示；名单齐但部分对阵未排期可正常名次竞猜（1.3.6；规模按 expectTeams/默认 8）
+    if (stage.degraded && stage.teams.length < (stage.expectTeams || PICKEM_PLACEMENT_TEAMS)) {
       return '<div class="pickem-note">该阶段赛制结构与预期不符，暂只展示赛程</div>' + pickemTeamStrip(stage);
     }
     var editable = st === "open";

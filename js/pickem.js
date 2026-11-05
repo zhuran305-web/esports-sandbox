@@ -130,6 +130,8 @@ function normalizeStage(raw) {
   } else if (raw.type === "placement") {
     out.rounds = Array.isArray(raw.rounds) ? raw.rounds.filter(function (s) { return typeof s === "string"; }) : [];
     out.degraded = raw.degraded === true;
+    // 名单规模声明（1.3.7：6 队轮空制等非 8 队淘汰赛用；0=未声明，按 PICKEM_PLACEMENT_TEAMS 默认）
+    out.expectTeams = typeof raw.expectTeams === "number" && raw.expectTeams >= 2 && raw.expectTeams <= 16 ? Math.round(raw.expectTeams) : 0;
     var pr = raw.results;
     if (pr && typeof pr === "object" && !Array.isArray(pr) &&
         typeof pr.champion === "string" && pr.champion &&
@@ -277,8 +279,8 @@ export function stageOpenForPicks(stage, now) {
     if (!stage.degraded) {
       var allSet = stage.matches.every(function (m) { return m.a && m.b; });
       if (!allSet) return false; // 对阵未全部确定（等上一轮）
-    } else if (stage.teams.length < PICKEM_PLACEMENT_TEAMS) {
-      return false; // 名单未齐（首轮还没排完）——与对阵无关的名次竞猜无从选起
+    } else if (stage.teams.length < (stage.expectTeams || PICKEM_PLACEMENT_TEAMS)) {
+      return false; // 名单未齐（首轮还没排完）——与对阵无关的名次竞猜无从选起；6 队轮空制等按配置规模判
     }
   } else if (stage.type === "series") {
     return pickableSeriesMatches(stage, now).length > 0; // 逐场截止：阶段已开打也能猜剩余场次

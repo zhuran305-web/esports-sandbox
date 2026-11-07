@@ -404,16 +404,18 @@ export function settleRewards(stage, rec, eventTier) {
   }
   // series/bracket（逐场猜）：每猜对 1 场 = 1 枚赛事等级币（A 级铜币，其余银币），不再按轮数；
   // 只算「用户猜过的、且已有结果的」场次——中途接入公平
+  // 淘汰赛阶段逐场不计币（2026-11-07 用户拍板，stage.noCoin）：仍计 correct/total 供进度展示，
+  // 硬币只走名次竞猜路径；手工 series/旧 bracket 行为不变
   var mine = rec.picks && rec.picks.w ? rec.picks.w : {};
   var k2 = eventTier === "a" ? "c" : "s";
   var n = 0;
   stage.matches.forEach(function (m) {
     if ((m.winner !== "A" && m.winner !== "B") || !mine[m.id]) return;
     if (mine[m.id] !== m.winner) return;
-    coins[k2] += 1;
+    if (!stage.noCoin) coins[k2] += 1;
     n += 1;
   });
-  if (n) bySource.push({ label: stage.label, coin: PICKEM_COINS[k2], count: n });
+  if (n && !stage.noCoin) bySource.push({ label: stage.label, coin: PICKEM_COINS[k2], count: n });
   return { coins: coins, bySource: bySource };
 }
 
@@ -423,6 +425,12 @@ export function settleRewards(stage, rec, eventTier) {
 
 /** 从 matches 现算自动赛事：按 tournament 归并 tier=s/a 比赛，按 stage 值分组为多个 series 阶段，
  *  round 按北京时间日期聚类（与聚合器同口径）。返回 normalizePickemData 形状的事件数组。 */
+
+/** 淘汰赛阶段名识别（coin 升级用）：PandaScore 阶段名英文为主，手工配置中文阶段名兜底。
+ *  关键词保守匹配——漏判只是维持小组赛币级（旧行为），误判会把小组赛升一级。 */
+export function isPlayoffStageKey(key) {
+  return /play[\s-]?off|knock\s?out|quarter|semi|final|ro\d+|round of|bracket|eliminat|淘汰/i.test(String(key || ""));
+}
 export function buildAutoEvents(matches, excludeTournaments) {
   var excluded = {};
   (excludeTournaments || []).forEach(function (t) { excluded[t] = 1; });
@@ -459,16 +467,20 @@ export function buildAutoEvents(matches, excludeTournaments) {
         if (day) lastDay = day;
         var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
         if (winner || (!isNaN(startT) && startT <= Date.now())) anyStarted = true;
-        if (!winner) allDone = false;
+        if (!winner && m.canceled !== true) allDone = false;
         if (m.tier !== "a") allA = false;
         if (!isNaN(startT)) lastStart = Math.max(lastStart, startT);
         teamsSeen[m.teamA.name] = { name: m.teamA.name, short: m.teamA.short || "" };
         teamsSeen[m.teamB.name] = { name: m.teamB.name, short: m.teamB.short || "" };
-        return { id: m.id, a: m.teamA.name, b: m.teamB.name, startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round };
+        // canceled（1.3.8 弃赛）：auto 事件此前没透传，弃赛场会永远显示成未完成
+        return { id: m.id, a: m.teamA.name, b: m.teamB.name, startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round, canceled: m.canceled === true || undefined };
       });
       stages.push({
         id: sk, type: "series", label: sk,
         coinTier: 1,
+        // 淘汰赛阶段逐场不计币（2026-11-07 用户拍板）：高级币只走名次竞猜（手工配置路径），
+        // 避免 auto 淘汰赛「猜一场发一枚铜/银」的币量放大；逐场竞猜保留（喂养跟队连击与约战）
+        noCoin: isPlayoffStageKey(sk) || undefined,
         startsAt: list[0].startAt, endsAt: list[list.length - 1].startAt,
         teams: Object.keys(teamsSeen).map(function (n) { return teamsSeen[n]; }),
         matches: ms

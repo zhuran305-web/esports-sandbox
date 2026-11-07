@@ -767,7 +767,9 @@ check("自动收录 S/A 赛事（1.3.6）：tier 筛选 + stage 分组 series + 
     if (!s1 || !po || s1.type !== "series" || po.type !== "series") return false;
     if (s1.matches.length !== 2 || po.matches.length !== 1) return false;
     if (s1.matches[0].round !== 0 || po.matches[0].round !== 0) return false;
+    // 2026-11-07 淘汰赛逐场不计币：coinTier 均 1，Playoffs 标记 noCoin
     if (s1.coinTier !== 1 || po.coinTier !== 1) return false;
+    if (po.noCoin !== true || s1.noCoin) return false;
     var acup = evs.filter(function (e) { return e.name === "A 级杯"; })[0];
     if (!acup || acup.tier !== "a") return false; // 全 a → A 级（币级整体降一级）
     // Y Cup 组内只有 tier=b → 不收录
@@ -1063,6 +1065,60 @@ check("⑤ canceled 标记经 merge 往返保留", (function () {
   }];
   var r = Lib.mergeMatches(existing, [], { retentionDays: 45 });
   return r.matches.length === 1 && r.matches[0].canceled === true;
+})());
+
+/* ---------- 场景 AC（2026-11-07 用户口径）：auto 事件淘汰赛币级升级 + 已完赛不展示 + 弃赛透传 ---------- */
+console.log("AC. auto 事件淘汰赛币级 / 弃赛透传：");
+check("① 阶段名识别：Playoffs/Quarterfinals/败者组命中；Group Stage/Regular Season 不命中", (function () {
+  var hit = ["Playoffs", "Quarterfinals", "Semifinal", "Grand Final", "Lower Bracket Round 1", "Round of 16", "淘汰赛", "Play-off"];
+  var miss = ["Group Stage", "Regular Season", "Group A", "Championship Group Stage North America"];
+  return hit.every(function (k) { return PK.isPlayoffStageKey(k); }) && miss.every(function (k) { return !PK.isPlayoffStageKey(k); });
+})());
+check("② A 级赛事：小组赛正常计币、淘汰赛标记 noCoin", (function () {
+  function mk(id, stage, tier) {
+    return { id: id, game: "cs2", tier: tier, tournament: "PGL 测试赛", stage: stage,
+      teamA: { name: "甲" + id }, teamB: { name: "乙" + id }, startAt: "2026-11-10T10:00:00.000Z", result: null };
+  }
+  var evs = PK.buildAutoEvents([mk("g1", "Group Stage", "a"), mk("p1", "Playoffs", "a")], []);
+  var ev = evs[0];
+  if (!ev || ev.tier !== "a" || ev.stages.length !== 2) return false;
+  var byId = {};
+  ev.stages.forEach(function (s) { byId[s.id] = s; });
+  return byId["Group Stage"].coinTier === 1 && !byId["Group Stage"].noCoin && byId["Playoffs"].noCoin === true;
+})());
+check("③ S 级赛事：淘汰赛同样标记 noCoin", (function () {
+  function mk(id, stage) {
+    return { id: id, game: "cs2", tier: "s", tournament: "S 测试赛", stage: stage,
+      teamA: { name: "甲" + id }, teamB: { name: "乙" + id }, startAt: "2026-11-10T10:00:00.000Z", result: null };
+  }
+  var ev = PK.buildAutoEvents([mk("g1", "Group Stage"), mk("p1", "Playoffs")], [])[0];
+  var byId = {};
+  ev.stages.forEach(function (s) { byId[s.id] = s; });
+  return ev.tier === "" && byId["Playoffs"].noCoin === true && !byId["Group Stage"].noCoin;
+})());
+check("④ series 结算：noCoin 阶段猜对不发币；小组赛 A 级铜、S 级银不变", (function () {
+  function seriesStage(extra) {
+    return Object.assign({ id: "st", type: "series", label: "T", coinTier: 1,
+      matches: [{ id: "m1", a: "甲", b: "乙", startAt: "2026-11-10T10:00:00.000Z", winner: "A", score: "1:0", round: 0 }] }, extra || {});
+  }
+  var rec = { picks: { w: { m1: "A" } }, settled: false, pickedAt: 1 };
+  var playoff = PK.settleRewards(seriesStage({ noCoin: true }), rec, "a");
+  var aGroup = PK.settleRewards(seriesStage(), rec, "a");
+  var sGroup = PK.settleRewards(seriesStage(), rec, "");
+  return playoff.coins.c === 0 && playoff.coins.s === 0 && playoff.coins.g === 0 && playoff.bySource.length === 0 &&
+    aGroup.coins.c === 1 && sGroup.coins.s === 1;
+})());
+check("⑤ 弃赛透传：canceled 场进 stage matches、不阻塞事件 done", (function () {
+  var evs = PK.buildAutoEvents([
+    { id: "d1", game: "cs2", tier: "a", tournament: "弃赛测试赛", stage: "Group Stage",
+      teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: "2026-11-08T10:00:00.000Z", result: { winner: "A", score: "1:0" } },
+    { id: "d2", game: "cs2", tier: "a", tournament: "弃赛测试赛", stage: "Group Stage",
+      teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: "2026-11-08T12:00:00.000Z", result: null, canceled: true }
+  ], []);
+  var ev = evs[0];
+  var stage = ev.stages[0];
+  var canceledMatch = stage.matches.filter(function (m) { return m.canceled === true; });
+  return ev.status === "done" && canceledMatch.length === 1 && stage.matches.length === 2;
 })());
 
 /* ---------- 场景 W2（用户口径 2026-11-05）：placement 截止铁律 ----------

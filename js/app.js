@@ -626,10 +626,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return cleaned.slice(0, 4).toUpperCase();
   }
 
-  // OSS 键按段 URL 编码后请求：键里的 + 必须写 %2B（PandaScore CDN 对裸 + 按字面量，
-  // OSS 会解码成空格 → 404）；() 等合法字符 encodeURIComponent 不动，/ 保留分段
-  function logoOssUrl(path) {
-    return LOGO_BASE + path.split("/").map(encodeURIComponent).join("/");
+  // 打包文件名（1.3.12）：队标资源名 = 战队路径的 djb2 8hex 散列 + .webp——与
+  // tools/pack-team-logos.mjs 同算法（deploy 产物相对路径上限 39 字节，原 OSS 名超限）；
+  // 内容为 96px WebP（浏览器按内容嗅探渲染，扩展名仅占位）
+  function logoPackName(path2) {
+    var h = 5381;
+    for (var i = 0; i < path2.length; i++) { h = ((h << 5) + h + path2.charCodeAt(i)) >>> 0; }
+    return h.toString(16).padStart(8, "0") + ".webp";
   }
 
   function logoUrl(team) {
@@ -638,11 +641,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (!path) return "";
     if (/^https?:\/\//i.test(path)) {
       // 遗留存量：前缀剥离修复前的绝对 URL（team/player 图同域名同路径结构）——
-      // 剥出后缀走镜像基址；外域原样返回（新构建被 CSP 拦时走首字兜底）
+      // 剥出后缀走打包资源；外域原样返回（被 CSP 拦时走首字兜底）
       var legacy = path.match(/^https?:\/\/(?:cdn-api|cdn)\.pandascore\.co\/images\/(?:team|player)\/image\/(.+)$/i);
-      return legacy ? logoOssUrl(legacy[1]) : path;
+      return legacy ? LOGO_BASE + logoPackName(legacy[1]) : path;
     }
-    return logoOssUrl(path);
+    return LOGO_BASE + logoPackName(path);
   }
 
   // 有队标就画图（失败自动降级成文字徽标，见全局 error 监听），没有就沿用首字母色块

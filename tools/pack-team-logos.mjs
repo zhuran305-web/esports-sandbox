@@ -65,28 +65,35 @@ async function listLogos() {
   return out;
 }
 
-/* ---------- 2. 增量打包：跳过目标已存在的；下载原图 → sharp 96px WebP → public/logos/<同名> ---------- */
+/* ---------- 2. 增量打包：扁平散列文件名（djb2 8hex，与 js/app.js logoPackName 同算法——
+ * deploy 产物相对路径上限 39 字节，原 OSS 文件名超限 50 字节被预检拒）---------- */
 
 // 注意：import.meta.url 在中文路径下是百分号编码的——必须用 fileURLToPath 解码
 // （手写 pathname.replace 会把文件写进编码名的错误目录，2026-11-07 实测）
 var OUT_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public", "logos");
 
+function packName(suffix) {
+  var h = 5381;
+  for (var i = 0; i < suffix.length; i++) { h = ((h << 5) + h + suffix.charCodeAt(i)) >>> 0; }
+  return h.toString(16).padStart(8, "0") + ".webp";
+}
+
 async function packOne(key) {
   var suffix = key.replace(/^logos\//, "");
-  var target = path.join(OUT_ROOT, suffix);
+  var target = path.join(OUT_ROOT, packName(suffix));
   if (!FORCE && existsSync(target)) return "skip";
   var res = await fetch("https://" + HOST + "/" + key.split("/").map(encodeURIComponent).join("/"), { headers: sign("GET", key), signal: AbortSignal.timeout(30000) });
   if (!res.ok) throw new Error("HTTP " + res.status);
   var buf = Buffer.from(await res.arrayBuffer());
   if (buf.length < 100) throw new Error("体积异常 " + buf.length + "B");
   var webp = await sharp(buf).resize(96, 96, { fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
-  mkdirSync(path.dirname(target), { recursive: true });
   writeFileSync(target, webp);
   return "packed";
 }
 
 var keys = await listLogos();
 log("OSS logos/ 对象 " + keys.length + " 个");
+mkdirSync(OUT_ROOT, { recursive: true });
 var packed = 0, skipped = 0, failed = [];
 var CONC = 8, index = 0;
 async function lane() {

@@ -992,6 +992,79 @@ check("② 脏 startAt 场次 round 归 0 且不抛错", (function () {
   return evs.length === 1 && evs[0].stages[0].matches[0].round === 0;
 })());
 
+/* ---------- 场景 AB（2026-11-07）：mergeMatches pid 主键（防孪生）与治愈口径 ----------
+   历史 bug：matchKey 用队简称有序拼接派生，PandaScore 重取时主客交换/队名简称编辑（DC→DEN、
+   SINQ→SINQU）会让同一场比赛 fork 成孪生——旧条目永久收不到赛果，Pick'Em auto 事件永远
+   「进行中」（实测 74 组）。修复=双方有 pid 时用 pid 键合并 + heal 脚本治愈存量。 */
+console.log("AB. mergeMatches pid 主键（防孪生）与治愈口径：");
+var Lib = await import(pathToFileURL(path.join(root, "tools", "lib.mjs")).href);
+check("① 主客交换 + 队简称编辑的重取经 pid 键并入原条目（不再 fork）", (function () {
+  var existing = [{
+    id: "auto-cs2-20261024-furia-den", game: "cs2", tournament: "T", stage: "Group", startAt: "2026-10-24T16:14:37.000Z",
+    teamA: { name: "FURIA", short: "FURIA", pid: 124530 }, teamB: { name: "DENDELE CS", short: "DEN", pid: 138988 },
+    result: { winner: "A", score: "2:0" }, status: "finished", source: "pandascore"
+  }];
+  // 重取：主客交换 + 简称 DEN→DC（历史实测的两种 fork 触发叠加）
+  var incoming = [{
+    game: "cs2", tournament: "T", stage: "Group", startAt: "2026-10-24T16:14:37.000Z",
+    teamA: { name: "DENDELE CS", short: "DC", pid: 138988 }, teamB: { name: "FURIA", short: "FURIA", pid: 124530 },
+    result: null, source: "pandascore"
+  }];
+  var r = Lib.mergeMatches(existing, incoming, { retentionDays: 45 });
+  // incoming 无赛果 → 不覆盖原赛果（正确语义）；防 fork 的判据 = added===0（没有裂出新条目）
+  return r.matches.length === 1 && r.matches[0].id === "auto-cs2-20261024-furia-den" && r.added === 0;
+})());
+check("② 无 pid 的旧条目仍走 slug 键（行为不变，正常并入）", (function () {
+  var existing = [{
+    id: "auto-cs2-20261105-sta-xi", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-05T17:08:42.000Z",
+    teamA: { name: "STATE", short: "STA" }, teamB: { name: "XI", short: "XI" },
+    result: { winner: "A", score: "1:0" }, status: "finished", source: "pandascore"
+  }];
+  var incoming = [{
+    game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-05T17:08:42.000Z",
+    teamA: { name: "STATE", short: "STA" }, teamB: { name: "XI", short: "XI" },
+    result: null, source: "pandascore"
+  }];
+  var r = Lib.mergeMatches(existing, incoming, { retentionDays: 45 });
+  return r.matches.length === 1 && r.matches[0].id === "auto-cs2-20261105-sta-xi" && r.matches[0].result.winner === "A";
+})());
+check("③ 同日同两队两场（决赛重置，Δt=8h）：互不误并", (function () {
+  var existing = [{
+    id: "auto-cs2-20261110-x-y", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-10T10:00:00.000Z",
+    teamA: { name: "X队", short: "X", pid: 1 }, teamB: { name: "Y队", short: "Y", pid: 2 },
+    result: { winner: "A", score: "1:0" }, status: "finished", source: "pandascore"
+  }, {
+    id: "auto-cs2-20261110-y-x", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-10T18:00:00.000Z",
+    teamA: { name: "Y队", short: "Y", pid: 2 }, teamB: { name: "X队", short: "X", pid: 1 },
+    result: { winner: "A", score: "2:0" }, status: "finished", source: "pandascore"
+  }];
+  // pid 键相同但两条都完赛且无重取动作：merge 不删除任何历史条目（治愈只补赛果不删行）
+  var r = Lib.mergeMatches(existing, [], { retentionDays: 45 });
+  return r.matches.length === 2;
+})());
+check("④ pid 经 merge 往返保留（manual 覆盖不丢 pandascore 的 pid）", (function () {
+  var existing = [{
+    id: "auto-cs2-20261111-a-b", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-11T15:30:00.000Z",
+    teamA: { name: "A队", short: "A", pid: 11 }, teamB: { name: "B队", short: "B", pid: 22 },
+    result: null, status: "open", source: "pandascore", note: "原始"
+  }];
+  var incoming = [{
+    game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-11T15:30:00.000Z",
+    teamA: { name: "A队", short: "A" }, teamB: { name: "B队", short: "B" },
+    result: null, source: "manual", note: "手工补"
+  }];
+  var r = Lib.mergeMatches(existing, incoming, { retentionDays: 45 });
+  return r.matches.length === 1 && r.matches[0].teamA.pid === 11 && r.matches[0].teamB.pid === 22 && r.matches[0].note === "手工补";
+})());
+check("⑤ canceled 标记经 merge 往返保留", (function () {
+  var existing = [{
+    id: "auto-cs2-20261112-c-d", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-12T10:00:00.000Z",
+    teamA: { name: "C队" }, teamB: { name: "D队" }, status: "locked", result: null, canceled: true, source: "pandascore"
+  }];
+  var r = Lib.mergeMatches(existing, [], { retentionDays: 45 });
+  return r.matches.length === 1 && r.matches[0].canceled === true;
+})());
+
 /* ---------- 场景 W2（用户口径 2026-11-05）：placement 截止铁律 ----------
    冠亚季竞猜必须在「整个淘汰赛开始前」（=阶段内最早一场开赛前 1 小时）锁定：
    QF 打完后前四名可知、可排除其余队伍——任何时间轴场景都不得在 QF1-1h 之后仍可猜。 */

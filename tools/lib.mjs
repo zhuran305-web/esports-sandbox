@@ -35,11 +35,16 @@ export function normalizeTeam(team) {
   }
   var name = String(team.name || "").trim();
   if (!name) return null;
+  var pid = Number(team.pid);
   return {
     name: name,
     short: String(team.short || "").trim() || shortName(name),
     region: String(team.region || "").trim(),
-    logo: String(team.logo || "").trim()
+    logo: String(team.logo || "").trim(),
+    // PandaScore opponent.id（2026-11-07 防孪生）：跨「主客交换/队名简称编辑」稳定，
+    // mergeMatches 用它做主键索引；无 pid 的来源（manual/liquipedia/旧数据）为 undefined，
+    // JSON.stringify 自动省略，不进产物
+    pid: pid > 0 ? Math.floor(pid) : undefined
   };
 }
 
@@ -121,6 +126,9 @@ export function normalizeMatch(raw, source) {
     teamB: teamB,
     status: status,
     result: result,
+    // 弃赛/取消标记（1.3.7 引入）：merge 往返经 normalizeMatch 时必须保留，
+    // 否则一次重新采集就会把 canceled 标志洗掉（阶段完结判定回退）
+    canceled: raw.canceled === true ? true : undefined,
     note: raw.note ? String(raw.note) : "",
     source: source || raw.source || "manual"
   };
@@ -130,6 +138,17 @@ export function matchKey(m) {
   var d = new Date(m.startAt);
   var day = isNaN(d.getTime()) ? "nodate" : d.toISOString().slice(0, 10);
   return [m.game, day, slug(m.teamA.short || m.teamA.name), slug(m.teamB.short || m.teamB.name)].join("|");
+}
+
+// pid 主键（2026-11-07 防孪生）：PandaScore 的 opponent.id 不随主客交换/队名简称编辑变化。
+// matchKey 用「队简称有序拼接」派生，历史实测会裂出孪生条目（74 组：旧条目永久卡死等不到
+// 赛果，Pick'Em auto 事件因此永远「进行中」）——双方都有 pid 时优先用 pid 键合并。
+export function matchPidKey(m) {
+  if (!m || !m.teamA || !m.teamB) return null;
+  var a = Number(m.teamA.pid);
+  var b = Number(m.teamB.pid);
+  if (!(a > 0) || !(b > 0) || a === b) return null;
+  return [m.game, "pid", Math.min(a, b), Math.max(a, b)].join("|");
 }
 
 function makeId(m, used) {
@@ -166,9 +185,20 @@ export function mergeMatches(existing, incoming, options) {
   existing.forEach(function (m) { if (m.id) usedIds.add(m.id); });
 
   var map = new Map();
+  var entryKeys = new Map(); // entry 对象 → 当前 slug 键（pid 命中跨键合并时清理旧键）
   existing.forEach(function (m) {
     var n = normalizeMatch(m, m.source || "manual");
-    if (n) map.set(matchKey(n), n);
+    if (n) {
+      map.set(matchKey(n), n);
+      entryKeys.set(n, matchKey(n));
+    }
+  });
+
+  // pid 主键索引：命中即可跨「主客交换/队名编辑」合并；老条目无 pid 时仍走 slug 键（行为不变）
+  var pidIndex = new Map();
+  existing.forEach(function (m) {
+    var pk = matchPidKey(m);
+    if (pk && !pidIndex.has(pk)) pidIndex.set(pk, m);
   });
 
   var added = 0;
@@ -178,11 +208,21 @@ export function mergeMatches(existing, incoming, options) {
     var m = normalizeMatch(raw, raw.source);
     if (!m) return;
     var key = matchKey(m);
-    var cur = map.get(key);
+    var pk = matchPidKey(m);
+    var viaPid = false;
+    var cur = null;
+    if (pk && pidIndex.has(pk)) {
+      cur = pidIndex.get(pk);
+      viaPid = true;
+    } else {
+      cur = map.get(key) || null;
+    }
 
     if (!cur) {
       m.id = makeId(m, usedIds);
       map.set(key, m);
+      entryKeys.set(m, key);
+      if (pk) pidIndex.set(pk, m);
       added++;
       return;
     }
@@ -212,8 +252,18 @@ export function mergeMatches(existing, incoming, options) {
         if (merged[side] && cur[side] && !merged[side].region && cur[side].region) {
           merged[side] = Object.assign({}, merged[side], { region: cur[side].region });
         }
+        // 同理：pid（manual 覆盖时不丢已有 pid，否则后续 pandascore 重取会退回 slug 键合并）
+        if (merged[side] && cur[side] && merged[side].pid === undefined && cur[side].pid !== undefined) {
+          merged[side] = Object.assign({}, merged[side], { pid: cur[side].pid });
+        }
       });
+      // 经 pid 命中时 cur 可能挂在旧 slug 键下（主客交换过）：清旧键再挂新键，避免同轮残留
+      var oldKey = entryKeys.get(cur);
+      if (oldKey && oldKey !== key && map.get(oldKey) === cur) map.delete(oldKey);
       map.set(key, merged);
+      entryKeys.delete(cur);
+      entryKeys.set(merged, key);
+      if (pk) pidIndex.set(pk, merged);
       updated++;
     }
   });

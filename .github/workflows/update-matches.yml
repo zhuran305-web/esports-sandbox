@@ -151,3 +151,12 @@ jobs:
           else
             echo "OSS 与本地一致，跳过上传"
           fi
+
+      # 队标 OSS 镜像（2026-11-07）：hb-sdk 0.9.6 起新构建 CSP img-src 仅允许权限批准域名，
+      # PandaScore CDN 无 ICP 进不了清单——客户端 LOGO_BASE 已切自有桶 logos/ 前缀，本步骤
+      # 增量补齐缺失队标（匿名 HEAD 探测，只传新队）。零依赖免 npm ci；continue-on-error
+      # 显式声明（假设 77）——任何问题都不影响数据发布，缺的下一轮自愈
+      - name: Mirror team logos to OSS
+        if: env.OSS_ACCESS_KEY_ID != ''
+        continue-on-error: true
+        run: node tools/mirror-team-logos.mjs

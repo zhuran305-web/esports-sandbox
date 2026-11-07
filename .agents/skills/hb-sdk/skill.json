@@ -1,16 +1,16 @@
 {
   "name": "hb-sdk",
-  "skillVersion": "0.9.5+skill.fe3b525ecac8",
+  "skillVersion": "0.9.6+skill.544e9897249c",
   "sdk": {
     "package": "@heybox/hb-sdk",
-    "version": "0.9.5",
-    "compatibility": "0.9.5"
+    "version": "0.9.6",
+    "compatibility": "0.9.6"
   },
   "distribution": {
     "type": "npm",
     "package": "@heybox/hb-sdk",
-    "version": "0.9.5",
+    "version": "0.9.6",
     "path": "skill"
   },
-  "integrity": "sha256-fe3b525ecac8431e1774ee453864cf9ba58ff6897272e2356ceb17b621c8c427"
+  "integrity": "sha256-544e9897249c517ffc25b58cd6739c37032e405eb5df75c785f8e68aeb2fe63d"
 }

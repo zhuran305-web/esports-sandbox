@@ -72,7 +72,7 @@
     "miniProgramId": "01a15496-0e1f-7ee8-ba8d-f15266cb94f1"
   },
   "dependencies": {
-    "@heybox/hb-sdk": "0.9.5"
+    "@heybox/hb-sdk": "0.9.6"
   },
   "devDependencies": {
     "@alicloud/fc-open20210406": "^2.0.13",

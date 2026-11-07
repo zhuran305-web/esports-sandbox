@@ -20,10 +20,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var TEAM_COLORS = DATA.teamColors || {};
   // 战队选手阵容（1.3.2）：{"game:name": [{n 职业ID, r 位置, l 国籍}, ...]}——fetch-team-rosters 管线切片（数组形状）
   var ROSTERS = DATA.rosters || {};
-  // Pick'Em 赛事聚合（1.4.0 实验功能）：fetch-pickem 管线切片（内嵌 + 运行时合并，只增不减）
+  // Pick'Em 赛事聚合（1.3 实验功能）：fetch-pickem 管线切片（内嵌 + 运行时合并，只增不减）
   var PICKEM = normalizePickemData(DATA.pickem).events;
   var pickemEventId = ""; // 当前查看的赛事（多赛事时顶部 chip 切换）
-  var LOGO_BASE = "https://cdn-api.pandascore.co/images/team/image/";
+  // 队标基址（2026-11-07 OSS 镜像）：hb-sdk 0.9.6 起新构建 CSP img-src 仅允许权限批准域名，
+  // PandaScore CDN 境外无 ICP 进不了清单——队标由 tools/mirror-team-logos.mjs 镜像到自有桶
+  // logos/ 前缀（匿名 HEAD 增量上传，CI 每轮补新队）。旧构建不受影响仍走 PandaScore。
+  var LOGO_BASE = "https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/logos/";
   var matchIndex = new Map();
   rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";
@@ -620,11 +623,23 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return cleaned.slice(0, 4).toUpperCase();
   }
 
+  // OSS 键按段 URL 编码后请求：键里的 + 必须写 %2B（PandaScore CDN 对裸 + 按字面量，
+  // OSS 会解码成空格 → 404）；() 等合法字符 encodeURIComponent 不动，/ 保留分段
+  function logoOssUrl(path) {
+    return LOGO_BASE + path.split("/").map(encodeURIComponent).join("/");
+  }
+
   function logoUrl(team) {
     if (!team) return "";
     var path = TEAM_LOGOS[team.name] || team.logo || "";
     if (!path) return "";
-    return /^https?:\/\//i.test(path) ? path : LOGO_BASE + path;
+    if (/^https?:\/\//i.test(path)) {
+      // 遗留存量：前缀剥离修复前的绝对 URL（team/player 图同域名同路径结构）——
+      // 剥出后缀走镜像基址；外域原样返回（新构建被 CSP 拦时走首字兜底）
+      var legacy = path.match(/^https?:\/\/(?:cdn-api|cdn)\.pandascore\.co\/images\/(?:team|player)\/image\/(.+)$/i);
+      return legacy ? logoOssUrl(legacy[1]) : path;
+    }
+    return logoOssUrl(path);
   }
 
   // 有队标就画图（失败自动降级成文字徽标，见全局 error 监听），没有就沿用首字母色块
@@ -1903,7 +1918,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       '<p class="md-source">赛程与赛果数据来自公开赛事数据平台（PandaScore），以赛事官方公布为准</p>';
   }
 
-  /* ============================== Pick'Em 赛事竞猜（1.4.0 实验功能） ==============================
+  /* ============================== Pick'Em 赛事竞猜（1.3 实验功能） ==============================
      大型赛事按阶段竞猜：瑞士轮阶段猜 10 项（3:0 晋级×2 / 3:1·3:2 晋级×6 / 0:3 淘汰×2，
      1:3/2:3 淘汰 6 队为剩余队自动落位仅展示），淘汰赛逐场猜胜者。
      开赛前 1 小时截止（镜像单场竞猜），阶段完赛自动结算发沙粒。
@@ -2329,10 +2344,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return "已结束 " + doneCount + "/" + stage.matches.length + " 场 · 你已猜 " + picked + " 场";
   }
 
-  /* 折叠状态（1.3.8）：轮次/淘汰赛阶段可折叠；默认「全部完赛的轮次收起、其余展开」，
+  /* 折叠状态（1.3.8）：轮次/淘汰赛阶段可折叠；默认全部展开（1.3.9 平台拒审教训），
      手动点开/收起记录进 pickemCollapseOverrides（会话内有效），优先于默认值 */
   var pickemCollapseOverrides = {};
-  function matchResolved(m) { return m.winner === "A" || m.winner === "B" || m.canceled === true; }
 
   function pickemMergedSeriesHTML(ev, stages) {
     var coin = PICKEM_COINS[ev.tier === "a" ? "c" : "s"];
@@ -5193,7 +5207,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     renderRulesMenu();
     $("#aboutBackBtn").addEventListener("click", function () { goBack("settings"); });
     $("#openAboutBtn").addEventListener("click", function () { switchView("about"); });
-    // 实验功能（1.4.0）：关于页 → 实验功能列表 → 赛事竞猜
+    // 实验功能（1.3）：关于页 → 实验功能列表 → 赛事竞猜
     $("#openLabsBtn").addEventListener("click", function () { switchView("labs"); });
     bindPickem();
     $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });

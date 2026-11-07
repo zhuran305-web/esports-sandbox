@@ -56,6 +56,9 @@ export function collectTeamLogos(matches) {
 }
 
 export function stripTeamLogos(matches) {
+  // 运行时/内嵌快照的字段瘦身（1.3.10 优化）：剥内联队标 + 剔除客户端未使用字段——
+  // bestof（客户端只用 format 字符串，grep 零引用）、空 note（4437/4438 为空，有值保留供详情页备注）。
+  // 源数据 data/matches.json 不受影响（采集/合并/图鉴 45 天战绩仍用全量字段）。
   return (matches || []).map(function (m) {
     if (!m) return m;
     var copy = Object.assign({}, m);
@@ -66,6 +69,8 @@ export function stripTeamLogos(matches) {
         copy[side] = t;
       }
     });
+    if (copy.bestof !== undefined) delete copy.bestof;
+    if (!copy.note) delete copy.note;
     return copy;
   });
 }

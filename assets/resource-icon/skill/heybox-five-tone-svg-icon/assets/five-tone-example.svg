@@ -1,0 +1,38 @@
+<svg width="154" height="154" viewBox="0 0 154 154" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>五色圆角主体与前景徽章层级示例</title>
+  <style>
+    .icon-outline { color: #593408; }
+    .icon-dark { color: #EC7424; }
+    .icon-gray { color: #FFA53D; }
+    .icon-light { color: #FFBF75; }
+    .icon-white { color: #FFFFFF; }
+  </style>
+  <defs>
+    <clipPath id="example-body">
+      <rect class="icon-gray" x="22" y="31" width="108" height="101" rx="20" fill="#FFA53D" data-fill-token="icon-gray"/>
+    </clipPath>
+    <clipPath id="example-front">
+      <circle class="icon-light" cx="116" cy="91" r="22" fill="#FFBF75" data-fill-token="icon-light"/>
+    </clipPath>
+  </defs>
+  <g id="icon" transform="translate(-3 -7)" stroke-linecap="round" stroke-linejoin="round">
+    <g id="hard-shadow">
+      <rect class="icon-outline" x="22" y="31" width="108" height="101" rx="20" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+      <circle class="icon-outline" cx="116" cy="91" r="22" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="body">
+      <rect class="icon-gray" x="22" y="31" width="108" height="101" rx="20" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+      <g clip-path="url(#example-body)">
+        <path class="icon-light" d="M10 20H142V54C119 49 95 49 72 54C50 59 29 59 10 54V20Z" fill="#FFBF75" data-fill-token="icon-light"/>
+        <rect class="icon-dark" x="0" y="111" width="154" height="28" fill="#EC7424" data-fill-token="icon-dark"/>
+      </g>
+      <rect class="icon-outline" x="22" y="31" width="108" height="101" rx="20" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="foreground-part">
+      <circle class="icon-light" cx="116" cy="91" r="22" fill="#FFBF75" stroke="#593408" stroke-width="4.2" data-fill-token="icon-light" data-stroke-token="icon-outline"/>
+      <g id="highlight" clip-path="url(#example-front)">
+        <ellipse class="icon-white" cx="109" cy="83" rx="8" ry="6" transform="rotate(-28 109 83)" fill="#FFFFFF" data-fill-token="icon-white"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,47 @@
+<svg width="154" height="154" viewBox="0 0 154 154" fill="none" xmlns="http://www.w3.org/2000/svg" data-face-features="none">
+  <title>赛事沙盘资源位图标——ES 圆环字标（与小程序图标同源）</title>
+  <style>
+    .icon-outline { color: #593408; }
+    .icon-dark { color: #EC7424; }
+    .icon-gray { color: #FFA53D; }
+    .icon-light { color: #FFBF75; }
+    .icon-white { color: #FFFFFF; }
+  </style>
+  <defs>
+    <clipPath id="ring-band">
+      <path class="icon-gray" fill-rule="evenodd" d="M77 16A56 56 0 1 0 77.01 16ZM77 27A45 45 0 1 1 76.99 27Z" fill="#FFA53D" data-fill-token="icon-gray"/>
+    </clipPath>
+    <clipPath id="letters-union">
+      <path class="icon-gray" d="M45 47H75V58H58V65.5H71V76.5H58V84H75V95H45Z" fill="#FFA53D" data-fill-token="icon-gray"/>
+      <path class="icon-gray" d="M79 47H109V58H92V65.5H109V95H79V84H96V76.5H79Z" fill="#FFA53D" data-fill-token="icon-gray"/>
+    </clipPath>
+  </defs>
+  <g id="icon" stroke-linecap="round" stroke-linejoin="round">
+    <g id="hard-shadow">
+      <path class="icon-outline" fill-rule="evenodd" d="M77 16A56 56 0 1 0 77.01 16ZM77 27A45 45 0 1 1 76.99 27Z" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+      <path class="icon-outline" d="M45 47H75V58H58V65.5H71V76.5H58V84H75V95H45Z" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+      <path class="icon-outline" d="M79 47H109V58H92V65.5H109V95H79V84H96V76.5H79Z" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="ring">
+      <path class="icon-gray" fill-rule="evenodd" d="M77 16A56 56 0 1 0 77.01 16ZM77 27A45 45 0 1 1 76.99 27Z" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+      <g clip-path="url(#ring-band)">
+        <rect class="icon-light" x="14" y="10" width="126" height="54" fill="#FFBF75" data-fill-token="icon-light"/>
+        <rect class="icon-dark" x="14" y="88" width="126" height="34" fill="#EC7424" data-fill-token="icon-dark"/>
+      </g>
+      <path class="icon-gray" fill-rule="evenodd" d="M77 16A56 56 0 1 0 77.01 16ZM77 27A45 45 0 1 1 76.99 27Z" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="highlight" clip-path="url(#ring-band)">
+      <ellipse class="icon-white" cx="47" cy="34" rx="8.5" ry="5" transform="rotate(-38 47 34)" fill="#FFFFFF" data-fill-token="icon-white"/>
+    </g>
+    <g id="lettermark">
+      <path class="icon-gray" d="M45 47H75V58H58V65.5H71V76.5H58V84H75V95H45Z" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+      <path class="icon-gray" d="M79 47H109V58H92V65.5H109V95H79V84H96V76.5H79Z" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+      <g clip-path="url(#letters-union)">
+        <rect class="icon-light" x="38" y="40" width="78" height="18" fill="#FFBF75" data-fill-token="icon-light"/>
+        <rect class="icon-dark" x="38" y="86" width="78" height="16" fill="#EC7424" data-fill-token="icon-dark"/>
+      </g>
+      <path class="icon-outline" d="M45 47H75V58H58V65.5H71V76.5H58V84H75V95H45Z" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+      <path class="icon-outline" d="M79 47H109V58H92V65.5H109V95H79V84H96V76.5H79Z" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+    </g>
+  </g>
+</svg>

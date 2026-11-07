@@ -1,0 +1,13 @@
+<svg width="154" height="154" viewBox="0 0 154 154" fill="none" data-face-features="mouth" xmlns="http://www.w3.org/2000/svg">
+  <title>Mouth-only expression template</title>
+  <style>
+    .icon-outline { color: #593408; }
+    .icon-dark { color: #EC7424; }
+    .icon-gray { color: #FFA53D; }
+    .icon-light { color: #FFBF75; }
+    .icon-white { color: #FFFFFF; }
+  </style>
+  <g id="expression" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M61 79C69 73 85 73 93 79C91 91 84 97 77 97C70 97 63 91 61 79Z" fill="#593408" data-fill-token="icon-outline"/>
+  </g>
+</svg>

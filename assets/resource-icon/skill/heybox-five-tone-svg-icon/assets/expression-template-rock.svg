@@ -1,0 +1,14 @@
+<svg width="154" height="154" viewBox="0 0 154 154" fill="none" data-face-features="eyes mouth" xmlns="http://www.w3.org/2000/svg">
+  <title>Rock-derived inverted-U eyes and W-mouth expression template</title>
+  <style>
+    .icon-outline { color: #593408; }
+    .icon-dark { color: #EC7424; }
+    .icon-gray { color: #FFA53D; }
+    .icon-light { color: #FFBF75; }
+    .icon-white { color: #FFFFFF; }
+  </style>
+  <g id="expression-rock" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M43 87C42 72 48 64 56 64C64 64 69 73 68 87M86 87C85 72 91 64 99 64C107 64 112 73 111 87" fill="none" stroke="#593408" stroke-width="6.4" data-stroke-token="icon-outline"/>
+    <path d="M66 102C70 108 75 109 79 102C83 109 88 108 92 102" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+  </g>
+</svg>

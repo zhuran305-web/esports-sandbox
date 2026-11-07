@@ -1,0 +1,55 @@
+<svg width="154" height="154" viewBox="0 0 154 154" fill="none" xmlns="http://www.w3.org/2000/svg" data-face-features="none">
+  <title>赛事沙盘资源位图标——冠军奖杯</title>
+  <style>
+    .icon-outline { color: #593408; }
+    .icon-dark { color: #EC7424; }
+    .icon-gray { color: #FFA53D; }
+    .icon-light { color: #FFBF75; }
+    .icon-white { color: #FFFFFF; }
+  </style>
+  <defs>
+    <clipPath id="cup-body">
+      <path class="icon-gray" d="M42 24H112C115.3 24 118 26.7 118 30C118 56 104 78 77 84C50 78 36 56 36 30C36 26.7 38.7 24 42 24Z" fill="#FFA53D" data-fill-token="icon-gray"/>
+    </clipPath>
+    <clipPath id="base-body">
+      <rect class="icon-gray" x="46" y="102" width="62" height="25" rx="9" fill="#FFA53D" data-fill-token="icon-gray"/>
+    </clipPath>
+  </defs>
+  <g id="icon" stroke-linecap="round" stroke-linejoin="round">
+    <g id="hard-shadow">
+      <path class="icon-outline" d="M42 24H112C115.3 24 118 26.7 118 30C118 56 104 78 77 84C50 78 36 56 36 30C36 26.7 38.7 24 42 24Z" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+      <path class="icon-outline" d="M41 33C27 33 18 38.5 18 45.5C18 52.5 26 57.5 41 57.5L41 50.5C33 50.5 27.5 48.5 27.5 45C27.5 41.5 33 39.5 41 39.5Z" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+      <path class="icon-outline" d="M113 33C127 33 136 38.5 136 45.5C136 52.5 128 57.5 113 57.5L113 50.5C121 50.5 126.5 48.5 126.5 45C126.5 41.5 121 39.5 113 39.5Z" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+      <path class="icon-outline" d="M67 80H87L84.5 99C84.2 101.3 82.5 102 80.5 102H73.5C71.5 102 69.8 101.3 69.5 99Z" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+      <rect class="icon-outline" x="46" y="102" width="62" height="25" rx="9" transform="translate(0 5.6)" fill="#593408" stroke="#593408" stroke-width="4.2" data-fill-token="icon-outline" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="handle-left">
+      <path class="icon-gray" d="M41 33C27 33 18 38.5 18 45.5C18 52.5 26 57.5 41 57.5L41 50.5C33 50.5 27.5 48.5 27.5 45C27.5 41.5 33 39.5 41 39.5Z" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="handle-right">
+      <path class="icon-gray" d="M113 33C127 33 136 38.5 136 45.5C136 52.5 128 57.5 113 57.5L113 50.5C121 50.5 126.5 48.5 126.5 45C126.5 41.5 121 39.5 113 39.5Z" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="stem">
+      <path class="icon-gray" d="M67 80H87L84.5 99C84.2 101.3 82.5 102 80.5 102H73.5C71.5 102 69.8 101.3 69.5 99Z" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="base">
+      <rect class="icon-gray" x="46" y="102" width="62" height="25" rx="9" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+      <g clip-path="url(#base-body)">
+        <rect class="icon-dark" x="40" y="116" width="74" height="16" fill="#EC7424" data-fill-token="icon-dark"/>
+      </g>
+      <rect class="icon-outline" x="46" y="102" width="62" height="25" rx="9" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+    </g>
+    <g id="cup">
+      <path class="icon-gray" d="M42 24H112C115.3 24 118 26.7 118 30C118 56 104 78 77 84C50 78 36 56 36 30C36 26.7 38.7 24 42 24Z" fill="#FFA53D" stroke="#593408" stroke-width="4.2" data-fill-token="icon-gray" data-stroke-token="icon-outline"/>
+      <g clip-path="url(#cup-body)">
+        <path class="icon-light" d="M30 18H124V46C100 41 78 41 54 46C42 48.5 34 48 30 45Z" fill="#FFBF75" data-fill-token="icon-light"/>
+        <rect class="icon-dark" x="30" y="63" width="94" height="26" fill="#EC7424" data-fill-token="icon-dark"/>
+      </g>
+      <g id="highlight" clip-path="url(#cup-body)">
+        <ellipse class="icon-white" cx="55" cy="38" rx="9" ry="5.5" transform="rotate(-24 55 38)" fill="#FFFFFF" data-fill-token="icon-white"/>
+      </g>
+      <path class="icon-outline" d="M37 34H117" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+      <path class="icon-outline" d="M42 24H112C115.3 24 118 26.7 118 30C118 56 104 78 77 84C50 78 36 56 36 30C36 26.7 38.7 24 42 24Z" fill="none" stroke="#593408" stroke-width="4.2" data-stroke-token="icon-outline"/>
+    </g>
+  </g>
+</svg>

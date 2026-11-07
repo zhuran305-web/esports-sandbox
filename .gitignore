@@ -32,3 +32,4 @@ Pandascore Token.txt
 *.log
 .DS_Store
 Thumbs.db
+public/logos/

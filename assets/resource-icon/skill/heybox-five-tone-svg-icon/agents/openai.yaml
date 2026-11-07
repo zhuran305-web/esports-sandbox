@@ -1,0 +1,8 @@
+interface:
+  display_name: "小黑盒五色 SVG 图标化"
+  short_description: "从 SVG 或图片参考提取主体，生成圆润五色矢量图标"
+  brand_color: "#593408"
+  default_prompt: "使用 $heybox-five-tone-svg-icon 将我上传的 SVG 或图片参考重绘为圆润、层级清楚、无装饰细线的五色可换肤矢量图标。"
+
+policy:
+  allow_implicit_invocation: true

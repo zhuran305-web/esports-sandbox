@@ -23,10 +23,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   // Pick'Em 赛事聚合（1.3 实验功能）：fetch-pickem 管线切片（内嵌 + 运行时合并，只增不减）
   var PICKEM = normalizePickemData(DATA.pickem).events;
   var pickemEventId = ""; // 当前查看的赛事（多赛事时顶部 chip 切换）
-  // 队标基址（2026-11-07 OSS 镜像）：hb-sdk 0.9.6 起新构建 CSP img-src 仅允许权限批准域名，
-  // PandaScore CDN 境外无 ICP 进不了清单——队标由 tools/mirror-team-logos.mjs 镜像到自有桶
-  // logos/ 前缀（匿名 HEAD 增量上传，CI 每轮补新队）。旧构建不受影响仍走 PandaScore。
-  var LOGO_BASE = "https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/logos/";
+  // 队标基址（1.3.12 起改为打包内嵌同源资源）：0.9.6 deploy 构建的 CSP img-src 实测未包含
+  // network 批准的 OSS 域（服务端 network_policy entries 为空）——远程队标全被拦回退首字母。
+  // 修复=tools/pack-team-logos.mjs（prebuild 钩子）把 OSS 原图压 96px WebP 打包进产物
+  // public/logos/（~2.5MiB，724 张）——同源走 img-src 'self' 天然放行，加载更快且离线可渲染；
+  // 文件名沿用 teams 映射路径（内容为 WebP 字节，浏览器按内容嗅探渲染）。
+  // OSS 远程镜像（tools/mirror-team-logos.mjs）保留：作为打包源 + 未来恢复远程高清版的备胎。
+  var LOGO_BASE = "logos/";
   var matchIndex = new Map();
   rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";
@@ -46,7 +49,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.11";
+  var APP_VERSION = "1.3.12";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；

@@ -181,10 +181,21 @@ var appNoComments = appSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/
 check("app.js 无裸引用 myUid", !/\bmyUid\b/.test(appNoComments));
 var cloudSrc = rf(path.join(root, "js", "cloud.js"), "utf8");
 check("Cloud.getMyUid 已定义并被使用", /getMyUid\s*:\s*function/.test(cloudSrc) && /Cloud\.getMyUid\(\)/.test(appSrc));
-check("换票已同步短路存在（防重复计费）", /function hbProfileMatchesIdentity/.test(appSrc) && /已同步过/.test(appSrc));
+check("换票静默刷新齐备（2026-11-07：已同步账号点击=静默刷新，60s 节流，失败保留原资料）",
+  /function hbProfileMatchesIdentity/.test(appSrc) && /HB_SYNC_THROTTLE_MS/.test(appSrc) && /已刷新黑盒资料/.test(appSrc) && /已保留原资料/.test(appSrc));
+check("切号检测齐备（getAccountState 于 boot+show 挂载；hbprofile 持久化 accountKey）",
+  /function checkAccountState/.test(appSrc) && /ak:\s*\(login && login\.accountKey\)/.test(appSrc) &&
+  (appSrc.match(/checkAccountState\(\)/g) || []).length >= 3); // 定义 1 + boot 1 + show 1
 var htmlSrc = rf(path.join(root, "index.html"), "utf8");
 check("魔神殿已下线但庆祝页保留（1.3.5）", /id="view-temple"/.test(htmlSrc) === false && /id="openTemple"/.test(htmlSrc) === false && /id="templeCeremony"/.test(htmlSrc));
 check("转生逻辑齐备（页面下线，仪式/庆祝页/计数保留）", /function performCeremony/.test(appSrc) && /function renderTemple/.test(appSrc) === false && /function checkHonorPopup/.test(appSrc));
+var platformNoComments = rf(path.join(root, "js", "platform.js"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+check("user.getInfo 全库禁用看护（0.9.6 身份双模式合同：server 模式调它必被拦——platform.js/app.js 代码中不得出现）",
+  !/user\s*\.\s*getInfo|\.getInfo\s*\(/.test(appNoComments) &&
+  !/user\s*\.\s*getInfo|\.getInfo\s*\(/.test(platformNoComments));
+check("platform.js 导出 getAccountState 且 authLogin 回传 accountKey（切号检测依赖）",
+  /export async function getAccountState/.test(rf(path.join(root, "js", "platform.js"), "utf8")) &&
+  /accountKey:\s*r\.accountKey \|\| ""/.test(rf(path.join(root, "js", "platform.js"), "utf8")));
 
 /* ---------- 场景 L：战队图鉴与跟队连击（js/collection.js 纯函数直跑） ---------- */
 console.log("L. 战队图鉴/跟队连击：");

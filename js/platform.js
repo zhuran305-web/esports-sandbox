@@ -457,14 +457,33 @@ export function getLaunchExtra() {
  * 触发宿主授权登录（auth.login，必须来自可信用户手势）。
  * 1.1.17 起用于身份换票：申请 profile scope 拿一次性 code，
  * 由调用方 POST 到换票端点（js/config.js#IDENTITY_EXCHANGE_URL）换取昵称头像。
- * 返回 null = 已拿到 code（result.code）；字符串 = 错误码。
+ * 0.9.2+ 登录返回值同时携带与 code 绑定的 accountKey（本地不透明账号标识，用于切号检测）。
+ * 返回 { code, accountKey? }；{ error: 稳定错误码 }。
  */
 export async function authLogin() {
   if (!sdk || !sdk.auth || typeof sdk.auth.login !== "function") return { error: "UNSUPPORTED" };
   try {
     var r = await sdk.auth.login({ scopes: ["profile"] });
-    if (r && r.code) return { code: r.code };
+    if (r && r.code) return { code: r.code, accountKey: r.accountKey || "" };
     return { error: "NO_CODE" };
+  } catch (e) {
+    return { error: (e && e.code) || "FAILED" };
+  }
+}
+
+/**
+ * 静默读取当前 APP 账号比较标识（auth.getAccountState，0.9.2+）：免权限、免手势、
+ * 不弹登录、独立于 user.getInfo/auth.login 的模式限制——boot/回前台时检测切号用。
+ * accountKey 只在当前安装+当前小程序内比较（同账号跨重启稳定；清宿主数据/重装会变）；
+ * 读取失败 = 待确认，调用方不得当作「未登录」或「账号一致」处理。
+ * 返回 { ok:true, loggedIn, accountKey }；{ error: 稳定错误码 }（UNSUPPORTED/旧宿主 METHOD_NOT_FOUND/…）。
+ */
+export async function getAccountState() {
+  if (!sdk || !sdk.auth || typeof sdk.auth.getAccountState !== "function") return { error: "UNSUPPORTED" };
+  try {
+    var r = await sdk.auth.getAccountState();
+    if (!r || typeof r.isHeyboxAppLoggedIn !== "boolean") return { error: "INVALID_STATE" };
+    return { ok: true, loggedIn: r.isHeyboxAppLoggedIn, accountKey: r.accountKey || "" };
   } catch (e) {
     return { error: (e && e.code) || "FAILED" };
   }

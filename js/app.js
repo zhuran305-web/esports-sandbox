@@ -3,7 +3,7 @@ import { Cloud, Sync } from "./cloud.js";
 import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary, teamHistory, pickedTeamOf, mainTeamLevel, MAIN_LEVEL_THRESHOLDS } from "./collection.js";
 import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
-import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
@@ -4295,7 +4295,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
   /* ============================== 设置页 ============================== */
   var NICK_KEY = "esports_sandbox_nick"; // 用户自选展示昵称：本地保存 + 随榜单 extra 提交（跨设备经 getCurrentUserEntry 读回）
-  var HB_PROFILE_KEY = "esports_sandbox_hbprofile"; // 黑盒授权资料缓存（换票结果）：{appUserId,nick,avatar,at}
+  var HB_PROFILE_KEY = "esports_sandbox_hbprofile"; // 黑盒授权资料缓存（换票结果）：{appUserId,nick,avatar,via,at,ak?}
+  var HB_SYNC_THROTTLE_MS = 60 * 1000; // 静默刷新节流：刚换过票的点击直接提示（防连点打 FC；正常刷新不受影响）
 
   function loadNick() {
     return storageGet(NICK_KEY).then(function (v) {
@@ -4344,17 +4345,21 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   }
 
   /** 同步黑盒资料：授权（用户手势）→ 一次性 code → 换票端点 → 缓存昵称头像。
-   *  已同步过的账号直接短路（每次换票=一次 FC 调用，防重复计费）；换账号后身份不匹配才允许重新同步。 */
+   *  已同步账号（2026-11-07 升级）：auth.login 已授权时宿主静默返回新 code（不弹窗）——
+   *  点击 = 静默刷新最新昵称/头像（60s 节流防连点；FC 成本模型下单次 ≈0.00003 元）；
+   *  静默刷新失败时保留原资料不降级。换账号后身份不匹配走完整授权流程。 */
   function syncHbProfile() {
     loadHbProfile().then(function (hb) {
-      if (hbProfileMatchesIdentity(hb)) {
-        toast("已同步过" + (hb.nick ? "：" + hb.nick : "") + "，无需重复同步");
+      var matched = hbProfileMatchesIdentity(hb);
+      if (matched && hb.at && Date.now() - hb.at < HB_SYNC_THROTTLE_MS) {
+        toast("刚同步过" + (hb.nick ? "：" + hb.nick : "") + "，资料已是最新");
         return;
       }
       authLogin().then(function (login) {
         if (!login || login.error || !login.code) {
-          if (login && login.error === "AUTHORIZATION_CANCELLED") toast("已取消授权");
+          if (login && login.error === "AUTHORIZATION_CANCELLED") toast(matched ? "已取消——保留现有同步资料" : "已取消授权");
           else if (login && login.error === "USER_GESTURE_REQUIRED") toast("请直接点击按钮触发授权");
+          else if (matched) toast("刷新未完成（" + ((login && login.error) || "UNKNOWN") + "），已保留原资料");
           else toast("授权未完成：" + ((login && login.error) || "UNKNOWN"));
           return;
         }
@@ -4366,24 +4371,55 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
               nick: data.nickname || "",
               avatar: data.avatar || "",
               via: hbExchangeMode,
-              at: Date.now()
+              at: Date.now(),
+              ak: (login && login.accountKey) || (hb && hb.ak) || undefined
             }).then(function () {
-              toast(data.nickname ? "已同步黑盒资料：" + data.nickname : "已同步身份（该账号未设置昵称）");
+              toast(matched
+                ? "已刷新黑盒资料" + (data.nickname ? "：" + data.nickname : "")
+                : (data.nickname ? "已同步黑盒资料：" + data.nickname : "已同步身份（该账号未设置昵称）"));
               syncBoards(data.nickname || undefined); // 黑盒昵称优先随榜单 extra 提交
               renderSettings();
             });
           } else if (data && data.error === "invalid_grant") {
-            toast("授权码已失效，请再点一次重新授权");
+            toast(matched ? "授权码已失效——已保留原资料，请稍后再点一次" : "授权码已失效，请再点一次重新授权");
           } else if (data && (data.error === "HTTP_403" || data.error === "HTTP_404")) {
             toast("换票服务暂不可用（通道返回 " + data.error.replace("HTTP_", "") + "），稍后再试");
+          } else if (matched && data && data.error) {
+            toast("刷新未完成（" + data.error + "），已保留原资料");
           } else {
             toast("换票失败：" + ((data && data.error) || "UNKNOWN"));
           }
         }).catch(function (e) {
-          toast("换票失败：" + ((e && e.code) || "网络异常"));
+          toast(matched ? "刷新未完成（" + ((e && e.code) || "网络异常") + "），已保留原资料" : "换票失败：" + ((e && e.code) || "网络异常"));
         });
       });
     });
+  }
+
+  /** 切号检测（2026-11-07）：auth.getAccountState 免手势免权限，boot/回前台时静默比对
+   *  hbprofile 里存的 accountKey——不一致（切号）或登录态失效就清掉旧资料并提示重同步。
+   *  读取失败/旧宿主不支持 = 待确认，不动本地资料；旧缓存无 ak 不主动失效（静默刷新时补）。 */
+  function checkAccountState() {
+    getAccountState().then(function (st) {
+      if (!st || st.error || !st.ok) return;
+      if (!st.loggedIn) {
+        invalidateHbProfile("小黑盒登录态已失效");
+        return;
+      }
+      if (!st.accountKey) return;
+      loadHbProfile().then(function (hb) {
+        if (!hb) return; // 游客态无需检测
+        if (hb.ak && st.accountKey !== hb.ak) invalidateHbProfile("检测到已切换小黑盒账号");
+        // hb.ak 缺失（0.9.2 前缓存）：不误杀，等下次同步补 ak
+      });
+    }).catch(function () { /* 静默：诊断行与设置页状态兜底 */ });
+  }
+
+  function invalidateHbProfile(reason) {
+    storageSet(HB_PROFILE_KEY, "").then(function () {
+      toast(reason + "，请重新同步黑盒资料");
+      if (!$("#view-settings").hidden) renderSettings();
+    }).catch(function () { /* 存储失败保留原值，下次检测再试 */ });
   }
 
   /** 确保榜单条目存在（0 分注册），隔离身份在静默读取被拒的客户端上也可读。 */
@@ -4766,7 +4802,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     {
       id: "account", icon: "👤", title: "账号与设置", summary: "昵称头像、主题与清除数据",
       sections: [
-        { h: "身份", p: "无需任何授权即可开始游戏（自动获得隔离的榜单身份）。想展示小黑盒昵称和头像，用设置页的「<strong>同步黑盒资料</strong>」一次性授权完成；已同步过的账号不会重复请求授权。" },
+        { h: "身份", p: "无需任何授权即可开始游戏（自动获得隔离的榜单身份）。想展示小黑盒昵称和头像，用设置页的「<strong>同步黑盒资料</strong>」一次性授权完成；之后再次点击会在后台静默刷新最新昵称和头像（不再弹窗）。切换小黑盒账号后会自动检测并提示重新同步。" },
         { h: "昵称与头像", p: "「展示昵称」随时可改，修改后榜单即时更新；同步拿到的头像会显示在榜单、对决卡、图鉴与战报卡。" },
         { h: "外观主题", p: "设置页可切换<strong>深色 / 浅色 / 跟随系统</strong>，选择会记住。" },
         { h: "清除本地数据", p: "「关于小程序」里的「清除本地数据」会重置本机所有记录（含引导与图鉴）。云端数据不受影响——下次打开会自动拉回。" }
@@ -5717,7 +5753,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (!$("#view-board").hidden) renderBoard();
     });
     onHostEvent("show", function () {
-      // 回前台：可见页账号/榜单重渲染 + 赛程节流刷新（3 分钟内查过则只走本地缓存）
+      // 回前台：切号检测（免手势静默比对 accountKey）+ 可见页账号/榜单重渲染 + 赛程节流刷新（3 分钟内查过则只走本地缓存）
+      checkAccountState();
       refreshData(false);
       if (!$("#view-settings").hidden) renderSettings();
       if (!$("#view-board").hidden) renderBoard();
@@ -6341,6 +6378,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     initScrollRail();
     initPageLifecycle();
     registerIdentity(); // 确保榜单条目存在，隔离身份在任何宿主上都可读（不依赖 user.getInfo）
+    checkAccountState(); // boot 切号检测：旧 hbprofile 若属于前一个 APP 账号则失效并提示重同步（免手势）
 
     // 数据文件加载失败：给出明确提示，避免白屏
     if (!MATCHES.length) {

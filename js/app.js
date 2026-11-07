@@ -23,7 +23,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   // Pick'Em 赛事聚合（1.3 实验功能）：fetch-pickem 管线切片（内嵌 + 运行时合并，只增不减）
   var PICKEM = normalizePickemData(DATA.pickem).events;
   var pickemEventId = ""; // 当前查看的赛事（多赛事时顶部 chip 切换）
-  var LOGO_BASE = "https://cdn-api.pandascore.co/images/team/image/";
+  // 队标基址（2026-11-07 OSS 镜像）：hb-sdk 0.9.6 起新构建 CSP img-src 仅允许权限批准域名，
+  // PandaScore CDN 境外无 ICP 进不了清单——队标由 tools/mirror-team-logos.mjs 镜像到自有桶
+  // logos/ 前缀（匿名 HEAD 增量上传，CI 每轮补新队）。旧构建不受影响仍走 PandaScore。
+  var LOGO_BASE = "https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/logos/";
   var matchIndex = new Map();
   rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";
@@ -620,11 +623,23 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return cleaned.slice(0, 4).toUpperCase();
   }
 
+  // OSS 键按段 URL 编码后请求：键里的 + 必须写 %2B（PandaScore CDN 对裸 + 按字面量，
+  // OSS 会解码成空格 → 404）；() 等合法字符 encodeURIComponent 不动，/ 保留分段
+  function logoOssUrl(path) {
+    return LOGO_BASE + path.split("/").map(encodeURIComponent).join("/");
+  }
+
   function logoUrl(team) {
     if (!team) return "";
     var path = TEAM_LOGOS[team.name] || team.logo || "";
     if (!path) return "";
-    return /^https?:\/\//i.test(path) ? path : LOGO_BASE + path;
+    if (/^https?:\/\//i.test(path)) {
+      // 遗留存量：前缀剥离修复前的绝对 URL（team/player 图同域名同路径结构）——
+      // 剥出后缀走镜像基址；外域原样返回（新构建被 CSP 拦时走首字兜底）
+      var legacy = path.match(/^https?:\/\/(?:cdn-api|cdn)\.pandascore\.co\/images\/(?:team|player)\/image\/(.+)$/i);
+      return legacy ? logoOssUrl(legacy[1]) : path;
+    }
+    return logoOssUrl(path);
   }
 
   // 有队标就画图（失败自动降级成文字徽标，见全局 error 监听），没有就沿用首字母色块

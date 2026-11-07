@@ -223,7 +223,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
     "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
-    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#duelDialogBackdrop", "#duelHelpBackdrop",
+    "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#pickemGamePopover", "#pickemEvPopover", "#duelDialogBackdrop", "#duelHelpBackdrop",
     "#pickemSheet"
   ];
 
@@ -2545,19 +2545,22 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       var chtml = pickemCoinsHTML();
       coin.textContent = chtml ? "硬币 " + chtml : "";
     }
-    var gamesEl = $("#pickemGames");
-    var tabs = $("#pickemEvtabs");
+    var selRow = $("#pickemSelectors");
+    var gameGrid = $("#pickemGameGrid");
+    var evList = $("#pickemEvList");
     var body = $("#pickemBody");
     if (!body) return;
     var all = pickemEvents();
     if (pickemScoped) {
-      // 公测直入口：只显示 IEM 作业赛事——游戏 tiles/赛事 tabs 一律隐藏（其他赛事不展示）
+      // 公测直入口：只显示 IEM 作业赛事——选择器整行隐藏（其他赛事不展示）
       all = all.filter(function (e) { return e.id === PICKEM_SCOPED_EVENT; });
-      if (gamesEl) gamesEl.innerHTML = "";
+      if (selRow) selRow.hidden = true;
       if (pickemEventId !== PICKEM_SCOPED_EVENT) pickemEventId = PICKEM_SCOPED_EVENT;
+    } else if (selRow) {
+      selRow.hidden = !all.length; // 无任何赛事时隐藏选择器行（保留搜索框位置提示空态）
     }
-    // 游戏 tiles：只列有赛事的游戏（按 GAME_ORDER 排序）；scoped 跳过（上面已清空）
-    if (gamesEl && !pickemScoped) {
+    if (pickemScoped || all.length) {
+      // 游戏 tile（浮层 grid）：只列有赛事的游戏（按 GAME_ORDER 排序）；data-pkg 沿用旧委托
       var seen = {};
       var games = [];
       all.forEach(function (e) {
@@ -2567,23 +2570,36 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         var xa = GAME_ORDER.indexOf(a), xb = GAME_ORDER.indexOf(b);
         return (xa < 0 ? 99 : xa) - (xb < 0 ? 99 : xb);
       });
-      gamesEl.innerHTML =
-        '<button type="button" class="pk-game' + (pickemGame === "all" ? " is-active" : "") + '" data-pkg="all">全部 ' + all.length + "</button>" +
-        games.map(function (g) {
-          var n = all.filter(function (e) { return e.game === g; }).length;
-          return '<button type="button" class="pk-game' + (pickemGame === g ? " is-active" : "") + '" data-pkg="' + esc(g) + '">' + esc(gameMeta(g).label) + " " + n + "</button>";
-        }).join("");
+      if (gameGrid) {
+        gameGrid.innerHTML =
+          '<button type="button" class="game-tile' + (pickemGame === "all" ? " is-selected" : "") + '" data-pkg="all">' +
+            '<span class="game-tile-avatar" style="background:linear-gradient(135deg,#ffd08a,#ff8a3d)">ALL</span>' +
+            '<span class="game-tile-main"><span class="game-tile-name">全部游戏</span><span class="game-tile-count">' + all.length + " 项</span></span>" +
+            '<span class="game-tile-check" aria-hidden="true"></span></button>' +
+          games.map(function (g) {
+            var n = all.filter(function (e) { return e.game === g; }).length;
+            var meta = gameMeta(g);
+            return '<button type="button" class="game-tile' + (pickemGame === g ? " is-selected" : "") + '" data-pkg="' + esc(g) + '">' +
+              '<span class="game-tile-avatar" style="background:linear-gradient(135deg,' + meta.c1 + "," + meta.c2 + ');color:' + (meta.dark ? "#1a0e04" : "#0b1220") + '">' + esc(meta.chip) + "</span>" +
+              '<span class="game-tile-main"><span class="game-tile-name">' + esc(meta.label) + '</span><span class="game-tile-count">' + n + " 项</span></span>" +
+              '<span class="game-tile-check" aria-hidden="true"></span></button>';
+          }).join("");
+        var curMeta = pickemGame === "all" ? { label: "全部游戏", c2: "#ff8a3d" } : gameMeta(pickemGame);
+        $("#pickemGameCurrent").textContent = curMeta.label;
+        var dot = $("#pickemGameDot");
+        if (dot) dot.style.setProperty("--dot", curMeta.c2 || "#ff8a3d");
+        $("#pickemGamePopoverMeta").textContent = all.length + " 项赛事";
+      }
     }
-    // 统一口径过滤（游戏 + 搜索）——chips 与主体同源（假设 75/76）
+    // 统一口径过滤（游戏 + 搜索）——浮层列表与主体同源（假设 75/76）
     var evs = pickemFilteredEvents();
     if (!all.length) {
-      if (gamesEl) gamesEl.innerHTML = "";
-      if (tabs) tabs.hidden = true;
+      if (evList) evList.innerHTML = "";
       body.innerHTML = '<div class="empty-state"><strong>暂无可竞猜的赛事</strong>S/A 级赛事确认排期后，这里会自动收录作业</div>';
       return;
     }
     if (!evs.length) {
-      if (tabs) tabs.hidden = true;
+      if (evList) evList.innerHTML = "";
       body.innerHTML = '<div class="empty-state"><strong>没有匹配的赛事</strong>换个搜索词或游戏筛选试试</div>';
       return;
     }
@@ -2592,13 +2608,18 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       pickemEventId = first.id;
     }
     var ev = pickemEventById(pickemEventId);
-    if (tabs) {
-      // 公测直入口隐藏赛事 tabs（scoped 时只有 IEM 一个事件，无需切换）
-      tabs.hidden = pickemScoped || evs.length < 2;
-      tabs.innerHTML = evs.map(function (e) {
-        var stTag = e.status === "active" ? " ●" : "";
-        return '<button type="button" class="pickem-evtab' + (e.id === pickemEventId ? " is-active" : "") + '" data-pevt="' + esc(e.id) + '">' + esc(e.name) + stTag + "</button>";
+    if (evList) {
+      // 赛事浮层列表（主页 tournament-row 同款）：状态标 + 名称 + 场次数；data-pevt 沿用旧委托
+      evList.innerHTML = evs.map(function (e) {
+        var mc = (e.stages || []).reduce(function (s, st) { return s + (st.matches || []).length; }, 0);
+        var done = e.status === "done";
+        return '<button type="button" class="tournament-row' + (e.id === pickemEventId ? " is-selected" : "") + '" data-pevt="' + esc(e.id) + '">' +
+          '<span class="pk-evtag' + (done ? " is-done" : "") + '">' + (e.status === "active" ? "进行中" : done ? "已结束" : "未开始") + "</span>" +
+          '<span class="tournament-name">' + esc(e.name) + "</span>" +
+          '<span class="tournament-count">' + mc + " 场</span></button>";
       }).join("");
+      $("#pickemEvCurrent").textContent = ev.name;
+      $("#pickemEvPopoverMeta").textContent = evs.length + " 项赛事";
     }
     body.innerHTML = pickemEventHTML(ev);
   }
@@ -2867,18 +2888,42 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       this.hidden = true;
       renderPickem();
     });
-    $("#pickemGames").addEventListener("click", function (e) {
-      var b = e.target.closest("[data-pkg]");
-      if (!b || b.dataset.pkg === pickemGame) return;
-      pickemGame = b.dataset.pkg;
-      renderPickem();
+    // 作业页选择器（1.3.12 主页同款模式）：胶囊按钮开关浮层；浮层内行选择后关闭并重渲染
+    $("#pickemGameSelectBtn").addEventListener("click", function () {
+      var pop = $("#pickemGamePopover");
+      var open = pop.hidden;
+      $("#pickemEvPopover").hidden = true;
+      $("#pickemEvSelectBtn").setAttribute("aria-expanded", "false");
+      pop.hidden = !open;
+      this.setAttribute("aria-expanded", String(open));
+      if (open) renderPickem(); // 打开时刷新计数
     });
-    $("#pickemEvtabs").addEventListener("click", function (e) {
+    $("#pickemEvSelectBtn").addEventListener("click", function () {
+      var pop = $("#pickemEvPopover");
+      var open = pop.hidden;
+      $("#pickemGamePopover").hidden = true;
+      $("#pickemGameSelectBtn").setAttribute("aria-expanded", "false");
+      pop.hidden = !open;
+      this.setAttribute("aria-expanded", String(open));
+      if (open) renderPickem();
+    });
+    $("#pickemGameGrid").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-pkg]");
+      if (!b) return;
+      var changed = b.dataset.pkg !== pickemGame;
+      pickemGame = b.dataset.pkg;
+      $("#pickemGamePopover").hidden = true;
+      $("#pickemGameSelectBtn").setAttribute("aria-expanded", "false");
+      if (changed) renderPickem();
+    });
+    $("#pickemEvList").addEventListener("click", function (e) {
       var t = e.target.closest("[data-pevt]");
-      if (t && t.dataset.pevt !== pickemEventId) {
-        pickemEventId = t.dataset.pevt;
-        renderPickem();
-      }
+      if (!t) return;
+      var changed = t.dataset.pevt !== pickemEventId;
+      pickemEventId = t.dataset.pevt;
+      $("#pickemEvPopover").hidden = true;
+      $("#pickemEvSelectBtn").setAttribute("aria-expanded", "false");
+      if (changed) renderPickem();
     });
     $("#pickemBody").addEventListener("click", function (e) {
       // 轮次/淘汰赛阶段折叠（1.3.8）：点头部翻转显隐并记录覆盖（直接 DOM 翻转，不整页重渲染）
@@ -5238,16 +5283,27 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       renderMatches();
     });
 
-    // 点击浮层外部关闭
+    // 点击浮层外部关闭（主页/赛程表 + 作业页选择器）
     document.addEventListener("click", function (e) {
       var anyOpen = !$("#gamePopover").hidden || !$("#tournamentPopover").hidden ||
         !$("#schedGamePopover").hidden || !$("#schedTournamentPopover").hidden;
-      if (!anyOpen) return;
-      if (e.target.closest(".selectors")) return;
-      closeGameSheet();
-      closeTournamentSheet();
-      closeSchedGame();
-      closeSchedTournament();
+      if (anyOpen) {
+        if (!e.target.closest(".selectors")) {
+          closeGameSheet();
+          closeTournamentSheet();
+          closeSchedGame();
+          closeSchedTournament();
+        }
+        return;
+      }
+      // 作业页浮层（选择器在二级页，独立 keep-open 区 .pk-selectors）
+      var pkOpen = !$("#pickemGamePopover").hidden || !$("#pickemEvPopover").hidden;
+      if (pkOpen && !e.target.closest(".pk-selectors")) {
+        $("#pickemGamePopover").hidden = true;
+        $("#pickemEvPopover").hidden = true;
+        $("#pickemGameSelectBtn").setAttribute("aria-expanded", "false");
+        $("#pickemEvSelectBtn").setAttribute("aria-expanded", "false");
+      }
     });
 
     document.querySelectorAll(".tab").forEach(function (btn) {

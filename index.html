@@ -371,8 +371,40 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
           </button>
         </div>
-        <div class="pk-games" id="pickemGames"></div>
-        <div class="pickem-evtabs" id="pickemEvtabs" hidden></div>
+        <div class="pk-selectors" id="pickemSelectors">
+          <div class="selector">
+            <button class="game-select-btn" id="pickemGameSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+              <span class="game-dot" id="pickemGameDot"></span>
+              <span class="select-label" id="pickemGameCurrent">全部游戏</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="game-popover" id="pickemGamePopover" role="dialog" aria-label="选择游戏" hidden>
+              <div class="game-popover-head">
+                <span>选择游戏</span>
+                <span class="game-popover-meta" id="pickemGamePopoverMeta"></span>
+              </div>
+              <div class="game-grid" id="pickemGameGrid"></div>
+            </div>
+          </div>
+          <div class="selector">
+            <button class="game-select-btn" id="pickemEvSelectBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+              <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/>
+                <path d="M7 6H4a3 3 0 0 0 3 3M17 6h3a3 3 0 0 1-3 3"/>
+                <path d="M12 13v4M9 20h6"/>
+              </svg>
+              <span class="select-label" id="pickemEvCurrent">赛事</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="game-popover tournament-popover" id="pickemEvPopover" role="dialog" aria-label="选择赛事" hidden>
+              <div class="game-popover-head">
+                <span>选择赛事</span>
+                <span class="game-popover-meta" id="pickemEvPopoverMeta"></span>
+              </div>
+              <div class="tournament-list" id="pickemEvList"></div>
+            </div>
+          </div>
+        </div>
         <div id="pickemBody"></div>
       </section>
 

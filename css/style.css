@@ -3533,6 +3533,23 @@ html[data-theme="light"] .cer-quote input {
 }
 
 /* 作业页游戏筛选行（1.3.6，仿主页选择器） */
+/* 作业页选择器（1.3.12）：复用主页胶囊按钮（.game-select-btn）与浮层（.game-popover/
+   .game-grid/.game-tile/.tournament-list/.tournament-row）样式——主页同款交互模式。
+   [hidden] 必须显式补丁（.game-popover[hidden] 已有；行容器自身也要补） */
+.pk-selectors {
+  display: flex;
+  gap: 8px;
+  padding: 10px 0 2px;
+}
+.pk-selectors .selector { flex: 1 1 0; min-width: 0; }
+.pk-selectors[hidden] { display: none; }
+.pk-evtag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.pk-evtag.is-done { color: var(--text-faint); }
 .pk-games {
   display: flex;
   gap: 6px;

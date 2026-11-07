@@ -803,8 +803,9 @@ check("数据链路：fetch-pickem 聚合 → build/trim 切片（hash 计入）
   /pickem, matches: matches/.test(buildSrc));
 check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册（[hidden] 补丁随 sheet-backdrop 继承）",
   /id="view-labs"/.test(htmlSrc) && /id="view-pickem"/.test(htmlSrc) && /id="labsList"/.test(htmlSrc) &&
-  /id="pickemEvtabs"/.test(htmlSrc) && /id="pickemBody"/.test(htmlSrc) &&
-  /id="pickemSearch"/.test(htmlSrc) && /id="pickemSearchClear"/.test(htmlSrc) && /id="pickemGames"/.test(htmlSrc) &&
+  /id="pickemSelectors"/.test(htmlSrc) && /id="pickemBody"/.test(htmlSrc) &&
+  /id="pickemSearch"/.test(htmlSrc) && /id="pickemSearchClear"/.test(htmlSrc) &&
+  /id="pickemGamePopover"/.test(htmlSrc) && /id="pickemEvPopover"/.test(htmlSrc) &&
   /id="pickemSheet"/.test(htmlSrc) && /id="pickemSheetList"/.test(htmlSrc) &&
   /id="openLabsBtn"/.test(htmlSrc) && /id="labsBackBtn"/.test(htmlSrc) && /id="pickemBackBtn"/.test(htmlSrc) &&
   /name === "labs" \|\| name === "pickem"/.test(appSrc) &&
@@ -812,14 +813,15 @@ check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册
   /name === "labs"\) renderLabs/.test(appSrc) && /name === "pickem"\) renderPickem/.test(appSrc) &&
   /function bindPickem/.test(appSrc) && /bindPickem\(\);/.test(appSrc) &&
   /"#pickemSheet"/.test(appSrc));
-check("作业页筛选与搜索（1.3.6，假设 75/76 同源）：搜索防抖 + 游戏 tiles + 统一口径函数",
+check("作业页筛选与搜索（1.3.6 统一口径；1.3.12 换主页同款浮层选择器）",
   /"#pickemSearch"\)\.addEventListener/.test(appSrc) && /"#pickemSearchClear"\)\.addEventListener/.test(appSrc) &&
-  /"#pickemGames"\)\.addEventListener/.test(appSrc) &&
-  /function pickemFilteredEvents/.test(appSrc) && // 统一口径：chips 与主体都走它
+  /"#pickemGameGrid"\)\.addEventListener/.test(appSrc) && /"#pickemEvList"\)\.addEventListener/.test(appSrc) &&
+  /#pickemGamePopover"\)\.hidden/.test(appSrc) && // 胶囊开关浮层
+  /function pickemFilteredEvents/.test(appSrc) && // 统一口径：浮层列表与主体都走它
   (appSrc.match(/pickemFilteredEvents\(\)/g) || []).length >= 1 &&
   /var pickemGame = "all"/.test(appSrc) && /var pickemQuery = ""/.test(appSrc) &&
   /function buildAutoEvents/.test(pickemJsSrc) && /buildAutoEvents\(MATCHES, pickemManualTournaments\(\)\)/.test(appSrc) &&
-  /pk-games/.test(cssSrc));
+  /pk-selectors\[hidden\]/.test(cssSrc)); // [hidden] 显式补丁（浮层常显陷阱）
 check("状态与结算：state.pickem 全链（init/load/快照/校验/云合并）+ settlePickem 四挂点 + Sync.pack 白名单",
   /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}/.test(appSrc) &&
   /pickem: normalizePickemState\(parsed\.pickem\)/.test(appSrc) &&

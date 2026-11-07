@@ -7,11 +7,129 @@
       "name": "IEM 北京 2026 · 作业",
       "tournament": "IEM · Beijing 2026",
       "stages": [
-        { "id": "groupA", "type": "series", "label": "Group A · 双败", "stageNames": ["Group A"] },
-        { "id": "groupB", "type": "series", "label": "Group B · 双败", "stageNames": ["Group B"] },
-        { "id": "playoffs", "type": "placement", "label": "淘汰赛", "stageNames": ["Playoffs"],
-          "expectRounds": [2, 2, 1], "expectTeams": 6,
-          "qualifiedTeams": ["TheMongolz", "MOUZ", "PARIVISION", "Natus Vincere", "FURIA", "BetBoom Team"] }
+        {
+          "id": "groupA",
+          "type": "series",
+          "label": "Group A · 双败",
+          "stageNames": [
+            "Group A"
+          ]
+        },
+        {
+          "id": "groupB",
+          "type": "series",
+          "label": "Group B · 双败",
+          "stageNames": [
+            "Group B"
+          ]
+        },
+        {
+          "id": "playoffs",
+          "type": "placement",
+          "label": "淘汰赛",
+          "stageNames": [
+            "Playoffs"
+          ],
+          "expectRounds": [
+            2,
+            2,
+            1
+          ],
+          "expectTeams": 6,
+          "qualifiedTeams": [
+            "TheMongolz",
+            "MOUZ",
+            "PARIVISION",
+            "Natus Vincere",
+            "FURIA",
+            "BetBoom Team"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "blast-rivals-fall-2026",
+      "game": "cs2",
+      "name": "BLAST Rivals · Fall 2026 · 作业",
+      "tournament": "BLAST Rivals · Fall 2026",
+      "stages": [
+        {
+          "id": "groupA",
+          "type": "records",
+          "label": "Group A · 双败战绩",
+          "stageNames": [
+            "Group A"
+          ],
+          "coinTier": 2,
+          "buckets": [
+            {
+              "k": "2:0",
+              "label": "2:0 出线",
+              "cap": 1
+            },
+            {
+              "k": "2:1",
+              "label": "2:1 出线",
+              "cap": 1
+            },
+            {
+              "k": "1:2",
+              "label": "1:2 淘汰",
+              "cap": 1
+            },
+            {
+              "k": "0:2",
+              "label": "0:2 淘汰",
+              "cap": 1
+            }
+          ]
+        },
+        {
+          "id": "groupB",
+          "type": "records",
+          "label": "Group B · 双败战绩",
+          "stageNames": [
+            "Group B"
+          ],
+          "coinTier": 2,
+          "buckets": [
+            {
+              "k": "2:0",
+              "label": "2:0 出线",
+              "cap": 1
+            },
+            {
+              "k": "2:1",
+              "label": "2:1 出线",
+              "cap": 1
+            },
+            {
+              "k": "1:2",
+              "label": "1:2 淘汰",
+              "cap": 1
+            },
+            {
+              "k": "0:2",
+              "label": "0:2 淘汰",
+              "cap": 1
+            }
+          ]
+        },
+        {
+          "id": "playoffs",
+          "type": "placement",
+          "label": "淘汰赛",
+          "stageNames": [
+            "Playoffs"
+          ],
+          "expectRounds": [
+            2,
+            2,
+            1
+          ],
+          "expectTeams": 6,
+          "qualifiedTeams": []
+        }
       ]
     }
   ]

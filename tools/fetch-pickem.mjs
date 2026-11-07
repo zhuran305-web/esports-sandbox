@@ -132,6 +132,73 @@ function buildSwissStage(cfg, matches) {
   };
 }
 
+/** records（战绩桶，1.3.12）：双败/循环小组赛按「最终战绩落位」预测——桶结构来自配置
+ *  （k=战绩串 "W:L"，cap=该战绩队伍数）。队伍从首轮对阵即可全知；结果推导=按每队实际 W:L
+ *  落桶（弃赛不计入 W/L），桶结构对不上（赛制意外/数据残缺）时宁缺勿滥返回 null。 */
+function recordsResults(teamList, buckets, matches) {
+  var allDone = matches.length > 0 && matches.every(function (m) {
+    return m.winner === "A" || m.winner === "B" || m.canceled === true;
+  });
+  if (!allDone) return null;
+  var byBucket = {};
+  buckets.forEach(function (b) { byBucket[b.k] = []; });
+  var unbucketed = [];
+  teamList.forEach(function (t) {
+    var k = t.w + ":" + t.l;
+    if (byBucket[k]) byBucket[k].push(t.name);
+    else unbucketed.push(t.name + " " + k);
+  });
+  var filled = buckets.every(function (b) { return byBucket[b.k].length === b.cap; });
+  if (!filled) {
+    console.warn("[fetch-pickem] records 实际战绩与桶结构不符（宁缺勿滥不出结果）：" + unbucketed.join(", "));
+    return null;
+  }
+  return byBucket;
+}
+
+function buildRecordsStage(cfg, matches) {
+  var buckets = Array.isArray(cfg.buckets) ? cfg.buckets.filter(function (b) {
+    return b && typeof b.k === "string" && /^\d+:\d+$/.test(b.k) && typeof b.cap === "number" && b.cap >= 1 && b.cap <= 8;
+  }).slice(0, 8) : [];
+  if (!buckets.length) {
+    console.warn("[fetch-pickem] records 阶段缺少有效 buckets 配置，跳过：" + (cfg.id || cfg.label || "?"));
+    return null;
+  }
+  var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
+  var teams = {};
+  var order = [];
+  var lastDay = "", round = 0;
+  var compact = list.map(function (m) {
+    var a = compactTeam(m.teamA), b = compactTeam(m.teamB);
+    [a, b].forEach(function (t) {
+      if (!t) return;
+      if (!teams[t.name]) { teams[t.name] = t; teams[t.name].w = 0; teams[t.name].l = 0; order.push(t.name); }
+      else if (!teams[t.name].short && t.short) teams[t.name].short = t.short;
+    });
+    var startT = new Date(m.startAt).getTime();
+    var day = !isNaN(startT) ? new Date(startT + 8 * 3600000).toISOString().slice(0, 10) : "";
+    if (lastDay && day && day !== lastDay) round += 1;
+    if (day) lastDay = day;
+    var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
+    if (winner === "A" && a) teams[a.name].w += 1;
+    if (winner === "A" && b) teams[b.name].l += 1;
+    if (winner === "B" && b) teams[b.name].w += 1;
+    if (winner === "B" && a) teams[a.name].l += 1;
+    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round, canceled: m.canceled === true || undefined };
+  });
+  var teamList = order.map(function (n) { return teams[n]; })
+    .sort(function (x, y) { return (y.w - x.w) || (x.l - y.l) || (x.name < y.name ? -1 : 1); });
+  var stage = {
+    id: cfg.id, type: "records", label: cfg.label || cfg.id,
+    coinTier: typeof cfg.coinTier === "number" && cfg.coinTier >= 1 && cfg.coinTier <= 3 ? Math.round(cfg.coinTier) : 1,
+    startsAt: list.length ? list[0].startAt : "", endsAt: list.length ? list[list.length - 1].startAt : "",
+    teams: teamList, matches: compact,
+    buckets: buckets.map(function (b) { return { k: b.k, label: typeof b.label === "string" && b.label ? b.label : b.k, cap: Math.round(b.cap) }; }),
+    results: recordsResults(teamList, buckets, compact)
+  };
+  return stage;
+}
+
 function buildBracketStage(cfg, matches) {
   var expect = Array.isArray(cfg.expectRounds) && cfg.expectRounds.length ? cfg.expectRounds : DEFAULT_EXPECT_ROUNDS;
   var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
@@ -271,6 +338,10 @@ function buildEvent(cfg, allMatches, cachedEvent) {
     if (scfg.type === "bracket") stages.push(buildBracketStage(scfg, sm));
     else if (scfg.type === "series") stages.push(buildSeriesStage(scfg, sm));
     else if (scfg.type === "placement") stages.push(buildPlacementStage(scfg, sm));
+    else if (scfg.type === "records") {
+      var recStage = buildRecordsStage(scfg, sm);
+      if (recStage) stages.push(recStage);
+    }
     else {
       // 瑞士轮：coinTier 按 swiss 阶段序号（第 1 个=铜、第 2 个=银、第 3 个及以后=金）——major 三阶段对应
       swissOrdinal += 1;

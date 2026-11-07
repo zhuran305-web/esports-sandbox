@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -1990,14 +1990,22 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return state.pickem[pickemRecKey(evId, stageId)] || null;
   }
 
+  /** 阶段的桶清单：swiss=全局 Major 桶；records=stage.buckets（1.3.12 战绩桶）；其余 null */
+  function pickemStageBuckets(stage) {
+    if (stage.type === "swiss") return PICKEM_BUCKETS;
+    if (stage.type === "records") return recordBuckets(stage);
+    return null;
+  }
+
   function pickemEnsureRec(stage, evId, stageId) {
     var key = pickemRecKey(evId, stageId);
     var rec = state.pickem[key];
     if (!rec || rec.type !== stage.type) {
-      rec = stage.type === "swiss"
-        ? { type: "swiss", picks: {}, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 }
+      rec = stage.type === "swiss" || stage.type === "records"
+        ? { type: stage.type, picks: {}, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 }
         : { type: stage.type, picks: { w: {} }, pickedAt: 0, settled: false, settledAt: 0, score: 0, total: 0, prize: 0 };
-      if (rec.type === "swiss") PICKEM_BUCKETS.forEach(function (b) { rec.picks[b.k] = []; });
+      var buckets = pickemStageBuckets(stage);
+      if (buckets) buckets.forEach(function (b) { rec.picks[b.k] = []; });
       state.pickem[key] = rec;
     }
     return rec;
@@ -2008,22 +2016,24 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return { name: name, short: "", region: "", logo: "", w: 0, l: 0 };
   }
 
-  function pickemBucketByKey(k) {
-    for (var i = 0; i < PICKEM_BUCKETS.length; i++) { if (PICKEM_BUCKETS[i].k === k) return PICKEM_BUCKETS[i]; }
+  function pickemBucketByKey(stage, k) {
+    var buckets = pickemStageBuckets(stage) || [];
+    for (var i = 0; i < buckets.length; i++) { if (buckets[i].k === k) return buckets[i]; }
     return null;
   }
 
-  function pickemSwissCount(rec) {
+  function pickemSwissCount(stage, rec) {
     var n = 0;
     if (!rec) return 0;
-    PICKEM_BUCKETS.forEach(function (b) { n += (rec.picks[b.k] || []).length; });
+    var buckets = pickemStageBuckets(stage) || [];
+    buckets.forEach(function (b) { n += (rec.picks[b.k] || []).length; });
     return n;
   }
 
   function pickemStageStatus(stage) {
     // open=可竞猜 / locked=已截止待赛果 / wait=赛程未齐（队伍未定或结构降级）/ done=已完赛
     // placement：部分对阵（degraded）也算完赛只有赛果推导出来才行——QF 完赛但半决赛未排期时显示「等待赛果」
-    if (stageAllDone(stage) && (stage.type !== "placement" || stage.results)) return "done";
+    if (stageAllDone(stage) && (stage.type !== "placement" && stage.type !== "records" || stage.results)) return "done";
     if (stage.type === "series") {
       // 逐场截止：阶段开打后只要有剩余可猜场次就是 open；全部过期且未完赛 = locked
       if (pickableSeriesMatches(stage).length) return "open";
@@ -2034,6 +2044,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
     if (stage.type === "swiss") {
       if (stage.teams.length !== PICKEM_SWISS_TEAMS) return "wait";
+    } else if (stage.type === "records") {
+      var capTotal = (recordBuckets(stage) || []).reduce(function (s, b) { return s + b.cap; }, 0);
+      if (!capTotal || stage.teams.length < capTotal) return "wait";
     } else if (stage.degraded &&
         !(stage.type === "placement" && stage.teams.length >= (stage.expectTeams || PICKEM_PLACEMENT_TEAMS))) {
       return "wait"; // 结构降级：placement 名单齐除外（名次竞猜与对阵无关，1.3.6；6 队轮空制按配置规模）
@@ -2062,6 +2075,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         for (var j = 0; j < PICKEM_BUCKETS.length; j++) {
           if ((rec.picks[PICKEM_BUCKETS[j].k] || []).length) return true;
         }
+      } else if (rec.type === "records") {
+        for (var rk in rec.picks) {
+          if (Object.prototype.hasOwnProperty.call(rec.picks, rk) && (rec.picks[rk] || []).length) return true;
+        }
       } else if (rec.type === "placement") {
         if (rec.picks.champion || rec.picks.runnerUp || rec.picks.third) return true;
       } else if (rec.picks && rec.picks.w && Object.keys(rec.picks.w).length) {
@@ -2086,8 +2103,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (!stage) return;
       var r = scorePhase(stage, rec);
       if (!r) return; // 阶段未完赛（results 缺失 / 无已猜的完赛场次）
-      // series/placement（逐段竞猜）必须整段结束才结算——中途部分结果提前置 settled 会漏计后续奖励
-      if ((stage.type === "series" || stage.type === "placement") && !stageAllDone(stage)) return;
+      // series/placement/records（逐段竞猜）必须整段结束才结算——中途部分结果提前置 settled 会漏计后续奖励
+      if ((stage.type === "series" || stage.type === "placement" || stage.type === "records") && !stageAllDone(stage)) return;
       var rw = settleRewards(stage, rec, ev.tier);
       if (!rw) return;
       rec.settled = true;
@@ -2163,32 +2180,41 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       '<div class="pickem-slot-grid">' + slots + "</div></div>";
   }
 
+  /** 桶位阶段体（swiss=Major 瑞士轮；records=1.3.12 战绩桶）——桶清单按类型取，交互同构 */
   function pickemSwissBody(ev, stage, st, rec) {
     var editable = st === "open";
+    var isRecords = stage.type === "records";
+    var buckets = pickemStageBuckets(stage) || [];
+    var capTotal = buckets.reduce(function (s, b) { return s + b.cap; }, 0);
     var html = "";
     if (st === "wait") {
-      html += '<div class="pickem-note">参赛队伍未同步完整（' + stage.teams.length + "/" + PICKEM_SWISS_TEAMS + "），赛程确定后开放竞猜</div>" + pickemTeamStrip(stage);
+      var need = isRecords ? capTotal : PICKEM_SWISS_TEAMS;
+      html += '<div class="pickem-note">参赛队伍未同步完整（' + stage.teams.length + "/" + need + "），赛程确定后开放竞猜</div>" + pickemTeamStrip(stage);
       return html;
     }
-    if (st === "done" && stage.results && rec && pickemSwissCount(rec) > 0) {
-      html += '<div class="pickem-note">按终局比分逐桶比对：猜进「3:0 晋级」的队伍须真以 3-0 出线才算对</div>';
+    if (st === "done" && stage.results && rec && pickemSwissCount(stage, rec) > 0) {
+      html += '<div class="pickem-note">' + (isRecords
+        ? "按小组赛最终战绩逐桶比对：猜进「" + esc(buckets[0].label) + "」的队伍须真打出该战绩才算对"
+        : "按终局比分逐桶比对：猜进「3:0 晋级」的队伍须真以 3-0 出线才算对") + "</div>";
     }
-    html += PICKEM_BUCKETS.map(function (b) {
+    html += buckets.map(function (b) {
       return pickemBucketHTML(stage, b, rec, editable, st === "done" ? stage.results : null);
     }).join("");
-    if (st === "done" && stage.results) {
-      // 自动落位桶（1:3 / 2:3 淘汰）：剩余队伍的终局展示，不参与选择与计分
+    if (!isRecords && st === "done" && stage.results) {
+      // 自动落位桶（1:3 / 2:3 淘汰）：剩余队伍的终局展示，不参与选择与计分（仅 Major 瑞士轮）
       html += PICKEM_AUTO_BUCKETS.map(function (b) {
         return pickemBucketHTML(stage, b, null, false, stage.results);
       }).join("");
     }
     if (editable) {
-      var n = pickemSwissCount(rec);
+      var n = pickemSwissCount(stage, rec);
       html += '<div class="pickem-stage-acts">' +
         (n > 0 ? '<button type="button" class="ghost-btn" data-pkact="clear">清空重选</button>' : "") +
-        '<span class="pickem-progress">已分配 ' + n + "/10" + (n === 10 ? " · 提交完成，截止前可修改" : "") + "</span></div>";
+        '<span class="pickem-progress">已分配 ' + n + "/" + capTotal + (n === capTotal ? " · 提交完成，截止前可修改" : "") + "</span></div>";
       if (st === "open" && n === 0) {
-        html += '<div class="pickem-note">点空位选队伍：3:0 晋级 2 支 · 3:1/3:2 晋级 6 支 · 0:3 淘汰 2 支（1:3/2:3 淘汰由剩余队自动落位）</div>';
+        html += '<div class="pickem-note">' + (isRecords
+          ? "点空位把队伍放进战绩桶：每桶容量见桶头（全部落位后才能提交，截止前可修改）"
+          : "点空位选队伍：3:0 晋级 2 支 · 3:1/3:2 晋级 6 支 · 0:3 淘汰 2 支（1:3/2:3 淘汰由剩余队自动落位）") + "</div>";
       }
     } else if (st === "locked") {
       html += '<div class="pickem-note">已截止：开赛前 1 小时锁定选择，赛果出来后自动结算</div>';
@@ -2483,7 +2509,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var head = '<div class="pickem-stage-head"><b>' + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) + "</div>";
     if (stage.type !== "placement") {
       return '<div class="pickem-stage" data-pstage="' + esc(key) + '">' + head +
-        (stage.type === "swiss" ? pickemSwissBody(ev, stage, st, rec)
+        (stage.type === "swiss" || stage.type === "records" ? pickemSwissBody(ev, stage, st, rec)
           : stage.type === "bracket" ? pickemBracketBody(ev, stage, st, rec)
             : "") +
         "</div>";
@@ -2507,12 +2533,17 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return PICKEM_COINS.c.icon + c.c + " " + PICKEM_COINS.s.icon + c.s + " " + PICKEM_COINS.g.icon + c.g + " " + PICKEM_COINS.d.icon + c.d;
   }
 
-  /** 赛事硬币规则说明（1.3.6 改版，按赛事形态；2026-11-07 淘汰赛逐场不计币）：
-   *  Major（有瑞士轮阶段）规则不变；其余 auto 赛事小组赛按等级发币、淘汰赛逐场不计币
-   *  （高级币只走名次竞猜——手工配置赛事的 placement 阶段） */
+  /** 赛事硬币规则说明（1.3.6 改版，按赛事形态；2026-11-07 淘汰赛逐场不计币 + 1.3.12 战绩桶）：
+   *  Major（有瑞士轮阶段）规则不变；records 小组=按战绩落位逐桶发币；其余 auto 赛事小组赛按等级
+   *  发币、淘汰赛逐场不计币（高级币只走名次竞猜——手工配置赛事的 placement 阶段） */
   function pickemCoinRuleText(ev) {
     var hasSwiss = ev.stages.some(function (s) { return s.type === "swiss"; });
+    var hasRecords = ev.stages.some(function (s) { return s.type === "records"; });
     if (hasSwiss) return "Major 规则：瑞士轮第 1/2/3 阶段猜对得 🥉/🥈/🥇 · 淘汰赛冠军 💎 亚/季军 🥇";
+    if (hasRecords) {
+      var tier = ev.tier === "a" ? "🥉 铜币" : "🥈 银币";
+      return "战绩桶规则：把每支队伍放进小组赛最终战绩（猜对一桶得 " + tier + "）· 淘汰赛冠军 💎/🥇 亚/季军 🥇（S/A）";
+    }
     if (ev.tier === "a") return "A 级赛事：小组赛猜对每场得 🥉 铜币 · 淘汰赛逐场不计币（名次奖励见名次竞猜赛事）";
     return "S 级赛事：小组赛猜对每场得 🥈 银币 · 淘汰赛逐场不计币（名次奖励见名次竞猜赛事）";
   }
@@ -2674,7 +2705,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       renderPickemPlaceSheet(stage);
       return;
     }
-    var bucket = pickemBucketByKey(ctx.bucket);
+    var bucket = pickemBucketByKey(stage, ctx.bucket);
     if (!bucket) return;
     var rec = pickemRec(ctx.evId, ctx.stageId);
     var picks = rec && rec.picks ? (rec.picks[ctx.bucket] || []) : [];
@@ -2682,7 +2713,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#pickemSheetMeta").textContent = "空位 " + Math.max(0, bucket.cap - picks.length) + "/" + bucket.cap +
       (ctx.current ? " · 点当前队伍可移出" : " · 点选队伍放入");
     var assigned = {};
-    PICKEM_BUCKETS.forEach(function (b) {
+    (pickemStageBuckets(stage) || []).forEach(function (b) {
       ((rec && rec.picks ? rec.picks[b.k] : []) || []).forEach(function (n) { if (n) assigned[n] = b; });
     });
     var list = stage.teams.slice().sort(function (a, b2) {
@@ -2785,7 +2816,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       closePickemSheet();
       return;
     }
-    var bucket = pickemBucketByKey(ctx.bucket);
+    var bucket = pickemBucketByKey(stage, ctx.bucket);
     if (!bucket) { closePickemSheet(); return; }
     var rec = pickemEnsureRec(stage, ctx.evId, ctx.stageId);
     if (name === "__remove__") {
@@ -2794,7 +2825,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (i >= 0) arr.splice(i, 1);
     } else {
       // 先从所有桶移除（同队只能在一个桶），再放进当前桶（替换 current 语义）
-      PICKEM_BUCKETS.forEach(function (b) {
+      (pickemStageBuckets(stage) || []).forEach(function (b) {
         var list = rec.picks[b.k];
         if (!list) return;
         var j = list.indexOf(name);

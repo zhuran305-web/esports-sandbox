@@ -99,7 +99,7 @@ function validMatch(m) {
 }
 
 function normalizeStage(raw) {
-  if (!raw || (raw.type !== "swiss" && raw.type !== "bracket" && raw.type !== "series" && raw.type !== "placement")) return null;
+  if (!raw || (raw.type !== "swiss" && raw.type !== "bracket" && raw.type !== "series" && raw.type !== "placement" && raw.type !== "records")) return null;
   if (typeof raw.id !== "string" || !raw.id) return null;
   var teams = (Array.isArray(raw.teams) ? raw.teams : []).filter(validTeam).slice(0, 24).map(function (t) {
     return { name: t.name, short: typeof t.short === "string" ? t.short : "", region: typeof t.region === "string" ? t.region : "", logo: typeof t.logo === "string" ? t.logo : "", w: typeof t.w === "number" && isFinite(t.w) ? t.w : 0, l: typeof t.l === "number" && isFinite(t.l) ? t.l : 0 };
@@ -115,7 +115,27 @@ function normalizeStage(raw) {
     endsAt: typeof raw.endsAt === "string" ? raw.endsAt : "",
     teams: teams, matches: matches
   };
-  if (raw.type === "swiss") {
+  if (raw.type === "records") {
+    // 战绩桶（1.3.12）：桶结构来自配置（k=最终战绩串如 "3:0"，cap=该战绩队伍数）；
+    // 形状不对一律当无桶（stage 渲染为 wait，不崩溃）
+    var bs = Array.isArray(raw.buckets) ? raw.buckets.filter(function (b) {
+      return b && typeof b.k === "string" && /^\d+:\d+$/.test(b.k) &&
+        typeof b.cap === "number" && b.cap >= 1 && b.cap <= 8;
+    }).slice(0, 8).map(function (b) {
+      return { k: b.k, label: typeof b.label === "string" && b.label ? b.label : b.k, cap: Math.round(b.cap) };
+    }) : [];
+    if (bs.length) out.buckets = bs;
+    var rr = raw.results;
+    if (bs.length && rr && typeof rr === "object" && !Array.isArray(rr)) {
+      var rclean = {};
+      var rok = true;
+      bs.forEach(function (b) {
+        rclean[b.k] = Array.isArray(rr[b.k]) ? rr[b.k].filter(function (n) { return typeof n === "string" && n; }) : [];
+        if (!Array.isArray(rr[b.k])) rok = false;
+      });
+      out.results = rok ? rclean : null;
+    }
+  } else if (raw.type === "swiss") {
     // results 五桶各为队名数组（阶段全部结束后由聚合器填写；形状不对一律当 null 待结算）
     var r = raw.results;
     if (r && typeof r === "object" && !Array.isArray(r)) {
@@ -210,6 +230,20 @@ function normalizePlacementPicks(raw) {
   };
 }
 
+/** records picks 规范化：桶键=战绩串（"W:L"），桶结构随 stage 配置——这里只做形状清洗
+ *  （键形校验 + 队名数组），容量/重复校验在 recordsPicksComplete（需 stage.buckets 上下文） */
+function normalizeRecordsPicks(raw) {
+  var out = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  Object.keys(raw).forEach(function (k) {
+    if (!/^\d+:\d+$/.test(k)) return;
+    if (!Array.isArray(raw[k])) return;
+    var list = raw[k].filter(function (n) { return typeof n === "string" && n; }).slice(0, 8);
+    if (list.length) out[k] = list;
+  });
+  return out;
+}
+
 /** 规范化 state.pickem（loadState/云合并入口）。形状不对的阶段记录整条丢弃；记录数封顶防膨胀。
  *  键迁移（1.3.6）：recKey 分隔符从 ":" 改 "##"（自动赛事 id "auto:XXX" 含冒号会撞拆分）——
  *  旧键（无 ##）按第一个冒号拆（手工 id 无冒号，安全）迁移。 */
@@ -225,12 +259,13 @@ export function normalizePickemState(raw) {
     }
     var rec = raw[origKey];
     if (!rec || typeof rec !== "object" ||
-        (rec.type !== "swiss" && rec.type !== "bracket" && rec.type !== "series" && rec.type !== "placement")) return;
+        (rec.type !== "swiss" && rec.type !== "bracket" && rec.type !== "series" && rec.type !== "placement" && rec.type !== "records")) return;
     var clean = {
       type: rec.type,
       picks: rec.type === "swiss" ? normalizeSwissPicks(rec.picks)
         : rec.type === "placement" ? normalizePlacementPicks(rec.picks)
-          : normalizeBracketPicks(rec.picks),
+          : rec.type === "records" ? normalizeRecordsPicks(rec.picks)
+            : normalizeBracketPicks(rec.picks),
       pickedAt: typeof rec.pickedAt === "number" && isFinite(rec.pickedAt) && rec.pickedAt > 0 ? Math.min(Math.round(rec.pickedAt), 1e13) : 0,
       settled: rec.settled === true,
       settledAt: typeof rec.settledAt === "number" && isFinite(rec.settledAt) && rec.settledAt > 0 ? Math.min(Math.round(rec.settledAt), 1e13) : 0,
@@ -278,6 +313,10 @@ export function stageOpenForPicks(stage, now) {
   if (!stage || stageAllDone(stage)) return false;
   if (stage.type === "swiss") {
     if (stage.teams.length !== PICKEM_SWISS_TEAMS) return false;
+  } else if (stage.type === "records") {
+    // 战绩桶（1.3.12）：队伍从首轮对阵即可全知——队伍数 ≥ 桶容量即可选，与对阵结构无关
+    var capTotal = recordBucketsCapTotal(stage);
+    if (!capTotal || stage.teams.length < capTotal) return false;
   } else if (stage.type === "placement") {
     if (!stage.matches.length) return false;
     if (!stage.degraded) {
@@ -294,6 +333,33 @@ export function stageOpenForPicks(stage, now) {
   var start = new Date(stage.startsAt).getTime();
   if (isNaN(start)) return false;
   return now < start - PICKEM_DEADLINE_MS; // 开赛前 1 小时停止竞猜
+}
+
+/** records 阶段的桶清单（未配置/形状不对返回 null——调用方按无桶降级） */
+export function recordBuckets(stage) {
+  if (!stage || stage.type !== "records" || !Array.isArray(stage.buckets) || !stage.buckets.length) return null;
+  return stage.buckets;
+}
+export function recordBucketsCapTotal(stage) {
+  var bs = recordBuckets(stage);
+  if (!bs) return 0;
+  return bs.reduce(function (s, b) { return s + (b && b.cap > 0 ? b.cap : 0); }, 0);
+}
+
+/** records 选择是否完整合法：每桶恰好 cap 支、无重复、总数=桶容量（允许不满时 false，由 UI 提示进度） */
+export function recordsPicksComplete(picks, buckets) {
+  if (!buckets) return false;
+  var seen = {};
+  var full = buckets.every(function (b) {
+    var list = Array.isArray(picks && picks[b.k]) ? picks[b.k] : [];
+    if (list.length !== b.cap) return false;
+    return list.every(function (n) {
+      if (seen[n]) return false;
+      seen[n] = 1;
+      return true;
+    });
+  });
+  return full && Object.keys(seen).length === buckets.reduce(function (s, b) { return s + b.cap; }, 0);
 }
 
 /* ---------- 选择校验与计分 ---------- */
@@ -336,6 +402,20 @@ export function scorePhase(stage, rec) {
     });
     return { correct: correct, total: total, perfect: correct === total };
   }
+  if (stage.type === "records") {
+    // 战绩桶（1.3.12）：桶结构随 stage.buckets——按最终 W:L 落桶，逐桶集合比对（同 swiss 位置语义）
+    var buckets = recordBuckets(stage);
+    if (!buckets || !stage.results) return null;
+    var c2 = 0, t2 = 0;
+    buckets.forEach(function (b) {
+      var picked = (rec.picks && rec.picks[b.k]) || [];
+      t2 += b.cap;
+      picked.forEach(function (name) {
+        if ((stage.results[b.k] || []).indexOf(name) >= 0) c2 += 1;
+      });
+    });
+    return { correct: c2, total: t2, perfect: c2 === t2 };
+  }
   if (stage.type === "placement") {
     if (!stage.results) return null;
     var p = rec.picks || {};
@@ -373,7 +453,7 @@ export function settleRewards(stage, rec, eventTier) {
   if (!stage || !rec) return null;
   var coins = zeroCoins();
   var bySource = [];
-  if (stage.type === "swiss") {
+  if (stage.type === "swiss" || stage.type === "records") {
     var sc = scorePhase(stage, rec);
     if (!sc || !sc.correct) return sc ? { coins: coins, bySource: bySource } : null;
     var key = coinKeyForTier(stage.coinTier || 1);

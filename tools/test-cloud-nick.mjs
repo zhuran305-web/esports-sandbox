@@ -863,7 +863,7 @@ check("series 逐场链路（1.3.4）：聚合器 + 渲染 + 逐场点选 + 结�
   /function buildPlacementStage/.test(fpkSrc) && /scfg\.type === "placement"\) stages\.push\(buildPlacementStage/.test(fpkSrc) &&
   /function pickableSeriesMatches/.test(pickemJsSrc) && /stage\.type === "series"\) \{\s*return pickableSeriesMatches/.test(pickemJsSrc) &&
   /function pickemMergedSeriesHTML/.test(appSrc) && /pickableSeriesMatches/.test(appSrc) &&
-  /stage\.type === "series" \|\| stage\.type === "placement"\) && !stageAllDone\(stage\)\) return/.test(appSrc) &&
+  /stage\.type === "series" \|\| stage\.type === "placement" \|\| stage\.type === "records"\) && !stageAllDone\(stage\)\) return/.test(appSrc) &&
   /pickemMergedSeriesHTML\(ev, seriesStages\)/.test(appSrc) && /pickemPlacementBody\(ev, stage, st, rec\)/.test(appSrc));
 
 check("轮次优先合并布局（1.3.6 任务 4）：series 阶段合并单面板 + 每轮子块各带 data-pstage 包裹层 + 轮头日期" +
@@ -1133,6 +1133,90 @@ check("⑤ 弃赛透传：canceled 场进 stage matches、不阻塞事件 done",
   var canceledMatch = stage.matches.filter(function (m) { return m.canceled === true; });
   return ev.status === "done" && canceledMatch.length === 1 && stage.matches.length === 2;
 })());
+
+/* ---------- 场景 AE（2026-11-07 用户拍板）：records 战绩桶阶段（双败小组赛按战绩落位） ---------- */
+console.log("AE. records 战绩桶（双败小组赛 · 4 队 GSL 2:0/2:1/1:2/0:2）：");
+var AG = await import(pathToFileURL(path.join(root, "tools", "fetch-pickem.mjs")).href).catch(function () { return null; });
+var GSL_BUCKETS = [
+  { k: "2:0", label: "2:0 出线", cap: 1 },
+  { k: "2:1", label: "2:1 出线", cap: 1 },
+  { k: "1:2", label: "1:2 淘汰", cap: 1 },
+  { k: "0:2", label: "0:2 淘汰", cap: 1 }
+];
+function gslMatch(id, a, b, w, day) {
+  return { id: id, game: "cs2", tournament: "GSL 测试赛", stage: "Group A",
+    teamA: { name: a }, teamB: { name: b }, startAt: "2026-11-20T1" + day + ":00:00.000Z",
+    result: w ? { winner: w, score: "2:" + (w === "A" ? (day === "0" ? 1 : 0) : (day === "0" ? 1 : 0)) } : null };
+}
+check("① normalizeStage：records 桶形状清洗（非法 k/cap 丢弃）；无桶=无 buckets 字段", (function () {
+  var st = PK.normalizePickemData({ events: [{ id: "e", game: "cs2", name: "x", stages: [
+    { id: "g", type: "records", label: "G", buckets: [
+      { k: "2:0", label: "2:0", cap: 1 }, { k: "bad", label: "x", cap: 1 },
+      { k: "2:1", label: "2:1", cap: 0 }, { k: "1:2", label: "1:2", cap: 2 }
+    ] }
+  ] }] }).events[0];
+  var s = st.stages[0];
+  return s.type === "records" && s.buckets.length === 2 && s.buckets[0].k === "2:0" && s.buckets[1].k === "1:2" && s.buckets[1].cap === 2;
+})());
+check("② stageOpenForPicks：队伍齐（≥桶容量）+ 截止前可猜；队伍不齐不可猜", (function () {
+  var now = Date.parse("2026-11-19T00:00:00.000Z");
+  var teams = [{ name: "甲" }, { name: "乙" }, { name: "丙" }, { name: "丁" }];
+  var stage = { id: "g", type: "records", label: "G", buckets: GSL_BUCKETS, teams: teams, matches: [
+    { id: "m1", a: "甲", b: "乙", startAt: "2026-11-20T10:00:00.000Z", winner: "", score: "", round: 0 }
+  ], startsAt: "2026-11-20T10:00:00.000Z" };
+  if (PK.stageOpenForPicks(stage, now) !== true) return false;
+  if (PK.stageOpenForPicks(Object.assign({}, stage, { teams: teams.slice(0, 3) }), now) !== false) return false;
+  return PK.stageOpenForPicks(stage, Date.parse("2026-11-20T09:30:00.000Z")) === false; // 截止后
+})());
+check("③ recordsPicksComplete：每桶满 cap + 无重复；跨桶重复不完整", (function () {
+  var picksOk = { "2:0": ["甲"], "2:1": ["乙"], "1:2": ["丙"], "0:2": ["丁"] };
+  var picksDup = { "2:0": ["甲"], "2:1": ["甲"], "1:2": ["丙"], "0:2": ["丁"] };
+  var picksShort = { "2:0": ["甲"], "2:1": [], "1:2": ["丙"], "0:2": ["丁"] };
+  return PK.recordsPicksComplete(picksOk, GSL_BUCKETS) === true &&
+    PK.recordsPicksComplete(picksDup, GSL_BUCKETS) === false &&
+    PK.recordsPicksComplete(picksShort, GSL_BUCKETS) === false;
+})());
+check("④ scorePhase：按最终战绩落桶逐桶比对（results 缺失返回 null）", (function () {
+  var stage = { id: "g", type: "records", label: "G", buckets: GSL_BUCKETS,
+    teams: [{ name: "甲" }, { name: "乙" }, { name: "丙" }, { name: "丁" }], matches: [{ id: "m1", a: "甲", b: "乙", startAt: "x", winner: "A", score: "2:0", round: 0 }],
+    results: { "2:0": ["甲"], "2:1": ["乙"], "1:2": ["丙"], "0:2": ["丁"] } };
+  var rec = { type: "records", picks: { "2:0": ["甲"], "2:1": ["丙"], "1:2": ["乙"], "0:2": ["丁"] } };
+  var r = PK.scorePhase(stage, rec);
+  if (!r || r.correct !== 2 || r.total !== 4) return false;
+  return PK.scorePhase(Object.assign({}, stage, { results: null }), rec) === null;
+})());
+check("⑤ settleRewards：A 级 records 阶段按 coinTier 发币（猜对 2 → 🥉×2）", (function () {
+  var stage = { id: "g", type: "records", label: "Group A · 双败", coinTier: 1, buckets: GSL_BUCKETS,
+    teams: [{ name: "甲" }], matches: [{ id: "m1", a: "甲", b: "乙", startAt: "x", winner: "A", score: "2:0", round: 0 }],
+    results: { "2:0": ["甲"], "2:1": ["乙"], "1:2": ["丙"], "0:2": ["丁"] } };
+  var rec = { type: "records", picks: { "2:0": ["甲"], "2:1": ["丙"], "1:2": ["乙"], "0:2": ["丁"] } };
+  var rw = PK.settleRewards(stage, rec, "a");
+  return rw && rw.coins.c === 2 && rw.coins.s === 0 && rw.bySource.length === 1;
+})());
+check("⑥ 聚合器 records：打完全部场次按 W:L 落桶；结构不符（宁缺勿滥）出 null", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true; // 聚合器未导出 buildEvent 时跳过（走 demo 实跑覆盖）
+  var cfg = { id: "gsl-ev", game: "cs2", name: "GSL 赛", tournament: "GSL 测试赛", stages: [
+    { id: "groupA", type: "records", label: "Group A · 双败", stageNames: ["Group A"], buckets: GSL_BUCKETS }
+  ] };
+  // GSL 5 场：甲 2:0 / 乙 2:1 / 丙 1:2 / 丁 0:2
+  var matches = [
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: "2026-11-20T10:00:00.000Z", result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: "2026-11-20T12:00:00.000Z", result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "甲" }, teamB: { name: "丙" }, startAt: "2026-11-21T10:00:00.000Z", result: { winner: "A", score: "2:1" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "乙" }, teamB: { name: "丁" }, startAt: "2026-11-21T12:00:00.000Z", result: { winner: "B", score: "0:2" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "乙" }, teamB: { name: "丙" }, startAt: "2026-11-22T10:00:00.000Z", result: { winner: "A", score: "2:1" } }
+  ];
+  var ev = AG.buildEvent(cfg, matches, null);
+  var s = ev && ev.stages[0];
+  if (!s || s.type !== "records" || !s.results) return false;
+  var ok = s.results["2:0"][0] === "甲" && s.results["2:1"][0] === "乙" && s.results["1:2"][0] === "丙" && s.results["0:2"][0] === "丁";
+  if (!ok) return false;
+  // 结构不符：多打一场让某队战绩越出桶 → results 为 null（宁缺勿滥）
+  var matches2 = matches.concat([Object.assign({}, matches[4], { id: "extra", startAt: "2026-11-23T10:00:00.000Z", result: { winner: "B", score: "1:2" } })]);
+  var ev2 = AG.buildEvent(cfg, matches2, null);
+  return ev2.stages[0].results === null;
+})());
+
 
 /* ---------- 场景 W2（用户口径 2026-11-05）：placement 截止铁律 ----------
    冠亚季竞猜必须在「整个淘汰赛开始前」（=阶段内最早一场开赛前 1 小时）锁定：

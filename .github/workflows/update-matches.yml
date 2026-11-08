@@ -163,3 +163,15 @@ jobs:
         if: env.OSS_ACCESS_KEY_ID != ''
         continue-on-error: true
         run: node tools/mirror-team-logos.mjs
+
+      # 失败告警（2026-11-08）：采集失败 webhook 通知——9h 停更靠用户报障才发现的教训。
+      # 未配置 ALERT_WEBHOOK_URL 时静默跳过；同批排队/重试的失败 55 分钟内只发一条（工具内频控）；
+      # continue-on-error：告警本身绝不拖垮 workflow
+      - name: Alert on failure
+        if: failure()
+        continue-on-error: true
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WORKFLOW_FILE: update-matches.yml
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/alert-notify.mjs --title "【赛事沙盘】采集失败" --body "update-matches workflow 失败（赛程/赛果停更，客户端轮询拿不到新数据）：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

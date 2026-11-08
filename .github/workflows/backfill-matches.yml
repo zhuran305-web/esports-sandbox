@@ -110,3 +110,14 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
           OSS_PREFIX: ${{ secrets.OSS_PREFIX }}
         run: node tools/publish-runtime-oss.mjs --upload --check
+
+      # 失败告警（2026-11-08）：每日回填失败 webhook 通知（回填负责 45 天窗口与花名册累积，
+      # 停摆会造成数据面缺口）。未配置 ALERT_WEBHOOK_URL 时静默跳过；频控见 tools/alert-notify.mjs
+      - name: Alert on failure
+        if: failure()
+        continue-on-error: true
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WORKFLOW_FILE: backfill-matches.yml
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/alert-notify.mjs --title "【赛事沙盘】每日回填失败" --body "backfill-matches workflow 失败（45 天窗口/花名册累积停摆）：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

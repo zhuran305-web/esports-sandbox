@@ -75,6 +75,7 @@ export function stripTeamLogos(matches) {
       }
     });
     if (copy.bestof !== undefined) delete copy.bestof;
+    if (copy.mid !== undefined) delete copy.mid; // 客户端零引用（仅服务端合并用），省运行时包
     if (!copy.note) delete copy.note;
     return copy;
   });
@@ -129,6 +130,9 @@ export function normalizeMatch(raw, source) {
     // 弃赛/取消标记（1.3.7 引入）：merge 往返经 normalizeMatch 时必须保留，
     // 否则一次重新采集就会把 canceled 标志洗掉（阶段完结判定回退）
     canceled: raw.canceled === true ? true : undefined,
+    // PandaScore match id（2026-11-08）：mergeMatches 的同场主键（matchMidKey）——
+    // 唯一且稳定，跨「主客交换/队名编辑/同队多场」；manual/liquipedia 为 undefined（JSON 自动省略）
+    mid: Number(raw.mid) > 0 ? Math.floor(Number(raw.mid)) : undefined,
     note: raw.note ? String(raw.note) : "",
     source: source || raw.source || "manual"
   };
@@ -140,15 +144,15 @@ export function matchKey(m) {
   return [m.game, day, slug(m.teamA.short || m.teamA.name), slug(m.teamB.short || m.teamB.name)].join("|");
 }
 
-// pid 主键（2026-11-07 防孪生）：PandaScore 的 opponent.id 不随主客交换/队名简称编辑变化。
-// matchKey 用「队简称有序拼接」派生，历史实测会裂出孪生条目（74 组：旧条目永久卡死等不到
-// 赛果，Pick'Em auto 事件因此永远「进行中」）——双方都有 pid 时优先用 pid 键合并。
-export function matchPidKey(m) {
-  if (!m || !m.teamA || !m.teamB) return null;
-  var a = Number(m.teamA.pid);
-  var b = Number(m.teamB.pid);
-  if (!(a > 0) || !(b > 0) || a === b) return null;
-  return [m.game, "pid", Math.min(a, b), Math.max(a, b)].join("|");
+// 同场标识（2026-11-08 二次修正）：**PandaScore match id 是唯一稳定的同场键**。
+// 前一版用 team pid 对拼（game|pid|min:max）——「同两队」被当成「同一场」：双败败者组
+// 再相遇、背靠背、双循环的同两队多场比赛互相污染 + 产生重复 id，采集连败 26h。
+// mid 由 pandascore 适配器透传 item.id；manual/liquipedia 无 mid 走 slug 键。
+export function matchMidKey(m) {
+  if (!m) return null;
+  var mid = Number(m.mid);
+  if (!(mid > 0)) return null;
+  return m.game + "|mid:" + Math.floor(mid);
 }
 
 function makeId(m, used) {
@@ -185,7 +189,7 @@ export function mergeMatches(existing, incoming, options) {
   existing.forEach(function (m) { if (m.id) usedIds.add(m.id); });
 
   var map = new Map();
-  var entryKeys = new Map(); // entry 对象 → 当前 slug 键（pid 命中跨键合并时清理旧键）
+  var entryKeys = new Map(); // entry 对象 → 当前 slug 键（mid 命中跨键合并时清理旧键）
   existing.forEach(function (m) {
     var n = normalizeMatch(m, m.source || "manual");
     if (n) {
@@ -194,11 +198,14 @@ export function mergeMatches(existing, incoming, options) {
     }
   });
 
-  // pid 主键索引：命中即可跨「主客交换/队名编辑」合并；老条目无 pid 时仍走 slug 键（行为不变）
-  var pidIndex = new Map();
+  // 同场标识索引（2026-11-08 二次修正）：**PandaScore match id 才是稳定的同场标识**。
+  // 前一版用 team pid 对拼（game|pid|min:max）——「同两队」被当成「同一场」：双败败者组
+  // 再相遇、背靠背、双循环的同两队多场比赛互相污染 + 产生重复 id，采集连败 26h。
+  // 无 mid 的来源（manual/liquipedia/旧数据）仍走 slug 键（行为不变）。
+  var midIndex = new Map();
   existing.forEach(function (m) {
-    var pk = matchPidKey(m);
-    if (pk && !pidIndex.has(pk)) pidIndex.set(pk, m);
+    var mk = matchMidKey(m);
+    if (mk && !midIndex.has(mk)) midIndex.set(mk, m);
   });
 
   var added = 0;
@@ -208,12 +215,10 @@ export function mergeMatches(existing, incoming, options) {
     var m = normalizeMatch(raw, raw.source);
     if (!m) return;
     var key = matchKey(m);
-    var pk = matchPidKey(m);
-    var viaPid = false;
+    var mk = matchMidKey(m);
     var cur = null;
-    if (pk && pidIndex.has(pk)) {
-      cur = pidIndex.get(pk);
-      viaPid = true;
+    if (mk && midIndex.has(mk)) {
+      cur = midIndex.get(mk); // 同场标识最高优先：PandaScore match id 唯一且稳定
     } else {
       cur = map.get(key) || null;
     }
@@ -222,7 +227,7 @@ export function mergeMatches(existing, incoming, options) {
       m.id = makeId(m, usedIds);
       map.set(key, m);
       entryKeys.set(m, key);
-      if (pk) pidIndex.set(pk, m);
+      if (mk) midIndex.set(mk, m);
       added++;
       return;
     }
@@ -243,6 +248,8 @@ export function mergeMatches(existing, incoming, options) {
       merged.note = m.note || cur.note || "";
       merged.endAt = m.endAt || cur.endAt || ""; // 新采集缺失时不丢旧值
       merged.source = newP >= curP ? m.source : cur.source;
+      // 同理：mid（manual 覆盖时不丢已有 mid，否则后续 pandascore 重取会退回 slug 键合并）
+      if (merged.mid === undefined && cur.mid !== undefined) merged.mid = cur.mid;
       // 手工条目没有队标：沿用已有条目的，避免覆盖时丢图
       ["teamA", "teamB"].forEach(function (side) {
         if (merged[side] && cur[side] && !merged[side].logo && cur[side].logo) {
@@ -257,13 +264,13 @@ export function mergeMatches(existing, incoming, options) {
           merged[side] = Object.assign({}, merged[side], { pid: cur[side].pid });
         }
       });
-      // 经 pid 命中时 cur 可能挂在旧 slug 键下（主客交换过）：清旧键再挂新键，避免同轮残留
+      // 经 mid 命中时 cur 可能挂在旧 slug 键下（主客交换过）：清旧键再挂新键，避免同轮残留
       var oldKey = entryKeys.get(cur);
       if (oldKey && oldKey !== key && map.get(oldKey) === cur) map.delete(oldKey);
       map.set(key, merged);
       entryKeys.delete(cur);
       entryKeys.set(merged, key);
-      if (pk) pidIndex.set(pk, merged);
+      if (mk) midIndex.set(mk, merged);
       updated++;
     }
   });

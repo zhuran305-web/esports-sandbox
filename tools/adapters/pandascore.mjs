@@ -91,6 +91,7 @@ function toRaw(item, game) {
     game: game,
     tournament: tournament,
     stage: item.tournament ? item.tournament.name : "赛程",
+    mid: item.id, // PandaScore match id（2026-11-08）：mergeMatches 的同场主键
     startAt: startAt,
     endAt: item.end_at || "",
     bestof: item.number_of_games || 0,

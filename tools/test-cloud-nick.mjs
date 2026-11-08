@@ -1007,29 +1007,30 @@ check("② 脏 startAt 场次 round 归 0 且不抛错", (function () {
   return evs.length === 1 && evs[0].stages[0].matches[0].round === 0;
 })());
 
-/* ---------- 场景 AB（2026-11-07）：mergeMatches pid 主键（防孪生）与治愈口径 ----------
-   历史 bug：matchKey 用队简称有序拼接派生，PandaScore 重取时主客交换/队名简称编辑（DC→DEN、
-   SINQ→SINQU）会让同一场比赛 fork 成孪生——旧条目永久收不到赛果，Pick'Em auto 事件永远
-   「进行中」（实测 74 组）。修复=双方有 pid 时用 pid 键合并 + heal 脚本治愈存量。 */
-console.log("AB. mergeMatches pid 主键（防孪生）与治愈口径：");
+/* ---------- 场景 AB（2026-11-07 建；2026-11-08 改 mid 主键）：mergeMatches 同场标识与治愈口径 ----------
+   历史 bug 一：matchKey 用队简称有序拼接派生，PandaScore 重取时主客交换/队名简称编辑会让同一场
+   fork 成孪生（74 组）。修复一=pid 对拼键——**被 11-08 事故推翻**：同两队多场（双败再相遇/背靠背/
+   双循环）共享 pid 键 → 跨场污染 + 重复 id，采集连败 26h。修复二（现行）=**PandaScore match id
+   （mid）作同场主键**——唯一、稳定、天然区分同队多场；无 mid 的 manual/旧数据走 slug 键。 */
+console.log("AB. mergeMatches mid 主键（同场标识）与治愈口径：");
 var Lib = await import(pathToFileURL(path.join(root, "tools", "lib.mjs")).href);
-check("① 主客交换 + 队简称编辑的重取经 pid 键并入原条目（不再 fork）", (function () {
+check("① 主客交换 + 队简称编辑的重取经 mid 键并入原条目（不再 fork）", (function () {
   var existing = [{
-    id: "auto-cs2-20261024-furia-den", game: "cs2", tournament: "T", stage: "Group", startAt: "2026-10-24T16:14:37.000Z",
-    teamA: { name: "FURIA", short: "FURIA", pid: 124530 }, teamB: { name: "DENDELE CS", short: "DEN", pid: 138988 },
+    id: "auto-cs2-20261024-furia-den", game: "cs2", mid: 5550001, tournament: "T", stage: "Group", startAt: "2026-10-24T16:14:37.000Z",
+    teamA: { name: "FURIA", short: "FURIA" }, teamB: { name: "DENDELE CS", short: "DEN" },
     result: { winner: "A", score: "2:0" }, status: "finished", source: "pandascore"
   }];
-  // 重取：主客交换 + 简称 DEN→DC（历史实测的两种 fork 触发叠加）
+  // 重取：主客交换 + 简称 DEN→DC（历史实测的两种 fork 触发叠加）——mid 相同即同场
   var incoming = [{
-    game: "cs2", tournament: "T", stage: "Group", startAt: "2026-10-24T16:14:37.000Z",
-    teamA: { name: "DENDELE CS", short: "DC", pid: 138988 }, teamB: { name: "FURIA", short: "FURIA", pid: 124530 },
+    game: "cs2", mid: 5550001, tournament: "T", stage: "Group", startAt: "2026-10-24T16:14:37.000Z",
+    teamA: { name: "DENDELE CS", short: "DC" }, teamB: { name: "FURIA", short: "FURIA" },
     result: null, source: "pandascore"
   }];
   var r = Lib.mergeMatches(existing, incoming, { retentionDays: 45 });
   // incoming 无赛果 → 不覆盖原赛果（正确语义）；防 fork 的判据 = added===0（没有裂出新条目）
   return r.matches.length === 1 && r.matches[0].id === "auto-cs2-20261024-furia-den" && r.added === 0;
 })());
-check("② 无 pid 的旧条目仍走 slug 键（行为不变，正常并入）", (function () {
+check("② 无 mid 的旧条目仍走 slug 键（行为不变，正常并入）", (function () {
   var existing = [{
     id: "auto-cs2-20261105-sta-xi", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-05T17:08:42.000Z",
     teamA: { name: "STATE", short: "STA" }, teamB: { name: "XI", short: "XI" },
@@ -1043,24 +1044,29 @@ check("② 无 pid 的旧条目仍走 slug 键（行为不变，正常并入）"
   var r = Lib.mergeMatches(existing, incoming, { retentionDays: 45 });
   return r.matches.length === 1 && r.matches[0].id === "auto-cs2-20261105-sta-xi" && r.matches[0].result.winner === "A";
 })());
-check("③ 同日同两队两场（决赛重置，Δt=8h）：互不误并", (function () {
+check("③ 同两队两场（双败再相遇，mid 不同）：互不误并、互不污染（11-08 事故回归）", (function () {
   var existing = [{
-    id: "auto-cs2-20261110-x-y", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-10T10:00:00.000Z",
-    teamA: { name: "X队", short: "X", pid: 1 }, teamB: { name: "Y队", short: "Y", pid: 2 },
-    result: { winner: "A", score: "1:0" }, status: "finished", source: "pandascore"
-  }, {
-    id: "auto-cs2-20261110-y-x", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-10T18:00:00.000Z",
-    teamA: { name: "Y队", short: "Y", pid: 2 }, teamB: { name: "X队", short: "X", pid: 1 },
-    result: { winner: "A", score: "2:0" }, status: "finished", source: "pandascore"
+    id: "auto-cs2-20261107-ace-ryve", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-07T14:00:00.000Z",
+    teamA: { name: "Acend", short: "ACE" }, teamB: { name: "Ryvex", short: "RYVE" },
+    result: null, status: "open", source: "pandascore"
   }];
-  // pid 键相同但两条都完赛且无重取动作：merge 不删除任何历史条目（治愈只补赛果不删行）
-  var r = Lib.mergeMatches(existing, [], { retentionDays: 45 });
-  return r.matches.length === 2;
+  // 第二场（11-08 重逢，PandaScore 不同 match id）重取：绝不能并进 11-07 条目
+  var incoming = [{
+    game: "cs2", mid: 9900002, tournament: "T", stage: "R", startAt: "2026-11-08T14:00:00.000Z",
+    teamA: { name: "Acend", short: "ACE" }, teamB: { name: "Ryvex", short: "RYVE" },
+    result: { winner: "A", score: "2:1" }, status: "finished", source: "pandascore"
+  }];
+  var r = Lib.mergeMatches(existing, incoming, { retentionDays: 45 });
+  if (r.matches.length !== 2) return false;
+  var byId = {};
+  r.matches.forEach(function (m) { byId[m.id] = m; });
+  return byId["auto-cs2-20261107-ace-ryve"] && byId["auto-cs2-20261107-ace-ryve"].result === null &&
+    byId["auto-cs2-20261108-ace-ryve"] && byId["auto-cs2-20261108-ace-ryve"].result.winner === "A";
 })());
-check("④ pid 经 merge 往返保留（manual 覆盖不丢 pandascore 的 pid）", (function () {
+check("④ mid 经 merge 往返保留；manual 覆盖不丢 pandascore 的 mid", (function () {
   var existing = [{
-    id: "auto-cs2-20261111-a-b", game: "cs2", tournament: "T", stage: "R", startAt: "2026-11-11T15:30:00.000Z",
-    teamA: { name: "A队", short: "A", pid: 11 }, teamB: { name: "B队", short: "B", pid: 22 },
+    id: "auto-cs2-20261111-a-b", game: "cs2", mid: 7700011, tournament: "T", stage: "R", startAt: "2026-11-11T15:30:00.000Z",
+    teamA: { name: "A队", short: "A" }, teamB: { name: "B队", short: "B" },
     result: null, status: "open", source: "pandascore", note: "原始"
   }];
   var incoming = [{
@@ -1069,7 +1075,7 @@ check("④ pid 经 merge 往返保留（manual 覆盖不丢 pandascore 的 pid�
     result: null, source: "manual", note: "手工补"
   }];
   var r = Lib.mergeMatches(existing, incoming, { retentionDays: 45 });
-  return r.matches.length === 1 && r.matches[0].teamA.pid === 11 && r.matches[0].teamB.pid === 22 && r.matches[0].note === "手工补";
+  return r.matches.length === 1 && r.matches[0].mid === 7700011 && r.matches[0].note === "手工补";
 })());
 check("⑤ canceled 标记经 merge 往返保留", (function () {
   var existing = [{

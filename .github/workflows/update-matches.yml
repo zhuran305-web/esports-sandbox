@@ -172,6 +172,8 @@ jobs:
         continue-on-error: true
         env:
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_SMTP_PASS: ${{ secrets.ALERT_SMTP_PASS }}
           ALERT_WORKFLOW_FILE: update-matches.yml
           GH_TOKEN: ${{ github.token }}
         run: node tools/alert-notify.mjs --title "【赛事沙盘】采集失败" --body "update-matches workflow 失败（赛程/赛果停更，客户端轮询拿不到新数据）：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

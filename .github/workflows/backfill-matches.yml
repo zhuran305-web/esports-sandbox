@@ -118,6 +118,8 @@ jobs:
         continue-on-error: true
         env:
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_SMTP_PASS: ${{ secrets.ALERT_SMTP_PASS }}
           ALERT_WORKFLOW_FILE: backfill-matches.yml
           GH_TOKEN: ${{ github.token }}
         run: node tools/alert-notify.mjs --title "【赛事沙盘】每日回填失败" --body "backfill-matches workflow 失败（45 天窗口/花名册累积停摆）：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

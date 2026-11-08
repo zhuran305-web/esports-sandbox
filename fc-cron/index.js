@@ -15,6 +15,10 @@
  *   ALERT_WEBHOOK_URL      可选：飞书/钉钉/Server酱 webhook——采集链路故障时通知（2026-11-08
  *                          防复发：9h 停更靠用户报障才发现）。host 限告警白名单，保持零 SSRF 面
  *   ALERT_STALE_MINUTES    默认 100（≈连续 2 轮兜底未恢复，发心跳告警）
+ *   ALERT_EMAIL_TO         可选：QQ 邮箱地址（收发件同址）——邮件告警通道（11-09 加，Gmail
+ *                          在国内收不到的替代）
+ *   ALERT_SMTP_PASS        可选：QQ 邮箱 SMTP 16 位授权码（与 ALERT_EMAIL_TO 配对使用）
+ *   ALERT_SMTP_HOST/PORT   可选：恒 smtp.qq.com:465（白名单内，改白名单须改代码）
  *
  * 告警触发：①workflow_dispatch 失败/异常→立即告警（GitHub 不可达时 workflow 自身无法告警，
  * 本函数是唯一能发通知的通道）；②数据陈旧 ≥ALERT_STALE_MINUTES→每小时一条心跳（FC 每小时
@@ -41,6 +45,79 @@ var STALE_DEFAULT_MINUTES = 35;
 /* 告警 webhook 白名单：host 必须命中才允许请求（保持「请求目标可枚举」的安全性质） */
 var ALERT_HOSTS = { "open.feishu.cn": 1, "oapi.dingtalk.com": 1, "sctapi.ftqq.com": 1 };
 var ALERT_STALE_DEFAULT_MINUTES = 100; // ≈连续 2 轮兜底未恢复
+
+/* SMTP 邮件告警通道（2026-11-09，QQ 邮箱直发——Gmail 在国内收不到的替代）：
+ * host 白名单保持「目标可枚举」；端口恒 465 隐式 TLS；凭据只从 env 读 */
+var ALERT_SMTP_HOSTS = { "smtp.qq.com": 1 };
+
+function smtpConfig() {
+  var to = String(process.env.ALERT_EMAIL_TO || "").trim();
+  var pass = String(process.env.ALERT_SMTP_PASS || "").trim();
+  var host = String(process.env.ALERT_SMTP_HOST || "smtp.qq.com").trim();
+  var port = Number(process.env.ALERT_SMTP_PORT || 465);
+  if (!to || !pass || !ALERT_SMTP_HOSTS[host] || port !== 465) return null;
+  return { to: to, pass: pass, host: host, port: port };
+}
+
+function smtpSendMail(cfg, subject, body) {
+  var tls = require("tls");
+  return new Promise(function (resolve, reject) {
+    var steps = [
+      { expect: 220 }, // 服务器问候
+      { cmd: "EHLO esports-sandbox-cron", expect: 250 },
+      { cmd: "AUTH LOGIN", expect: 334 },
+      { cmd: Buffer.from(cfg.to).toString("base64"), expect: 334 },
+      { cmd: Buffer.from(cfg.pass).toString("base64"), expect: 235 },
+      { cmd: "MAIL FROM:<" + cfg.to + ">", expect: 250 },
+      { cmd: "RCPT TO:<" + cfg.to + ">", expect: 250 },
+      { cmd: "DATA", expect: 354 },
+      { body: true, expect: 250 },
+      { cmd: "QUIT", expect: 221 }
+    ];
+    var i = 0;
+    var buf = "";
+    var sock = tls.connect({ host: cfg.host, port: cfg.port, servername: cfg.host });
+    sock.setTimeout(15000);
+    var done = function (err) { sock.destroy(); err ? reject(err) : resolve(); };
+    sock.on("error", done);
+    sock.on("timeout", function () { done(new Error("SMTP 超时")); });
+    sock.on("data", function (d) {
+      buf += d.toString("utf8");
+      var lines = buf.split(/\r\n/);
+      var lastFull = lines[lines.length - 1] === "" ? lines[lines.length - 2] : lines[lines.length - 1];
+      if (!/^\d{3} /.test(lastFull || "")) return; // 多行回复未完
+      var reply = buf;
+      buf = "";
+      var code = parseInt(reply.slice(0, 3), 10);
+      var step = steps[i];
+      if (!step) return done(null);
+      if (code !== step.expect) return done(new Error("SMTP 第 " + (i + 1) + " 步期望 " + step.expect + " 收到 " + code + "：" + reply.slice(0, 140)));
+      i++;
+      if (i >= steps.length) return done(null);
+      var next = steps[i];
+      if (next.body) {
+        var b64 = Buffer.from(titleBody(body, subject), "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
+        var msg = [
+          "From: <" + cfg.to + ">",
+          "To: <" + cfg.to + ">",
+          "Subject: =?UTF-8?B?" + Buffer.from(subject, "utf8").toString("base64") + "?=",
+          "MIME-Version: 1.0",
+          "Content-Type: text/plain; charset=UTF-8",
+          "Content-Transfer-Encoding: base64",
+          "",
+          b64
+        ].join("\r\n");
+        sock.write(msg + "\r\n.\r\n");
+      } else {
+        sock.write(next.cmd + "\r\n");
+      }
+    });
+  });
+}
+
+function titleBody(body, title) {
+  return title + (body ? "\n" + body : "");
+}
 
 function alertStaleMinutes() {
   var n = Number(process.env.ALERT_STALE_MINUTES);
@@ -138,15 +215,29 @@ exports.handler = async function (event, context) {
     return JSON.stringify({ error: "no_token" });
   }
   var at = alertTarget();
+  var scfg = smtpConfig();
   var alertIf = async function (title, body) {
-    if (!at) { console.log("[cron] 告警未配置（ALERT_WEBHOOK_URL），跳过：" + title); return; }
-    var p = alertPayload(at, title, body);
-    try {
-      var res = await httpsRequest(at, "POST", { "Content-Type": p.contentType, "User-Agent": "esports-sandbox-cron" }, p.body, 8000);
-      console.log("[cron] 告警已发 HTTP " + res.status);
-    } catch (e) {
-      console.log("[cron] 告警发送失败：" + ((e && e.message) || e));
+    var sent = false;
+    if (scfg) {
+      try {
+        await smtpSendMail(scfg, title, body);
+        console.log("[cron] 告警邮件已发 → " + scfg.to);
+        sent = true;
+      } catch (e) {
+        console.log("[cron] 告警邮件失败：" + ((e && e.message) || e));
+      }
     }
+    if (at) {
+      var p = alertPayload(at, title, body);
+      try {
+        var res = await httpsRequest(at, "POST", { "Content-Type": p.contentType, "User-Agent": "esports-sandbox-cron" }, p.body, 8000);
+        console.log("[cron] 告警已发 HTTP " + res.status);
+        sent = true;
+      } catch (e) {
+        console.log("[cron] 告警发送失败：" + ((e && e.message) || e));
+      }
+    }
+    if (!sent) console.log("[cron] 告警未配置（ALERT_EMAIL_TO/ALERT_SMTP_PASS 或 ALERT_WEBHOOK_URL），跳过：" + title);
   };
   try {
     var res = await httpsRequest(resolveTarget("ghDispatch"), "POST", {

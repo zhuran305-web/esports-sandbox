@@ -90,6 +90,11 @@ async function main() {
       // 告警 webhook（2026-11-08 防复发）：可选项，.env 配置后 FC 兜底具备 dispatch 失败/持续陈旧告警
       ALERT_WEBHOOK_URL: env.ALERT_WEBHOOK_URL || "",
       ALERT_STALE_MINUTES: env.ALERT_STALE_MINUTES || "100",
+      // 邮件告警（11-09 加，QQ 邮箱直发）：可选项，与 webhook 通道并存
+      ALERT_EMAIL_TO: env.ALERT_EMAIL_TO || "",
+      ALERT_SMTP_PASS: env.ALERT_SMTP_PASS || "",
+      ALERT_SMTP_HOST: env.ALERT_SMTP_HOST || "smtp.qq.com",
+      ALERT_SMTP_PORT: env.ALERT_SMTP_PORT || "465",
     },
     description: "每 30 分钟检查 OSS 数据陈旧度，陈旧则 workflow_dispatch 触发采集（目标硬编码）",
   };

@@ -113,6 +113,32 @@ async function main() {
     return g + " " + stats.byGame[g];
   }).join(" · "));
 
+  // 赛果完整性对账（2026-11-08）：S/A 级已开赛且超预计时长仍无赛果的场次显式化——
+  // 「该有赛果而没有」不再靠用户报障发现（IEM 决赛打完 9h 无赛果即此形态）。
+  // 只警告不拒收：可能=数据源未出赛果，也可能=采集缺陷（停更/合并丢数据），配合失败告警定位。
+  // 预计时长与客户端 statusOf 同口径（BO1 1h…BO5 4h，BO6+ 5.5h）。
+  var staleResults = [];
+  merged.matches.forEach(function (m) {
+    var tier = String(m.tier || "").toLowerCase();
+    if (tier !== "s" && tier !== "a") return;
+    if (m.canceled === true) return;
+    if (m.result && m.result.winner) return;
+    var start = new Date(m.startAt).getTime();
+    if (isNaN(start) || start > Date.now()) return;
+    var bo = parseInt(String(m.format || "BO3").replace(/\D/g, ""), 10) || 3;
+    var hours = bo <= 1 ? 1 : bo === 2 ? 1.5 : bo === 3 ? 2.5 : bo === 4 ? 3.5 : bo === 5 ? 4 : 5.5;
+    if (Date.now() > start + hours * 3600000) {
+      staleResults.push("  - [" + m.game + "/" + (m.tournament || "?") + "] " +
+        (m.teamA && m.teamA.name) + " vs " + (m.teamB && m.teamB.name) +
+        " · " + m.startAt.slice(0, 16).replace("T", " ") + " UTC · BO" + bo + " 超时无赛果");
+    }
+  });
+  if (staleResults.length) {
+    console.warn("\n疑似漏赛果（S/A 级超预计时长无赛果，共 " + staleResults.length + " 场）：");
+    staleResults.slice(0, 20).forEach(function (l) { console.warn(l); });
+    if (staleResults.length > 20) console.warn("  - …等 " + (staleResults.length - 20) + " 场");
+  }
+
   if (errors.length) {
     console.error("\n数据校验失败：");
     errors.forEach(function (e) { console.error("  - " + e); });

@@ -1254,6 +1254,145 @@ check("⑦ auto records 端到端（1.3.14 仿 BLAST 模式）：GSL 全完赛�
   return !!rr && rr.results === null;
 })());
 
+/* ---------- 场景 AD（2026-11-08 四踩后固化）：mergeMatches 属性测试（fuzz） ----------
+   同场键四连坑（slug 孪生 → pid 跨场污染 → canceled 洗掉 → midIndex 孤儿对象）全是
+   「特定数据形态才爆发」的缺陷——逐形态补断言追不上数据源的花样，改为属性测试：
+   确定性种子随机生成 merge 序列（重取/交换主客/改简称/同队对同日多场/无 mid/manual
+   升级/弃赛/脏 startAt），断言不变量：
+   I1 validateMatches 恒零错误（id 唯一——四踩的直接症状）
+   I2 一个 mid 至多一条条目
+   I3 id 稳定性：同 mid 跨轮 id 不变（用户预测/对决挂在 matchId 上，id 漂移=账本断裂）
+   I4 赛果不丢不漂：某场一旦有胜者，后续合并后仍是同一胜者（胜者按队名解析，与主客序无关）
+   I5 有 mid 的场次集合单调不减（重取不制造也不消灭场次）
+   I6 重放幂等：同一轮 incoming 重放一遍，条目数与 mid→id 映射不变（重取 fork 的通杀断言）
+   边界：同 slug 组内「无 mid 条目 + 带 mid 多场」并存的消歧是 slug 键设计的固有歧义
+   （真实场景=手工补录与同队对同日多场并存），不在 fuzz 形态内。 */
+console.log("AD. mergeMatches 属性测试（fuzz，确定性种子）：");
+check("I1-I6 不变量 × 8 种子 × 24 轮（重取/交换/改名/同队多场/manual 升级/弃赛/脏日期）", (function () {
+  function mulberry32(seed) {
+    return function () {
+      var t = (seed += 0x6d2b79f5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var TEAMS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta"];
+  function buildWorld(rnd) {
+    var fixtures = [];
+    var midSeq = 100000;
+    // 组 = game|日|有序队对（= slug 键）。组内第一条 born=1 且可noMid/manual；其余恒带 mid（消歧边界，见组注释）
+    var groups = {};
+    function addFixture(game, a, b, day) {
+      var key = game + "|" + day + "|" + a + ">" + b;
+      var first = !groups[key];
+      groups[key] = 1;
+      var f = {
+        mid: ++midSeq, game: game, a: a, b: b, day: day,
+        born: first ? 1 : 1 + Math.floor(rnd() * 5),
+        noMid: first && rnd() < 0.15,               // manual/liquipedia/旧数据形态：恒无 mid
+        manual: first && rnd() < 0.15,
+        canceled: rnd() < 0.08,                     // 弃赛与赛果互斥
+        resultRound: -1,
+        winnerTeam: -1
+      };
+      if (!f.canceled && rnd() < 0.75) {
+        f.resultRound = 1 + Math.floor(rnd() * 6);
+        f.winnerTeam = rnd() < 0.5 ? a : b;
+      }
+      fixtures.push(f);
+    }
+    addFixture("cs2", 0, 1, 0); addFixture("cs2", 1, 0, 0);        // 同队对同日（交换序组）
+    addFixture("cs2", 0, 1, 0);                                    // 同序同队对同日——slug 键撞车压力
+    addFixture("cs2", 2, 3, 0); addFixture("cs2", 3, 2, 1);
+    addFixture("valorant", 4, 5, 0); addFixture("valorant", 5, 6, 0);
+    for (var i = 0; i < 8; i++) {
+      addFixture(i % 2 ? "cs2" : "valorant", Math.floor(rnd() * 8), Math.floor(rnd() * 8), Math.floor(rnd() * 2));
+    }
+    return fixtures.filter(function (f) { return f.a !== f.b; });
+  }
+  function mkIncoming(f, rnd, round) {
+    var swap = rnd() < 0.3; // PandaScore 完赛重取交换主客（11-08 事故现场形态）
+    var a = swap ? f.b : f.a, b = swap ? f.a : f.b;
+    var shortA = TEAMS[a].slice(0, 3), shortB = TEAMS[b].slice(0, 3);
+    if (rnd() < 0.1) shortA += "X"; // 简称编辑（fork 历史触发之一）
+    var m = {
+      game: f.game, tournament: "Fuzz League", stage: "Group",
+      startAt: rnd() < 0.02 ? "not-a-date" : new Date(Date.UTC(2026, 10, 8 + f.day, 10)).toISOString(),
+      teamA: { name: TEAMS[a], short: shortA }, teamB: { name: TEAMS[b], short: shortB },
+      source: f.manual ? "manual" : "pandascore",
+      status: "scheduled"
+    };
+    if (!f.noMid) m.mid = f.mid;
+    if (f.canceled) {
+      m.canceled = true;
+    } else if (f.resultRound >= 0 && round >= f.resultRound) {
+      var w = f.winnerTeam === a ? "A" : "B"; // 胜者是队，侧位随本次主客序解析——不变量按队名断言
+      m.status = "finished";
+      m.result = { winner: w, score: "2:0" };
+    }
+    return m;
+  }
+  function fuzzRun(seed) {
+    var rnd = mulberry32(seed);
+    var fixtures = buildWorld(rnd);
+    var matches = [];
+    var seen = {}; // mid → {id, winnerTeam}
+    for (var round = 1; round <= 24; round++) {
+      var inc = [];
+      fixtures.forEach(function (f) {
+        if (round < f.born) return;
+        if (rnd() < 0.6) inc.push(mkIncoming(f, rnd, round));
+      });
+      if (!inc.length) continue;
+      var r = Lib.mergeMatches(matches, inc, { retentionDays: 365 });
+      matches = r.matches;
+      var errs = Lib.validateMatches(matches); // I1
+      if (errs.length) return "seed " + seed + " r" + round + " I1: " + errs.join("; ");
+      var mids = {};
+      for (var i = 0; i < matches.length; i++) {
+        var m = matches[i];
+        if (!m.mid) continue;
+        var mk = String(m.mid);
+        if (mids[mk]) return "seed " + seed + " r" + round + " I2: mid 重复 " + mk; // I2
+        mids[mk] = m;
+        if (seen[mk] && seen[mk].id !== m.id) return "seed " + seed + " r" + round + " I3: mid " + mk + " id 漂移"; // I3
+        var wTeam = m.result && m.result.winner ? (m.result.winner === "A" ? m.teamA.name : m.teamB.name) : null;
+        if (seen[mk] && seen[mk].winnerTeam) {
+          if (!wTeam) return "seed " + seed + " r" + round + " I4: mid " + mk + " 赛果丢失"; // I4
+          if (wTeam !== seen[mk].winnerTeam) return "seed " + seed + " r" + round + " I4: mid " + mk + " 胜者漂移";
+        }
+        seen[mk] = { id: m.id, winnerTeam: (seen[mk] && seen[mk].winnerTeam) || wTeam || null };
+      }
+      for (var k in seen) { // I5
+        if (!mids[k]) return "seed " + seed + " r" + round + " I5: mid " + k + " 条目消失";
+      }
+      var r2 = Lib.mergeMatches(matches, inc, { retentionDays: 365 }); // I6 重放幂等
+      var map2 = {};
+      var dup = false;
+      for (var j = 0; j < r2.matches.length; j++) {
+        var mm = r2.matches[j];
+        if (!mm.mid) continue;
+        var k2 = String(mm.mid);
+        if (map2[k2]) { dup = true; break; }
+        map2[k2] = mm.id;
+      }
+      if (dup) return "seed " + seed + " r" + round + " I6: 重放出现 mid 重复";
+      if (r2.matches.length !== matches.length) return "seed " + seed + " r" + round + " I6: 重放条目数漂移";
+      for (var k3 in map2) {
+        if (!seen[k3]) return "seed " + seed + " r" + round + " I6: 重放制造新 mid " + k3;
+        if (map2[k3] !== seen[k3].id) return "seed " + seed + " r" + round + " I6: 重放 id 漂移 mid " + k3;
+      }
+    }
+    return null;
+  }
+  for (var s = 1; s <= 8; s++) {
+    var fail = fuzzRun(s * 7919);
+    if (fail) { console.log("      ! " + fail); return false; }
+  }
+  return true;
+})());
+
 /* ---------- 场景 AE（2026-11-07 用户拍板）：records 战绩桶阶段（双败小组赛按战绩落位） ---------- */
 console.log("AE. records 战绩桶（双败小组赛 · 4 队 GSL 2:0/2:1/1:2/0:2）：");
 var AG = await import(pathToFileURL(path.join(root, "tools", "fetch-pickem.mjs")).href).catch(function () { return null; });

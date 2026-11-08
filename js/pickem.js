@@ -515,6 +515,106 @@ export function settleRewards(stage, rec, eventTier) {
 export function isPlayoffStageKey(key) {
   return /play[\s-]?off|knock\s?out|quarter|semi|final|ro\d+|round of|bracket|eliminat|淘汰/i.test(String(key || ""));
 }
+/** 自动收录 done 判定（1.3.14 防「过早 done」，1.3.7 聚合器同族教训）：
+ *  全部已抓场次完赛 ≠ 赛事结束——小组赛打完、淘汰赛对阵尚未被数据源排期时（排期通常滞后
+ *  0~2 天，长间断赛事可达一周+，实测 MPL Indonesia 间断 17 天后恢复），数据里看不到后续阶段，
+ *  此时判 done 会让赛事带着未打的后续阶段从作业页提前消失。done 需要两条证据链任一成立：
+ *  ① 数据里出现过淘汰赛阶段（isPlayoffStageKey 命中）——决赛都打了，赛事必然收场；
+ *  ② 全部完赛且距最后一场开赛超过本宽限期——等不到后续排期，视为纯循环赛/已收场
+ *     （代价=无淘汰赛的纯循环赛收官后多展示约 3 天）。 */
+var PICKEM_AUTO_DONE_LAG_MS = 3 * 86400000;
+
+/** 北京时间日期聚类（1.3.6 轮次口径，series/records 两路共用）：跨天 +1 轮、同日同轮、脏 startAt 归 0。
+ *  脏 startAt（非法日期）防炸：new Date(NaN).toISOString() 会抛 RangeError——
+ *  内嵌快照不经 normalizeMatches 过滤，一条脏数据不能崩掉整次 boot（夜间自查 R5 定案） */
+function autoStageRounds(list) {
+  var lastDay = "", round = 0;
+  return list.map(function (m) {
+    var startT = new Date(m.startAt).getTime();
+    var day = !isNaN(startT) ? new Date(startT + 8 * 3600000).toISOString().slice(0, 10) : "";
+    if (lastDay && day && day !== lastDay) round += 1;
+    if (day) lastDay = day;
+    return round;
+  });
+}
+
+/** 自动收录的战绩桶模板（1.3.14：auto 赛事小组赛自动升级战绩桶竞猜，仿 BLAST records 模式）。
+ *  桶结构=赛制常识推导（与 tools/pickem-config-helper 同规则）：
+ *  4 队 → GSL 双败（2:0/2:1/1:2/0:2 各 1；队伍从首轮对阵即可全知，截止=阶段开赛前 1h，预测窗口早）；
+ *  8 队×12 场 → 8 队双败（3:0/3:1/2:1/2:2 各 1 + 1:2/0:2 各 2；仅全量可观察时命中）。
+ *  其余形态（瑞士轮/循环赛/6 或 10 队组等）返回 null → 保持 series 赛程展示——宁缺勿滥不硬套；
+ *  推断误判（4 队非 GSL）由 autoRecordsResults 的分布比对兜底：结构不符不出结果、不结算。 */
+function autoRecordsBuckets(list) {
+  var seen = {};
+  var n = 0;
+  list.forEach(function (m) {
+    [m.teamA, m.teamB].forEach(function (t) {
+      if (t && t.name && !seen[t.name]) { seen[t.name] = 1; n += 1; }
+    });
+  });
+  if (n === 4) return [
+    { k: "2:0", label: "2:0 出线", cap: 1 }, { k: "2:1", label: "2:1 出线", cap: 1 },
+    { k: "1:2", label: "1:2 淘汰", cap: 1 }, { k: "0:2", label: "0:2 淘汰", cap: 1 }
+  ];
+  if (n === 8 && list.length === 12) return [
+    { k: "3:0", label: "3:0", cap: 1 }, { k: "3:1", label: "3:1", cap: 1 },
+    { k: "2:1", label: "2:1", cap: 1 }, { k: "2:2", label: "2:2", cap: 1 },
+    { k: "1:2", label: "1:2 淘汰", cap: 2 }, { k: "0:2", label: "0:2 淘汰", cap: 2 }
+  ];
+  return null;
+}
+
+/** 战绩桶结果推导（与聚合器 recordsResults 同口径）：全部完赛（弃赛容忍）且实际 W:L 分布与
+ *  桶容量逐一吻合才出结果——推断误判时宁缺勿滥返回 null（阶段不出结果、选择不结算）。 */
+function autoRecordsResults(teamList, buckets, compact) {
+  var allDone = compact.length > 0 && compact.every(function (m) {
+    return m.winner === "A" || m.winner === "B" || m.canceled === true;
+  });
+  if (!allDone) return null;
+  var byBucket = {};
+  buckets.forEach(function (b) { byBucket[b.k] = []; });
+  teamList.forEach(function (t) {
+    var k = t.w + ":" + t.l;
+    if (byBucket[k]) byBucket[k].push(t.name);
+  });
+  return buckets.every(function (b) { return byBucket[b.k].length === b.cap; }) ? byBucket : null;
+}
+
+/** 构建自动收录的 records 阶段：id 加 "|rec" 后缀与同源 series 阶段的 recKey 隔离——
+ *  历史（1.3.12 时代）逐场选择仍挂在同源 series 阶段正常结算，渲染层按 srcStage 去重隐藏 series
+ *  （records 桶体自带「对阵与赛果」展示，无重复观感）。coinTier 与 helper/聚合器一致：A 级铜、其余银。 */
+function buildAutoRecordsStage(sk, list, rounds, buckets, eventIsA) {
+  var teams = {};
+  var order = [];
+  var compact = list.map(function (m, i) {
+    [m.teamA, m.teamB].forEach(function (t) {
+      if (!t || !t.name) return;
+      if (!teams[t.name]) {
+        teams[t.name] = { name: t.name, short: t.short || "", region: t.region || "", logo: t.logo || "", w: 0, l: 0 };
+        order.push(t.name);
+      } else if (!teams[t.name].short && t.short) teams[t.name].short = t.short;
+    });
+    var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
+    if (winner) {
+      var win = winner === "A" ? m.teamA : m.teamB;
+      var lose = winner === "A" ? m.teamB : m.teamA;
+      if (win && teams[win.name]) teams[win.name].w += 1;
+      if (lose && teams[lose.name]) teams[lose.name].l += 1;
+    }
+    return { id: m.id, a: m.teamA.name, b: m.teamB.name, startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: rounds[i], canceled: m.canceled === true || undefined };
+  });
+  var teamList = order.map(function (n) { return teams[n]; })
+    .sort(function (x, y) { return (y.w - x.w) || (x.l - y.l) || (x.name < y.name ? -1 : 1); });
+  return {
+    id: sk + "|rec", type: "records", label: sk + " · 战绩竞猜",
+    srcStage: sk,
+    coinTier: eventIsA ? 1 : 2,
+    startsAt: list[0].startAt, endsAt: list[list.length - 1].startAt,
+    teams: teamList, matches: compact, buckets: buckets,
+    results: autoRecordsResults(teamList, buckets, compact)
+  };
+}
+
 export function buildAutoEvents(matches, excludeTournaments) {
   var excluded = {};
   (excludeTournaments || []).forEach(function (t) { excluded[t] = 1; });
@@ -535,36 +635,38 @@ export function buildAutoEvents(matches, excludeTournaments) {
     var ev = byEvent[tn];
     var stageKeys = Object.keys(ev.stages);
     if (!stageKeys.length) return;
-    var stages = [];
     var lastStart = 0, allDone = true, anyStarted = false;
+    var sawPlayoffs = false; // 证据链①：数据里出现过淘汰赛阶段名
     var allA = true; // 赛事等级：全部场次 tier=a 才算 A 级（同赛事 tier 一致，防御混合）
     stageKeys.forEach(function (sk) {
+      if (isPlayoffStageKey(sk)) sawPlayoffs = true;
+      ev.stages[sk].forEach(function (m) { if (m.tier !== "a") allA = false; });
+    });
+    var stages = [];
+    stageKeys.forEach(function (sk) {
       var list = ev.stages[sk].slice().sort(function (a, b) { return new Date(a.startAt) - new Date(b.startAt); });
+      var rounds = autoStageRounds(list);
+      // 淘汰赛阶段名先行排除（semifinals 等也是 4 队——绝不能套 GSL 桶），其余按形态推导战绩桶
+      var recBuckets = isPlayoffStageKey(sk) ? null : autoRecordsBuckets(list);
+      if (recBuckets) stages.push(buildAutoRecordsStage(sk, list, rounds, recBuckets, allA));
       var teamsSeen = {};
-      var lastDay = "", round = 0;
-      var ms = list.map(function (m) {
-        // 脏 startAt（非法日期）防炸：new Date(NaN).toISOString() 会抛 RangeError——
-        // 内嵌快照不经 normalizeMatches 过滤，一条脏数据不能崩掉整次 boot（夜间自查 R5 定案）
+      var ms = list.map(function (m, i) {
         var startT = new Date(m.startAt).getTime();
-        var day = !isNaN(startT) ? new Date(startT + 8 * 3600000).toISOString().slice(0, 10) : "";
-        if (lastDay && day && day !== lastDay) round += 1;
-        if (day) lastDay = day;
         var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
         if (winner || (!isNaN(startT) && startT <= Date.now())) anyStarted = true;
         if (!winner && m.canceled !== true) allDone = false;
-        if (m.tier !== "a") allA = false;
         if (!isNaN(startT)) lastStart = Math.max(lastStart, startT);
         teamsSeen[m.teamA.name] = { name: m.teamA.name, short: m.teamA.short || "" };
         teamsSeen[m.teamB.name] = { name: m.teamB.name, short: m.teamB.short || "" };
         // canceled（1.3.8 弃赛）：auto 事件此前没透传，弃赛场会永远显示成未完成
-        return { id: m.id, a: m.teamA.name, b: m.teamB.name, startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: round, canceled: m.canceled === true || undefined };
+        return { id: m.id, a: m.teamA.name, b: m.teamB.name, startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: rounds[i], canceled: m.canceled === true || undefined };
       });
       stages.push({
         id: sk, type: "series", label: sk,
         coinTier: 1,
-        // displayOnly（2026-11-08 用户拍板）：auto 事件转纯展示——作业页与普通竞猜的差异化
-        // 在于「预测赛事结构」（战绩桶/名次/瑞士轮，手工配置路径），逐场猜胜负与普通竞猜无异；
-        // 历史已产生的选择仍随数据结算（settle 不挡 displayOnly），新选择入口关闭
+        // displayOnly（2026-11-08 用户拍板；1.3.14 收窄）：auto 事件的可猜形态=结构化竞猜——
+        // 4 队/8 队双败小组已自动升级为 records 战绩桶；series 只承担①赛程展示（淘汰赛/形态
+        // 未知阶段）②历史（1.3.12 时代）逐场选择的结算通道（有 records 孪生的组渲染层隐藏），新选择入口关闭
         displayOnly: true,
         startsAt: list[0].startAt, endsAt: list[list.length - 1].startAt,
         teams: Object.keys(teamsSeen).map(function (n) { return teamsSeen[n]; }),
@@ -575,7 +677,8 @@ export function buildAutoEvents(matches, excludeTournaments) {
     events.push({
       id: "auto:" + tn, game: ev.game, name: tn,
       tier: allA ? "a" : "", // 1.3.6 硬币改版：A 级币级整体降一级
-      status: allDone ? "done" : anyStarted ? "active" : "upcoming",
+      status: allDone && (sawPlayoffs || Date.now() > lastStart + PICKEM_AUTO_DONE_LAG_MS)
+        ? "done" : anyStarted ? "active" : "upcoming",
       endsAt: lastStart ? new Date(lastStart + 12 * 3600000).toISOString() : "",
       stages: stages, auto: true
     });

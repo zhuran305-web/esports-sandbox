@@ -49,7 +49,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.13";
+  var APP_VERSION = "1.3.14";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -1321,6 +1321,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var statusMap = new Map();
     var filtered = matchesFiltered(statusMap);
 
+    // 主页「IEM 作业」公测直入口（1.3.10）：scoped 赛事已结束/不存在时隐藏按钮（1.3.14 随作业页
+    // 已结束过滤），避免入口点进去是「暂无可竞猜的赛事」空页；scoped 赛事重新可看时自动回归
+    var scopedWrap = $("#homePickemBtn");
+    scopedWrap = scopedWrap ? scopedWrap.closest(".selector") : null;
+    if (scopedWrap) {
+      var scopedEv = pickemEventById(PICKEM_SCOPED_EVENT);
+      scopedWrap.hidden = !(scopedEv && scopedEv.status !== "done");
+    }
+
     var groups = { open: [], locked: [], live: [], awaiting: [], finished: [] };
     filtered.forEach(function (m) { groups[statusMap.get(m)].push(m); });
 
@@ -1968,11 +1977,17 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     });
   }
 
+  /** 作业页可见赛事（1.3.14）：已结束赛事不再展示（列表/游戏计数/空态同源）；
+   *  结算与 recKey 查找仍走全量 pickemEvents——历史选择照常结算、已结束赛事条目仍可解析。 */
+  function pickemVisibleEvents() {
+    return pickemEvents().filter(function (ev) { return ev.status !== "done"; });
+  }
+
   /** 作业页统一口径（1.3.6，假设 75/76）：游戏筛选 + 搜索词过滤后的赛事列表——chips 与主体同源。
    *  公测直入口（1.3.10）锁定 IEM 事件：scoped 时其余赛事一律不出现。 */
   function pickemFilteredEvents() {
     var q = pickemQuery.trim().toLowerCase();
-    var base = pickemEvents();
+    var base = pickemVisibleEvents();
     if (pickemScoped) base = base.filter(function (ev) { return ev.id === PICKEM_SCOPED_EVENT; });
     return base.filter(function (ev) {
       if (pickemGame !== "all" && ev.game !== pickemGame) return false;
@@ -2551,7 +2566,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (hasSwiss) return "Major 规则：瑞士轮第 1/2/3 阶段猜对得 🥉/🥈/🥇 · 淘汰赛冠军 💎 亚/季军 🥇";
     if (hasRecords) {
       var tier = ev.tier === "a" ? "🥉 铜币" : "🥈 银币";
-      return "战绩桶规则：把每支队伍放进小组赛最终战绩（猜对一桶得 " + tier + "）· 淘汰赛冠军 💎/🥇 亚/季军 🥇（S/A）";
+      // auto 赛事没有 placement（淘汰赛纯展示）——文案按形态分流，避免误导「猜冠军得钻石」
+      var tail = ev.auto ? " · 淘汰赛等其他阶段仅赛程展示" : " · 淘汰赛冠军 💎/🥇 亚/季军 🥇（S/A）";
+      return "战绩桶规则：把每支队伍放进小组赛最终战绩（猜对一桶得 " + tier + "）" + tail;
     }
     if (ev.tier === "a") return "A 级赛事：小组赛猜对每场得 🥉 铜币 · 淘汰赛逐场不计币（名次奖励见名次竞猜赛事）";
     return "S 级赛事：小组赛猜对每场得 🥈 银币 · 淘汰赛逐场不计币（名次奖励见名次竞猜赛事）";
@@ -2570,8 +2587,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           ? "我的硬币：" + pickemCoinsHTML() + " · 不可交易/不可压注，仅荣誉展示（硬币排行榜在实验功能内）"
           : esc(pickemCoinRuleText(ev))) +
       "</div>";
-    // series 阶段合并为「轮次优先」布局（第 N 轮 → 组内子块），swiss/placement/bracket 保持独立面板
-    var seriesStages = ev.stages.filter(function (s) { return s.type === "series"; });
+    // series 阶段合并为「轮次优先」布局（第 N 轮 → 组内子块），swiss/placement/bracket 保持独立面板。
+    // 有 records 孪生（srcStage）的同源 series 阶段不渲染——桶体已含「对阵与赛果」，series 仅留作
+    // 历史（1.3.12 时代）逐场选择的结算通道（settlePickem 仍按键找到它）
+    var recTwin = {};
+    ev.stages.forEach(function (s) { if (s.type === "records" && s.srcStage) recTwin[s.srcStage] = 1; });
+    var seriesStages = ev.stages.filter(function (s) { return s.type === "series" && !recTwin[s.id]; });
     var restStages = ev.stages.filter(function (s) { return s.type !== "series"; });
     if (seriesStages.length) html += pickemMergedSeriesHTML(ev, seriesStages);
     restStages.forEach(function (stage) { html += pickemStageHTML(ev, stage); });
@@ -2590,7 +2611,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var evList = $("#pickemEvList");
     var body = $("#pickemBody");
     if (!body) return;
-    var all = pickemEvents();
+    var all = pickemVisibleEvents(); // 1.3.14：已结束赛事不进列表/计数/空态（与 pickemFilteredEvents 同源）
     if (pickemScoped) {
       // 公测直入口：只显示 IEM 作业赛事——选择器整行隐藏（其他赛事不展示）
       all = all.filter(function (e) { return e.id === PICKEM_SCOPED_EVENT; });

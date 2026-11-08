@@ -750,7 +750,8 @@ check("series 逐场计分（1.3.4）：只算猜过的场次（中途接入公�
       { id: "s-m2", a: "队3", b: "队4", startAt: iso(3 * 3600000), winner: "", score: "" } ] };
     return PK.stageOpenForPicks(stage) === true && PK.pickableSeriesMatches(stage).length === 1;
   })());
-check("自动收录 S/A 赛事（1.3.6）：tier 筛选 + stage 分组 series + 手工去重 + 日期聚类轮次 + 状态推断",
+check("自动收录 S/A 赛事（1.3.6 建；1.3.14 records 升级）：tier 筛选 + stage 分组 + 手工去重 + 日期聚类轮次 + 状态推断" +
+  " + 4 队组自动升级战绩桶（淘汰赛阶段名豁免）",
   (function () {
     var now = Date.now();
     function m(id, tier, tn, st, a, b, startAtMs, winner) {
@@ -771,18 +772,28 @@ check("自动收录 S/A 赛事（1.3.6）：tier 筛选 + stage 分组 series + 
     var evs = PK.buildAutoEvents(matches, ["手工赛事"]);
     var xm = evs.filter(function (e) { return e.name === "X Major"; })[0];
     if (!xm || evs.some(function (e) { return e.name === "手工赛事"; })) return false;
-    if (xm.status !== "active" || xm.stages.length !== 2) return false; // Stage 1 + Playoffs 两个 series 阶段
+    if (xm.status !== "active" || xm.stages.length !== 3) return false; // Stage1(records+series孪生) + Playoffs(series)
     if (xm.tier !== "") return false; // s+a 混合 → 按 S 级处理
+    // Stage 1：4 队 → 自动升级 records（1.3.14）+ 同源 series 孪生（历史逐场选择结算通道）
+    var rec1 = xm.stages.filter(function (s) { return s.id === "Stage 1|rec"; })[0];
     var s1 = xm.stages.filter(function (s) { return s.id === "Stage 1"; })[0];
     var po = xm.stages.filter(function (s) { return s.id === "Playoffs"; })[0];
-    if (!s1 || !po || s1.type !== "series" || po.type !== "series") return false;
-    if (s1.matches.length !== 2 || po.matches.length !== 1) return false;
-    if (s1.matches[0].round !== 0 || po.matches[0].round !== 0) return false;
-    // 2026-11-08 auto 事件纯展示：全部 series 阶段 displayOnly（逐场竞猜下线）
+    if (!rec1 || !s1 || !po || rec1.type !== "records" || s1.type !== "series" || po.type !== "series") return false;
+    if (rec1.srcStage !== "Stage 1" || rec1.coinTier !== 2 || rec1.results !== null) return false; // S 级银币；未完赛无结果
+    if (rec1.buckets.length !== 4 || rec1.buckets[0].k !== "2:0" ||
+        rec1.buckets.reduce(function (s, b) { return s + b.cap; }, 0) !== 4) return false; // GSL 桶 2:0/2:1/1:2/0:2 各 1
+    if (rec1.teams.length !== 4) return false;
+    var wl = {};
+    rec1.teams.forEach(function (t) { wl[t.name] = t.w + ":" + t.l; });
+    if (wl["甲"] !== "1:0" || wl["乙"] !== "0:1" || wl["丙"] !== "0:1" || wl["丁"] !== "1:0") return false; // W:L 已计
+    if (rec1.matches[0].round !== 0) return false;
+    if (s1.displayOnly !== true || po.displayOnly !== true) return false; // series 全部纯展示
     if (s1.coinTier !== 1 || po.coinTier !== 1) return false;
-    if (s1.displayOnly !== true || po.displayOnly !== true) return false;
+    if (xm.stages.some(function (s) { return s.type === "records" && s.srcStage === "Playoffs"; })) return false; // 淘汰赛豁免
     var acup = evs.filter(function (e) { return e.name === "A 级杯"; })[0];
     if (!acup || acup.tier !== "a") return false; // 全 a → A 级（币级整体降一级）
+    var acupRec = acup.stages.filter(function (s) { return s.type === "records"; })[0];
+    if (!acupRec || acupRec.coinTier !== 1) return false; // A 级战绩桶=铜币
     // Y Cup 组内只有 tier=b → 不收录
     return !evs.some(function (e) { return e.name === "Y Cup"; });
   })());
@@ -819,8 +830,17 @@ check("作业页筛选与搜索（1.3.6 统一口径；1.3.12 换主页同款浮
   /#pickemGamePopover"\)\.hidden/.test(appSrc) && // 胶囊开关浮层
   /function pickemFilteredEvents/.test(appSrc) && // 统一口径：浮层列表与主体都走它
   (appSrc.match(/pickemFilteredEvents\(\)/g) || []).length >= 1 &&
+  /function pickemVisibleEvents/.test(appSrc) && // 1.3.14：已结束赛事不进作业页（列表/计数/空态同源）
+  /var base = pickemVisibleEvents\(\)/.test(appSrc) &&
+  /var all = pickemVisibleEvents\(\)/.test(appSrc) &&
+  /pickemEventById\(PICKEM_SCOPED_EVENT\)/.test(appSrc) && // 主页公测入口：scoped 赛事已结束→隐藏按钮
+  /scopedWrap\.hidden = !\(scopedEv && scopedEv\.status !== "done"\)/.test(appSrc) &&
   /var pickemGame = "all"/.test(appSrc) && /var pickemQuery = ""/.test(appSrc) &&
   /function buildAutoEvents/.test(pickemJsSrc) && /buildAutoEvents\(MATCHES, pickemManualTournaments\(\)\)/.test(appSrc) &&
+  /function autoRecordsBuckets/.test(pickemJsSrc) && // 1.3.14：4 队组自动升级战绩桶（淘汰赛阶段名豁免）
+  /isPlayoffStageKey\(sk\) \? null : autoRecordsBuckets/.test(pickemJsSrc) &&
+  /id: sk \+ "\|rec"/.test(pickemJsSrc) && // records 阶段 recKey 与同源 series 阶段隔离（历史选择结算通道不冲撞）
+  /recTwin\[s\.srcStage\] = 1/.test(appSrc) && /!recTwin\[s\.id\]/.test(appSrc) && // 渲染去重：孪生 series 隐藏（桶体已含对阵与赛果）
   /pk-selectors\[hidden\]/.test(cssSrc)); // [hidden] 显式补丁（浮层常显陷阱）
 check("状态与结算：state.pickem 全链（init/load/快照/校验/云合并）+ settlePickem 四挂点 + Sync.pack 白名单",
   /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}/.test(appSrc) &&
@@ -1085,6 +1105,50 @@ check("⑤ canceled 标记经 merge 往返保留", (function () {
   var r = Lib.mergeMatches(existing, [], { retentionDays: 45 });
   return r.matches.length === 1 && r.matches[0].canceled === true;
 })());
+check("⑥ midIndex 与 map 同源（11-08 晚 valorant 重复 id 事故）：交换序重取不再 fork 出同 id 孪生", (function () {
+  var mk = function (mid, a, b, w) {
+    return { game: "valorant", mid: mid, tournament: "VRL", stage: "Group", startAt: "2026-11-08T03:15:00.000Z",
+      teamA: { name: a, short: a.slice(0, 3) }, teamB: { name: b, short: b.slice(0, 3) },
+      status: w ? "finished" : "scheduled", source: "pandascore",
+      result: w ? { winner: w, score: "1:0" } : null };
+  };
+  var base = Lib.mergeMatches([], [mk(1797548, "Bonkers", "MeatZn", null)]).matches;
+  // 重取：主客交换 + 赛果落地（PandaScore 完赛重取换主客序——事故现场形态）
+  var r = Lib.mergeMatches(base, [mk(1797548, "MeatZn", "Bonkers", "A")]);
+  return r.matches.length === 1 && Lib.validateMatches(r.matches).length === 0 &&
+    r.matches[0].result && r.matches[0].result.winner === "A";
+})());
+check("⑦ 同队对同日第二场（mid 不同）→ 独立条目 + id 后缀去重，互不污染（slug 回退不再并场）", (function () {
+  var mk = function (mid, a, b, w) {
+    return { game: "valorant", mid: mid, tournament: "VRL", stage: "Group", startAt: "2026-11-08T03:15:00.000Z",
+      teamA: { name: a, short: a.slice(0, 3) }, teamB: { name: b, short: b.slice(0, 3) },
+      status: w ? "finished" : "scheduled", source: "pandascore",
+      result: w ? { winner: w, score: "1:0" } : null };
+  };
+  var base = Lib.mergeMatches([], [mk(111, "A队", "B队", "A")]).matches;
+  var r = Lib.mergeMatches(base, [mk(222, "A队", "B队", "A")]); // 同序第二场（再相遇/背靠背）
+  if (r.matches.length !== 2) return false;
+  var ids = {};
+  r.matches.forEach(function (m) { ids[m.id] = m.mid; });
+  var keys = Object.keys(ids);
+  return keys.length === 2 && keys[0] !== keys[1] &&
+    (ids[keys[0]] === 111 || ids[keys[1]] === 111) && // 各保各的 mid（成绩互不覆盖的前提）
+    (ids[keys[0]] === 222 || ids[keys[1]] === 222) &&
+    Lib.validateMatches(r.matches).length === 0;
+})());
+check("⑧ manual 升级 mid 后条目收编到 mid 键（旧 slug 槽位残留会在交换重取时 fork 同 id 孪生）", (function () {
+  var mk = function (mid, a, b, w, src) {
+    return { game: "valorant", mid: mid, tournament: "VRL", stage: "Group", startAt: "2026-11-08T03:15:00.000Z",
+      teamA: { name: a, short: a.slice(0, 3) }, teamB: { name: b, short: b.slice(0, 3) },
+      status: w ? "finished" : "scheduled", source: src || "pandascore",
+      result: w ? { winner: w, score: "1:0" } : null };
+  };
+  var base = Lib.mergeMatches([], [mk(null, "A队", "B队", null, "manual")]).matches;
+  var up = Lib.mergeMatches(base, [mk(555, "A队", "B队", "A")]); // manual → pandascore 升级
+  if (up.matches.length !== 1 || up.matches[0].mid !== 555) return false;
+  var r = Lib.mergeMatches(up.matches, [mk(555, "B队", "A队", "A")]); // 升级后交换序重取
+  return r.matches.length === 1 && r.matches[0].mid === 555 && Lib.validateMatches(r.matches).length === 0;
+})());
 
 /* ---------- 场景 AC（2026-11-07 用户口径）：auto 事件淘汰赛币级升级 + 已完赛不展示 + 弃赛透传 ---------- */
 console.log("AC. auto 事件淘汰赛币级 / 弃赛透传：");
@@ -1126,17 +1190,68 @@ check("④ series 结算：displayOnly 阶段的历史已提交选择照常结�
   var sGroup = PK.settleRewards(seriesStage(), rec, "");
   return display.coins.c === 1 && aGroup.coins.c === 1 && sGroup.coins.s === 1;
 })());
-check("⑤ 弃赛透传：canceled 场进 stage matches、不阻塞事件 done", (function () {
+check("⑤ 弃赛透传：canceled 场进 stage matches、不阻塞事件 done（场次取 4 天前——超 done 宽限期，见 ⑥）", (function () {
+  var old = function (h) { return new Date(Date.now() - 4 * 86400000 + h * 3600000).toISOString(); };
   var evs = PK.buildAutoEvents([
     { id: "d1", game: "cs2", tier: "a", tournament: "弃赛测试赛", stage: "Group Stage",
-      teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: "2026-11-08T10:00:00.000Z", result: { winner: "A", score: "1:0" } },
+      teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: old(0), result: { winner: "A", score: "1:0" } },
     { id: "d2", game: "cs2", tier: "a", tournament: "弃赛测试赛", stage: "Group Stage",
-      teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: "2026-11-08T12:00:00.000Z", result: null, canceled: true }
+      teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: old(2), result: null, canceled: true }
   ], []);
   var ev = evs[0];
   var stage = ev.stages[0];
   var canceledMatch = stage.matches.filter(function (m) { return m.canceled === true; });
   return ev.status === "done" && canceledMatch.length === 1 && stage.matches.length === 2;
+})());
+check("⑥ done 双证据链（1.3.14 防「小组赛打完误判联赛结束」）：仅小组赛完赛→宽限期内 active；" +
+  "超宽限期→done；出现过 Playoffs 阶段且完赛→立即 done；有未打场次→active", (function () {
+  function mk(id, stage, daysAgo, withResult) {
+    return { id: id, game: "cs2", tier: "s", tournament: "判定测试赛", stage: stage,
+      teamA: { name: "甲" + id }, teamB: { name: "乙" + id },
+      startAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+      result: withResult ? { winner: "A", score: "1:0" } : null };
+  }
+  // a) 仅小组赛、最近打完、数据里无淘汰赛阶段 → 宽限期内不判 done（淘汰赛可能尚未被数据源排期）
+  var grace = PK.buildAutoEvents([mk("g1", "Group Stage", 1, true), mk("g2", "Group Stage", 0.5, true)], [])[0];
+  // b) 仅小组赛、4 天前打完 → 超宽限期，判 done（视为纯循环赛/已收场）
+  var lagged = PK.buildAutoEvents([mk("g1", "Group Stage", 5, true), mk("g2", "Group Stage", 4, true)], [])[0];
+  // c) 小组赛 + Playoffs 都打完（哪怕刚打完）→ 结构证据成立（决赛已打），立即 done
+  var withPo = PK.buildAutoEvents([mk("g1", "Group Stage", 2, true), mk("p1", "Playoffs", 0.5, true)], [])[0];
+  // d) 有未来场次（无结果）→ allDone=false，照旧 active
+  var future = PK.buildAutoEvents([mk("g1", "Group Stage", 1, true), mk("g2", "Group Stage", -2, false)], [])[0];
+  return grace.status === "active" && lagged.status === "done" &&
+    withPo.status === "done" && future.status === "active";
+})());
+check("⑦ auto records 端到端（1.3.14 仿 BLAST 模式）：GSL 全完赛按实际战绩落桶出结果 →" +
+  " scorePhase/settleRewards 走桶语义（S 级银 ×N）；4 队误判形态（循环赛）宁缺勿滥不出结果", (function () {
+  function g(id, a, b, w, daysAgo) {
+    return { id: id, game: "cs2", tier: "s", tournament: "GSL 自动赛", stage: "Group A",
+      teamA: { name: a, short: a.slice(0, 2) }, teamB: { name: b, short: b.slice(0, 2) },
+      startAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+      result: w ? { winner: w, score: "2:0" } : null };
+  }
+  var picks = function () { return { type: "records", picks: { "2:0": ["A队"], "2:1": ["B队"], "1:2": ["C队"], "0:2": ["D队"] } }; };
+  // GSL 5 场（winner=侧位，teamA 均为胜方）：上半 A-B / C-D；胜者组决赛 A-C；败者首轮 B-D；决胜 B-C
+  var ev = PK.buildAutoEvents([
+    g("r1", "A队", "B队", "A", 9), g("r2", "C队", "D队", "A", 9),
+    g("uf", "A队", "C队", "A", 8), g("lr", "B队", "D队", "A", 7), g("dec", "B队", "C队", "A", 6)
+  ], [])[0];
+  var rec = ev.stages.filter(function (s) { return s.type === "records"; })[0];
+  if (!rec || rec.results === null) return false;
+  // 战绩：A 2:0 · B 2:1 · C 1:2 · D 0:2 —— 与 GSL 桶逐一吻合
+  if ((rec.results["2:0"] || []).join() !== "A队" || (rec.results["2:1"] || []).join() !== "B队" ||
+      (rec.results["1:2"] || []).join() !== "C队" || (rec.results["0:2"] || []).join() !== "D队") return false;
+  var r = PK.scorePhase(rec, picks());
+  var rw = PK.settleRewards(rec, picks(), "");
+  if (!r || r.correct !== 4 || r.total !== 4 || !r.perfect) return false;
+  if (!rw || rw.coins.s !== 4) return false; // S 级（tier ""）→ 银币
+  // 误判兜底：4 队循环赛（6 场，各 3 战）——战绩分布 3:0/2:1/1:2/0:3 不落 GSL 桶 → 结果 null 不结算
+  var rr = PK.buildAutoEvents([
+    g("c1", "A队", "B队", "A", 9), g("c2", "C队", "D队", "A", 9),
+    g("c3", "A队", "C队", "A", 8), g("c4", "B队", "D队", "A", 8),
+    g("c5", "A队", "D队", "A", 7), g("c6", "B队", "C队", "A", 7)
+  ], [])[0].stages.filter(function (s) { return s.type === "records"; })[0];
+  return !!rr && rr.results === null;
 })());
 
 /* ---------- 场景 AE（2026-11-07 用户拍板）：records 战绩桶阶段（双败小组赛按战绩落位） ---------- */

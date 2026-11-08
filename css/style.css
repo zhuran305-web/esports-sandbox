@@ -3049,16 +3049,7 @@ html[data-theme="light"] .cer-quote input {
 
 /* ============================== Pick'Em 赛事竞猜（1.4.0 实验功能） ==============================
    说明：追加在文件末尾（基础规则之后），本组自己的窄屏 media 块也放在本组基础规则之后。 */
-.pickem-evtabs {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 2px 0 4px;
-  scrollbar-width: none;
-}
 /* display:flex 会压制 [hidden] 的 UA 隐藏（同 .game-popover[hidden] 先例）——scoped 公测入口显式补丁 */
-.pickem-evtabs[hidden] { display: none; }
-.pickem-evtabs::-webkit-scrollbar { display: none; }
 .pickem-evtab {
   flex: 0 0 auto;
   padding: 7px 12px;
@@ -3550,29 +3541,3 @@ html[data-theme="light"] .cer-quote input {
   white-space: nowrap;
 }
 .pk-evtag.is-done { color: var(--text-faint); }
-.pk-games {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 10px 0 4px;
-  scrollbar-width: none;
-}
-.pk-games::-webkit-scrollbar { display: none; }
-.pk-game {
-  flex: 0 0 auto;
-  padding: 6px 11px;
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  background: var(--surface);
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 700;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.pk-game.is-active {
-  border-color: rgba(var(--accent-rgb), .5);
-  background: rgba(var(--accent-rgb), .1);
-  color: var(--accent);
-}

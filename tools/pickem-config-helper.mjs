@@ -63,7 +63,6 @@ function stageShape(st) {
     { k: "2:1", label: "2:1", cap: 1 }, { k: "2:2", label: "2:2", cap: 1 },
     { k: "1:2", label: "1:2 淘汰", cap: 2 }, { k: "0:2", label: "0:2 淘汰", cap: 2 }
   ] };
-  if (/play ?off|淘汰|bracket|final/i.test("")) return null; // 占位（不用）
   return { kind: "unknown", buckets: null };
 }
 function isPlayoffStageName(sn) {

@@ -49,7 +49,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.12";
+  var APP_VERSION = "1.3.13";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -2383,7 +2383,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
      手动点开/收起记录进 pickemCollapseOverrides（会话内有效），优先于默认值 */
   var pickemCollapseOverrides = {};
 
-  /** series 阶段逐场币级展示（与 settleRewards 同口径）：淘汰赛阶段（noCoin）逐场不计币返回 null；
+  /** series 阶段逐场币级展示（与 settleRewards 同口径）：auto 事件纯展示（displayOnly）返回 null；
    *  其余按赛事等级币（A 级铜、其余银） */
   function pickemSeriesCoin(ev, stage) {
     if (stage.displayOnly) return null; // displayOnly：auto 事件纯展示（2026-11-08）

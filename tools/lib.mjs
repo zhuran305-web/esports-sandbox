@@ -41,9 +41,9 @@ export function normalizeTeam(team) {
     short: String(team.short || "").trim() || shortName(name),
     region: String(team.region || "").trim(),
     logo: String(team.logo || "").trim(),
-    // PandaScore opponent.id（2026-11-07 防孪生）：跨「主客交换/队名简称编辑」稳定，
-    // mergeMatches 用它做主键索引；无 pid 的来源（manual/liquipedia/旧数据）为 undefined，
-    // JSON.stringify 自动省略，不进产物
+    // PandaScore opponent.id：队伍级稳定标识（team-ids 管线/选手管线引用）。
+    // 注意：同两队可有多场交锋——pid 对拼不能当「同场键」（11-08 事故，见 matchMidKey）；
+    // 无 pid 的来源（manual/liquipedia/旧数据）为 undefined，JSON.stringify 自动省略
     pid: pid > 0 ? Math.floor(pid) : undefined
   };
 }

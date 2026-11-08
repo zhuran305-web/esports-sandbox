@@ -172,9 +172,15 @@ function makeId(m, used) {
   return id;
 }
 
+/** 条目的 map 键（2026-11-08 三修）：带 mid 用 mid 键（与主客序无关——交换序重取天然同键，
+ *  无键迁移问题）；无 mid（manual/旧数据）用 slug 键（行为不变）。 */
+function entryMapKey(m) {
+  return matchMidKey(m) || matchKey(m);
+}
+
 /*
  * 合并规则：
- * 1. 同一场比赛（游戏 + 日期 + 双方）视为同一条记录
+ * 1. 同一场比赛：带 mid 按 mid 键唯一认定（PandaScore match id 唯一且稳定）；无 mid 按 slug 键
  * 2. 有赛果的数据优先于无赛果的
  * 3. 来源优先级：manual > liquipedia > pandascore
  * 4. 已存在的 id 和 note 尽量保留，避免下注记录对不上
@@ -188,24 +194,30 @@ export function mergeMatches(existing, incoming, options) {
 
   existing.forEach(function (m) { if (m.id) usedIds.add(m.id); });
 
-  var map = new Map();
-  var entryKeys = new Map(); // entry 对象 → 当前 slug 键（mid 命中跨键合并时清理旧键）
+  var map = new Map();        // mapKey → 条目（normalize 后对象；键=mid 键|slug 键，见 entryMapKey）
+  var entryKeys = new Map();  // entry 对象 → 当前 slug 键（无 mid 条目交换序重取时迁移清理用）
   existing.forEach(function (m) {
     var n = normalizeMatch(m, m.source || "manual");
     if (n) {
-      map.set(matchKey(n), n);
+      map.set(entryMapKey(n), n);
       entryKeys.set(n, matchKey(n));
     }
   });
 
-  // 同场标识索引（2026-11-08 二次修正）：**PandaScore match id 才是稳定的同场标识**。
-  // 前一版用 team pid 对拼（game|pid|min:max）——「同两队」被当成「同一场」：双败败者组
-  // 再相遇、背靠背、双循环的同两队多场比赛互相污染 + 产生重复 id，采集连败 26h。
-  // 无 mid 的来源（manual/liquipedia/旧数据）仍走 slug 键（行为不变）。
+  // 同场标识索引（2026-11-08 二次修正；三修=与 map 同一批对象）：
+  // **PandaScore match id 才是稳定的同场标识**。前一版用 team pid 对拼——「同两队」被当成
+  // 「同一场」：双败败者组再相遇、背靠背、双循环的同两队多场互相污染 + 重复 id，采集连败 26h。
+  // 三修（11-08 晚，valorant 重复 id 事故）：midIndex 此前存的是 **normalize 前的 existing 原对象**，
+  // 而 map/entryKeys 存 normalize 后对象——mid 命中拿到不在 map 里的孤儿 → entryKeys 查不到旧键
+  // → 主客交换重取清不掉旧 slug 键 → fork 出同 id 孪生（validate 拒收，采集停更 9h）。
+  // 索引必须从 map 值构建，与 map/entryKeys 同一批对象。
   var midIndex = new Map();
-  existing.forEach(function (m) {
-    var mk = matchMidKey(m);
-    if (mk && !midIndex.has(mk)) midIndex.set(mk, m);
+  var slugIndex = new Map(); // slug 键 → 条目（first-wins；仅供无 mid 来源比对/回退）
+  map.forEach(function (n) {
+    var mk = matchMidKey(n);
+    if (mk && !midIndex.has(mk)) midIndex.set(mk, n);
+    var sk = matchKey(n);
+    if (!slugIndex.has(sk)) slugIndex.set(sk, n);
   });
 
   var added = 0;
@@ -214,20 +226,28 @@ export function mergeMatches(existing, incoming, options) {
   incoming.forEach(function (raw) {
     var m = normalizeMatch(raw, raw.source);
     if (!m) return;
-    var key = matchKey(m);
+    var key = entryMapKey(m);
     var mk = matchMidKey(m);
+    var sk = matchKey(m);
     var cur = null;
     if (mk && midIndex.has(mk)) {
-      cur = midIndex.get(mk); // 同场标识最高优先：PandaScore match id 唯一且稳定
+      cur = midIndex.get(mk); // 同场标识最高优先：mid 键与主客序无关，命中即同场
+    } else if (!mk) {
+      cur = slugIndex.get(sk) || null; // 无 mid（manual/liquipedia/旧数据）：slug 键比对（行为不变）
     } else {
-      cur = map.get(key) || null;
+      // 带 mid 但索引未命中 = 新场次。唯一允许的回退：slug 命中「无 mid」条目
+      // （manual 补录 → pandascore 升级同场）。带 mid 的条目绝不能按 slug 键合并——
+      // 同两队同日多场（再相遇/背靠背/双循环）共享 slug 键，在此互相污染/覆盖（三修）。
+      var cand = slugIndex.get(sk) || null;
+      cur = cand && !matchMidKey(cand) ? cand : null;
     }
 
     if (!cur) {
       m.id = makeId(m, usedIds);
       map.set(key, m);
-      entryKeys.set(m, key);
+      entryKeys.set(m, sk);
       if (mk) midIndex.set(mk, m);
+      if (!slugIndex.has(sk)) slugIndex.set(sk, m);
       added++;
       return;
     }
@@ -264,13 +284,35 @@ export function mergeMatches(existing, incoming, options) {
           merged[side] = Object.assign({}, merged[side], { pid: cur[side].pid });
         }
       });
-      // 经 mid 命中时 cur 可能挂在旧 slug 键下（主客交换过）：清旧键再挂新键，避免同轮残留
+      // 键维护：条目带 mid 一律收编到 mid 键（与主客序无关，原地覆盖）；
+      // 无 mid 条目按 slug 键入 map——交换序重取会换 slug 键，清旧键再挂新键，避免同轮残留。
+      // manual 条目并入带 mid 的采集数据（升级）时同样收编——旧 slug 键槽位不清会在
+      // 交换序重取时 fork（同 id 孪生，11-08 晚实测）
+      var curMk = matchMidKey(cur);
+      var mergedMk = matchMidKey(merged);
+      var mergedSk = matchKey(merged);
       var oldKey = entryKeys.get(cur);
-      if (oldKey && oldKey !== key && map.get(oldKey) === cur) map.delete(oldKey);
-      map.set(key, merged);
+      if (oldKey) {
+        if (mergedMk) {
+          // 条目迁往 mid 键（含 manual 升级场景）：旧 slug 槽位一律清——同键守卫在这里
+          // 不适用，否则升级后的条目同时挂在 slug 键与 mid 键下（同 id 孪生，11-08 晚实测）
+          if (map.get(oldKey) === cur) map.delete(oldKey);
+          if (slugIndex.get(oldKey) === cur) slugIndex.delete(oldKey);
+        } else if (oldKey !== mergedSk) {
+          if (map.get(oldKey) === cur) map.delete(oldKey);
+          if (slugIndex.get(oldKey) === cur) slugIndex.delete(oldKey);
+        }
+      }
+      if (mergedMk) {
+        midIndex.set(mergedMk, merged);
+        map.set(mergedMk, merged);
+      } else {
+        if (slugIndex.get(mergedSk) === cur || !slugIndex.has(mergedSk)) slugIndex.set(mergedSk, merged);
+        map.set(mergedSk, merged);
+      }
+      if (!slugIndex.has(mergedSk)) slugIndex.set(mergedSk, merged);
       entryKeys.delete(cur);
-      entryKeys.set(merged, key);
-      if (mk) midIndex.set(mk, merged);
+      entryKeys.set(merged, mergedSk);
       updated++;
     }
   });

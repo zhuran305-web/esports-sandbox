@@ -2386,7 +2386,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   /** series 阶段逐场币级展示（与 settleRewards 同口径）：淘汰赛阶段（noCoin）逐场不计币返回 null；
    *  其余按赛事等级币（A 级铜、其余银） */
   function pickemSeriesCoin(ev, stage) {
-    if (stage.noCoin) return null;
+    if (stage.displayOnly) return null; // displayOnly：auto 事件纯展示（2026-11-08）
     return PICKEM_COINS[ev.tier === "a" ? "c" : "s"];
   }
 
@@ -2398,8 +2398,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   }
 
   function pickemMergedSeriesHTML(ev, stages) {
+    var allDisplay = stages.length && stages.every(function (st2) { return st2.displayOnly; });
     var html = '<div class="pickem-merged">' +
-      '<div class="pickem-note">逐场竞猜：已结束场次自动收起不展示，各场开赛前 1 小时截止；只统计你猜过的场次，结算不受影响</div>';
+      '<div class="pickem-note">' + (allDisplay
+        ? "自动收录赛事 · 仅展示赛程与赛果；结构化竞猜（战绩桶/名次）见配置赛事"
+        : "逐场竞猜：已结束场次自动收起不展示，各场开赛前 1 小时截止；只统计你猜过的场次，结算不受影响") + '</div>';
     // 阶段摘要行（label + 状态徽章 + 进度）——行本身带 data-pstage
     html += '<div class="pk-stage-rows">';
     stages.forEach(function (stage) {
@@ -2409,7 +2412,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       html += '<div class="pk-stage-row" data-pstage="' + esc(pickemRecKey(ev.id, stage.id)) + '">' +
         "<b>" + esc(stage.label) + "</b>" + pickemStageBadge(st, stage, rec) +
         '<span class="pk-stage-progress">' + esc(pickemSeriesProgressText(stage, rec)) +
-        (coin ? " · 猜对每场得 " + coin.icon + " " + esc(coin.name) : " · 逐场不计币") + "</span></div>";
+        (coin ? " · 猜对每场得 " + coin.icon + " " + esc(coin.name) : " · 赛程展示") + "</span></div>";
     });
     html += "</div>";
     // 按北京日期归并各阶段的轮次块（day key 用 ISO 串保证时间排序，展示标签单独格式化）
@@ -2451,7 +2454,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         html += '<div class="pk-day-group" data-pstage="' + esc(key) + '">' +
           '<div class="pk-group-head">' + esc(blk.stage.label) + (coin ? " · 猜对每场得 " + coin.icon + " " + esc(coin.name) : " · 淘汰赛 · 逐场不计币") + "</div>" +
           '<div class="pk-round-grid">' +
-          blk.matches.map(function (m) { return pickemMatchNodeHTML(blk.stage, m, rec, true); }).join("") +
+          blk.matches.map(function (m) { return pickemMatchNodeHTML(blk.stage, m, rec, !blk.stage.displayOnly); }).join("") +
           "</div></div>";
       });
       html += "</div></div>";

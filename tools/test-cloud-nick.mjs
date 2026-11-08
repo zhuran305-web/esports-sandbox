@@ -778,9 +778,9 @@ check("自动收录 S/A 赛事（1.3.6）：tier 筛选 + stage 分组 series + 
     if (!s1 || !po || s1.type !== "series" || po.type !== "series") return false;
     if (s1.matches.length !== 2 || po.matches.length !== 1) return false;
     if (s1.matches[0].round !== 0 || po.matches[0].round !== 0) return false;
-    // 2026-11-07 淘汰赛逐场不计币：coinTier 均 1，Playoffs 标记 noCoin
+    // 2026-11-08 auto 事件纯展示：全部 series 阶段 displayOnly（逐场竞猜下线）
     if (s1.coinTier !== 1 || po.coinTier !== 1) return false;
-    if (po.noCoin !== true || s1.noCoin) return false;
+    if (s1.displayOnly !== true || po.displayOnly !== true) return false;
     var acup = evs.filter(function (e) { return e.name === "A 级杯"; })[0];
     if (!acup || acup.tier !== "a") return false; // 全 a → A 级（币级整体降一级）
     // Y Cup 组内只有 tier=b → 不收录
@@ -861,7 +861,7 @@ check("硬币排行榜（1.3.5）：编码/解码/提交/读取 + 视图接线 +
 check("series 逐场链路（1.3.4）：聚合器 + 渲染 + 逐场点选 + 结算整段门控（含 placement）",
   /function buildSeriesStage/.test(fpkSrc) && /scfg\.type === "series"\) stages\.push\(buildSeriesStage/.test(fpkSrc) &&
   /function buildPlacementStage/.test(fpkSrc) && /scfg\.type === "placement"\) stages\.push\(buildPlacementStage/.test(fpkSrc) &&
-  /function pickableSeriesMatches/.test(pickemJsSrc) && /stage\.type === "series"\) \{\s*return pickableSeriesMatches/.test(pickemJsSrc) &&
+  /function pickableSeriesMatches/.test(pickemJsSrc) && /stage\.type === "series"\) \{\s*if \(stage\.displayOnly\) return false;[^\n]*\n\s*return pickableSeriesMatches/.test(pickemJsSrc) &&
   /function pickemMergedSeriesHTML/.test(appSrc) && /pickableSeriesMatches/.test(appSrc) &&
   /stage\.type === "series" \|\| stage\.type === "placement" \|\| stage\.type === "records"\) && !stageAllDone\(stage\)\) return/.test(appSrc) &&
   /pickemMergedSeriesHTML\(ev, seriesStages\)/.test(appSrc) && /pickemPlacementBody\(ev, stage, st, rec\)/.test(appSrc));
@@ -1093,7 +1093,7 @@ check("① 阶段名识别：Playoffs/Quarterfinals/败者组命中；Group Stag
   var miss = ["Group Stage", "Regular Season", "Group A", "Championship Group Stage North America"];
   return hit.every(function (k) { return PK.isPlayoffStageKey(k); }) && miss.every(function (k) { return !PK.isPlayoffStageKey(k); });
 })());
-check("② A 级赛事：小组赛正常计币、淘汰赛标记 noCoin", (function () {
+check("② A 级赛事：全部 series 阶段 displayOnly（纯展示）", (function () {
   function mk(id, stage, tier) {
     return { id: id, game: "cs2", tier: tier, tournament: "PGL 测试赛", stage: stage,
       teamA: { name: "甲" + id }, teamB: { name: "乙" + id }, startAt: "2026-11-10T10:00:00.000Z", result: null };
@@ -1103,9 +1103,9 @@ check("② A 级赛事：小组赛正常计币、淘汰赛标记 noCoin", (funct
   if (!ev || ev.tier !== "a" || ev.stages.length !== 2) return false;
   var byId = {};
   ev.stages.forEach(function (s) { byId[s.id] = s; });
-  return byId["Group Stage"].coinTier === 1 && !byId["Group Stage"].noCoin && byId["Playoffs"].noCoin === true;
+  return byId["Group Stage"].coinTier === 1 && byId["Group Stage"].displayOnly === true && byId["Playoffs"].displayOnly === true;
 })());
-check("③ S 级赛事：淘汰赛同样标记 noCoin", (function () {
+check("③ S 级赛事：淘汰赛同样 displayOnly", (function () {
   function mk(id, stage) {
     return { id: id, game: "cs2", tier: "s", tournament: "S 测试赛", stage: stage,
       teamA: { name: "甲" + id }, teamB: { name: "乙" + id }, startAt: "2026-11-10T10:00:00.000Z", result: null };
@@ -1113,19 +1113,18 @@ check("③ S 级赛事：淘汰赛同样标记 noCoin", (function () {
   var ev = PK.buildAutoEvents([mk("g1", "Group Stage"), mk("p1", "Playoffs")], [])[0];
   var byId = {};
   ev.stages.forEach(function (s) { byId[s.id] = s; });
-  return ev.tier === "" && byId["Playoffs"].noCoin === true && !byId["Group Stage"].noCoin;
+  return ev.tier === "" && byId["Playoffs"].displayOnly === true && byId["Group Stage"].displayOnly === true;
 })());
-check("④ series 结算：noCoin 阶段猜对不发币；小组赛 A 级铜、S 级银不变", (function () {
+check("④ series 结算：displayOnly 阶段的历史已提交选择照常结算（A 级铜、S 级银）", (function () {
   function seriesStage(extra) {
     return Object.assign({ id: "st", type: "series", label: "T", coinTier: 1,
       matches: [{ id: "m1", a: "甲", b: "乙", startAt: "2026-11-10T10:00:00.000Z", winner: "A", score: "1:0", round: 0 }] }, extra || {});
   }
   var rec = { picks: { w: { m1: "A" } }, settled: false, pickedAt: 1 };
-  var playoff = PK.settleRewards(seriesStage({ noCoin: true }), rec, "a");
+  var display = PK.settleRewards(seriesStage({ displayOnly: true }), rec, "a");
   var aGroup = PK.settleRewards(seriesStage(), rec, "a");
   var sGroup = PK.settleRewards(seriesStage(), rec, "");
-  return playoff.coins.c === 0 && playoff.coins.s === 0 && playoff.coins.g === 0 && playoff.bySource.length === 0 &&
-    aGroup.coins.c === 1 && sGroup.coins.s === 1;
+  return display.coins.c === 1 && aGroup.coins.c === 1 && sGroup.coins.s === 1;
 })());
 check("⑤ 弃赛透传：canceled 场进 stage matches、不阻塞事件 done", (function () {
   var evs = PK.buildAutoEvents([

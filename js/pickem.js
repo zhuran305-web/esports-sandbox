@@ -111,6 +111,8 @@ function normalizeStage(raw) {
     id: raw.id, type: raw.type,
     label: typeof raw.label === "string" && raw.label ? raw.label : raw.id,
     coinTier: typeof raw.coinTier === "number" && raw.coinTier >= 1 && raw.coinTier <= 3 ? raw.coinTier : 1,
+    // auto 事件纯展示标记（2026-11-08）：series 阶段不可猜、仅展示赛程赛果；结构化类型不受影响
+    displayOnly: raw.displayOnly === true && raw.type === "series" ? true : undefined,
     startsAt: typeof raw.startsAt === "string" ? raw.startsAt : "",
     endsAt: typeof raw.endsAt === "string" ? raw.endsAt : "",
     teams: teams, matches: matches
@@ -288,10 +290,12 @@ export function stageAllDone(stage) {
   });
 }
 
-/** 淘汰赛/系列赛里当前可猜的场次：双方确定 + 未完赛未取消 + 未到自己开赛前 1 小时 */
+/** 淘汰赛/系列赛里当前可猜的场次：双方确定 + 未完赛未取消 + 未到自己开赛前 1 小时。
+ *  displayOnly（auto 事件纯展示，2026-11-08）恒空。 */
 export function pickableSeriesMatches(stage, now) {
   now = now || Date.now();
   if (!stage || (stage.type !== "series" && stage.type !== "bracket")) return [];
+  if (stage.displayOnly) return [];
   return stage.matches.filter(function (m) {
     if (!m.a || !m.b) return false;
     if (m.canceled) return false; // 已取消/弃赛场次不可猜
@@ -326,6 +330,7 @@ export function stageOpenForPicks(stage, now) {
       return false; // 名单未齐（首轮还没排完）——与对阵无关的名次竞猜无从选起；6 队轮空制等按配置规模判
     }
   } else if (stage.type === "series") {
+    if (stage.displayOnly) return false; // auto 事件纯展示（2026-11-08）：结构化竞猜走手工配置路径
     return pickableSeriesMatches(stage, now).length > 0; // 逐场截止：阶段已开打也能猜剩余场次
   } else if (stage.degraded) {
     return false;
@@ -483,19 +488,18 @@ export function settleRewards(stage, rec, eventTier) {
     return { coins: coins, bySource: bySource, correct: c, total: t };
   }
   // series/bracket（逐场猜）：每猜对 1 场 = 1 枚赛事等级币（A 级铜币，其余银币），不再按轮数；
-  // 只算「用户猜过的、且已有结果的」场次——中途接入公平
-  // 淘汰赛阶段逐场不计币（2026-11-07 用户拍板，stage.noCoin）：仍计 correct/total 供进度展示，
-  // 硬币只走名次竞猜路径；手工 series/旧 bracket 行为不变
+  // 只算「用户猜过的、且已有结果的」场次——中途接入公平。
+  // displayOnly（auto 事件纯展示，2026-11-08）不再产生新选择，但历史已提交的选择照常结算
   var mine = rec.picks && rec.picks.w ? rec.picks.w : {};
   var k2 = eventTier === "a" ? "c" : "s";
   var n = 0;
   stage.matches.forEach(function (m) {
     if ((m.winner !== "A" && m.winner !== "B") || !mine[m.id]) return;
     if (mine[m.id] !== m.winner) return;
-    if (!stage.noCoin) coins[k2] += 1;
+    coins[k2] += 1;
     n += 1;
   });
-  if (n && !stage.noCoin) bySource.push({ label: stage.label, coin: PICKEM_COINS[k2], count: n });
+  if (n) bySource.push({ label: stage.label, coin: PICKEM_COINS[k2], count: n });
   return { coins: coins, bySource: bySource };
 }
 
@@ -558,9 +562,10 @@ export function buildAutoEvents(matches, excludeTournaments) {
       stages.push({
         id: sk, type: "series", label: sk,
         coinTier: 1,
-        // 淘汰赛阶段逐场不计币（2026-11-07 用户拍板）：高级币只走名次竞猜（手工配置路径），
-        // 避免 auto 淘汰赛「猜一场发一枚铜/银」的币量放大；逐场竞猜保留（喂养跟队连击与约战）
-        noCoin: isPlayoffStageKey(sk) || undefined,
+        // displayOnly（2026-11-08 用户拍板）：auto 事件转纯展示——作业页与普通竞猜的差异化
+        // 在于「预测赛事结构」（战绩桶/名次/瑞士轮，手工配置路径），逐场猜胜负与普通竞猜无异；
+        // 历史已产生的选择仍随数据结算（settle 不挡 displayOnly），新选择入口关闭
+        displayOnly: true,
         startsAt: list[0].startAt, endsAt: list[list.length - 1].startAt,
         teams: Object.keys(teamsSeen).map(function (n) { return teamsSeen[n]; }),
         matches: ms

@@ -750,8 +750,8 @@ check("series 逐场计分（1.3.4）：只算猜过的场次（中途接入公�
       { id: "s-m2", a: "队3", b: "队4", startAt: iso(3 * 3600000), winner: "", score: "" } ] };
     return PK.stageOpenForPicks(stage) === true && PK.pickableSeriesMatches(stage).length === 1;
   })());
-check("自动收录 S/A 赛事（1.3.6 建；1.3.14 records 升级）：tier 筛选 + stage 分组 + 手工去重 + 日期聚类轮次 + 状态推断" +
-  " + 4 队组自动升级战绩桶（淘汰赛阶段名豁免）",
+check("自动收录 S/A 赛事（1.3.6 建；1.3.14 records 升级；11-09 歧义守卫）：tier 筛选 + stage 分组 + 手工去重" +
+  " + 日期聚类轮次 + 状态推断 + 4 队组按证据升级战绩桶（≥5 场=GSL；4 队×2 场=形态歧义保持展示）",
   (function () {
     var now = Date.now();
     function m(id, tier, tn, st, a, b, startAtMs, winner) {
@@ -760,35 +760,48 @@ check("自动收录 S/A 赛事（1.3.6 建；1.3.14 records 升级）：tier 筛
         startAt: iso(startAtMs), result: winner ? { winner: winner, score: "2:0" } : null };
     }
     var matches = [
+      // Stage 1：4 队 × 2 场（只有首轮带队名）→ 经典 GSL 与 BLAST 式 4进3 不可区分 → 不套桶（展示）
       m("1", "s", "X Major", "Stage 1", "甲", "乙", -86400000, "A"),
       m("2", "s", "X Major", "Stage 1", "丙", "丁", -60000000, "B"),
+      // Stage 2：4 队 × 5 场（GSL 证据充分：2:0/2:1/1:2/0:2 分布）→ 升级 records
+      m("s2a", "s", "X Major", "Stage 2", "戊", "己", -85000000, "A"),
+      m("s2b", "s", "X Major", "Stage 2", "庚", "辛", -84000000, "A"),
+      m("s2c", "s", "X Major", "Stage 2", "戊", "庚", -83000000, "A"),
+      m("s2d", "s", "X Major", "Stage 2", "己", "辛", -82000000, "A"),
+      m("s2e", "s", "X Major", "Stage 2", "己", "庚", -81000000, "A"),
       m("3", "a", "X Major", "Playoffs", "甲", "丙", 3 * 3600000, null),
       m("4", "b", "X Major", "Stage 1", "戊", "己", -50000000, "A"),   // tier=b 不收录
       m("5", "b", "Y Cup", "Group A", "甲", "乙", -86400000, "A"),     // 全组 tier=b → 整赛事不收录
       m("6", "s", "手工赛事", "Stage 1", "甲", "乙", -86400000, "A"),  // 手工配置去重
-      m("7", "a", "A 级杯", "Group A", "庚", "辛", -86400000, "A"),     // 全 a → 事件 tier="a"
-      m("8", "a", "A 级杯", "Group A", "壬", "癸", -60000000, "B")
+      // A 级杯：4 队 × 5 场（全 a → A 级；币级整体降一级 → records 铜币）
+      m("7", "a", "A 级杯", "Group A", "庚", "辛", -86400000, "A"),
+      m("8", "a", "A 级杯", "Group A", "壬", "癸", -86000000, "A"),
+      m("9", "a", "A 级杯", "Group A", "庚", "壬", -85000000, "A"),
+      m("10", "a", "A 级杯", "Group A", "辛", "癸", -84000000, "A"),
+      m("11", "a", "A 级杯", "Group A", "辛", "壬", -83000000, "A")
     ];
     var evs = PK.buildAutoEvents(matches, ["手工赛事"]);
     var xm = evs.filter(function (e) { return e.name === "X Major"; })[0];
     if (!xm || evs.some(function (e) { return e.name === "手工赛事"; })) return false;
-    if (xm.status !== "active" || xm.stages.length !== 3) return false; // Stage1(records+series孪生) + Playoffs(series)
+    // Stage1(仅 series) + Stage2(records+series孪生) + Playoffs(series) = 4 个阶段
+    if (xm.status !== "active" || xm.stages.length !== 4) return false;
     if (xm.tier !== "") return false; // s+a 混合 → 按 S 级处理
-    // Stage 1：4 队 → 自动升级 records（1.3.14）+ 同源 series 孪生（历史逐场选择结算通道）
-    var rec1 = xm.stages.filter(function (s) { return s.id === "Stage 1|rec"; })[0];
+    // Stage 1：4 队 × 2 场 → 形态歧义，不套桶（无 |rec 孪生）
+    if (xm.stages.some(function (s) { return s.id === "Stage 1|rec"; })) return false;
     var s1 = xm.stages.filter(function (s) { return s.id === "Stage 1"; })[0];
+    if (!s1 || s1.type !== "series" || s1.displayOnly !== true) return false;
+    // Stage 2：4 队 × 5 场 → records（GSL 桶）+ 同源 series 孪生（历史逐场选择结算通道）
+    var rec2 = xm.stages.filter(function (s) { return s.id === "Stage 2|rec"; })[0];
+    var s2 = xm.stages.filter(function (s) { return s.id === "Stage 2"; })[0];
     var po = xm.stages.filter(function (s) { return s.id === "Playoffs"; })[0];
-    if (!rec1 || !s1 || !po || rec1.type !== "records" || s1.type !== "series" || po.type !== "series") return false;
-    if (rec1.srcStage !== "Stage 1" || rec1.coinTier !== 2 || rec1.results !== null) return false; // S 级银币；未完赛无结果
-    if (rec1.buckets.length !== 4 || rec1.buckets[0].k !== "2:0" ||
-        rec1.buckets.reduce(function (s, b) { return s + b.cap; }, 0) !== 4) return false; // GSL 桶 2:0/2:1/1:2/0:2 各 1
-    if (rec1.teams.length !== 4) return false;
-    var wl = {};
-    rec1.teams.forEach(function (t) { wl[t.name] = t.w + ":" + t.l; });
-    if (wl["甲"] !== "1:0" || wl["乙"] !== "0:1" || wl["丙"] !== "0:1" || wl["丁"] !== "1:0") return false; // W:L 已计
-    if (rec1.matches[0].round !== 0) return false;
-    if (s1.displayOnly !== true || po.displayOnly !== true) return false; // series 全部纯展示
-    if (s1.coinTier !== 1 || po.coinTier !== 1) return false;
+    if (!rec2 || !s2 || !po || rec2.type !== "records" || s2.type !== "series" || po.type !== "series") return false;
+    if (rec2.srcStage !== "Stage 2" || rec2.coinTier !== 2) return false; // S 级银币
+    if (rec2.buckets.length !== 4 || rec2.buckets[0].k !== "2:0" ||
+        rec2.buckets.reduce(function (s, b) { return s + b.cap; }, 0) !== 4) return false; // GSL 桶 2:0/2:1/1:2/0:2 各 1
+    if (rec2.teams.length !== 4 || !rec2.results) return false; // 全完赛且分布吻合 → 出结果
+    if ((rec2.results["2:0"] || []).join() !== "戊") return false;
+    if (rec2.matches[0].round !== 0) return false;
+    if (s2.displayOnly !== true || po.displayOnly !== true) return false; // series 全部纯展示
     if (xm.stages.some(function (s) { return s.type === "records" && s.srcStage === "Playoffs"; })) return false; // 淘汰赛豁免
     var acup = evs.filter(function (e) { return e.name === "A 级杯"; })[0];
     if (!acup || acup.tier !== "a") return false; // 全 a → A 级（币级整体降一级）
@@ -1639,6 +1652,31 @@ var gateOk = await (async function () {
   return wDev === false && rDev === null && wProd === true && rProd === null && storageWrites === 1;
 }());
 check("development: write=false/read=null（零存储调用）；production: write=true", gateOk);
+
+check("④ 4进3 战绩桶（BLAST Rivals 香港实测形态）：4 队×4 场 → 2:0×1 / 1:1×2 / 0:2×1 落桶出结果", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var cfg = { id: "g43-ev", game: "cs2", name: "测试", tournament: "4进3测试", stages: [
+    { id: "groupA", type: "records", label: "Group A · 双败战绩", stageNames: ["Group A"], buckets: [
+      { k: "2:0", label: "2:0 直进四强", cap: 1 },
+      { k: "1:1", label: "1:1 进六强", cap: 2 },
+      { k: "0:2", label: "0:2 淘汰", cap: 1 }
+    ] }
+  ] };
+  var t = 0;
+  function m(a, b, w) {
+    t += 1;
+    return { game: "cs2", tournament: "4进3测试", stage: "Group A", teamA: { name: a }, teamB: { name: b },
+      startAt: new Date(Date.UTC(2026, 10, 11, t)).toISOString(), result: { winner: w, score: "2:0" } };
+  }
+  // R1：甲胜乙、丙胜丁 → 胜者赛 甲胜丙、败者赛 乙胜丁（每队恰好两场）
+  var matches = [m("甲", "乙", "A"), m("丙", "丁", "A"), m("甲", "丙", "A"), m("乙", "丁", "A")];
+  var ev = AG.buildEvent(cfg, matches, null);
+  var s = ev && ev.stages[0];
+  if (!s || s.type !== "records" || !s.results) return false;
+  return (s.results["2:0"] || []).join() === "甲" &&
+    (s.results["1:1"] || []).slice().sort().join() === ["丙", "乙"].sort().join() &&
+    (s.results["0:2"] || []).join() === "丁";
+})());
 
 rmSync(tmp, { recursive: true, force: true });
 

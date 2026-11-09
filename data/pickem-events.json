@@ -1,5 +1,5 @@
 {
-  "_doc": "Pick'Em 赛事配置（实验功能 1.3.6）。events 里每条登记一个大型赛事（手工精细模式，优先于自动收录）：tournament 必须与 match.tournament 精确一致（PandaScore 口径为「league · serie」），stageNames 必须与 match.stage 原文逐字一致（英文为主，注意数据源偶有拼写错误——配置前先在 data/matches.json 里核对原文）。type=swiss 为 16 队瑞士轮（3:0×2 / 3:1·3:2×6 / 0:3×2 三桶 10 选，1:3/2:3 淘汰 6 队自动落位仅展示，可用 buckets 覆盖容量；coinTier 按 swiss 阶段序号 1铜/2银/3金自动分配）；type=placement 为淘汰赛名次竞猜（猜冠军/亚军/季军，按开赛时间分 [4,2,1] 三轮，可用 expectRounds/roundLabels 覆盖——6 队轮空制配 [2,2,1]；expectTeams 声明参赛队数（轮空制=全部队数，默认 8），客户端按它判名单齐不齐；qualifiedTeams 显式参赛名单（轮空队不打首轮、不会自动进数据，不播种则名单永远不齐、名次竞猜永远开不了），完赛推导 results 结算）；type=series 为逐场竞猜（任意赛制，round 按北京日期聚类，轮 N 发对应币级）；type=bracket 为旧类型（兼容保留，新配置用 placement）。未手工配置的 tier=s/a 赛事由客户端 buildAutoEvents 自动收录为 series 视图（按本配置的 tournament 串去重）。本地 UI 走查可用 node tools/pickem-demo.mjs 注入演示赛事。赛事结束后 30 天自动从聚合缓存清理。",
+  "_doc": "Pick'Em 赛事配置（实验功能 1.3.6）。events 里每条登记一个大型赛事（手工精细模式，优先于自动收录）：tournament 必须与 match.tournament 精确一致（PandaScore 口径为「league · serie」），stageNames 必须与 match.stage 原文逐字一致（英文为主，注意数据源偶有拼写错误——配置前先在 data/matches.json 里核对原文）。type=swiss 为 16 队瑞士轮（3:0×2 / 3:1·3:2×6 / 0:3×2 三桶 10 选，1:3/2:3 淘汰 6 队自动落位仅展示，可用 buckets 覆盖容量；coinTier 按 swiss 阶段序号 1铜/2银/3金自动分配）；type=placement 为淘汰赛名次竞猜（猜冠军/亚军/季军，按开赛时间分 [4,2,1] 三轮，可用 expectRounds/roundLabels 覆盖——6 队轮空制配 [2,2,1]；expectTeams 声明参赛队数（轮空制=全部队数，默认 8），客户端按它判名单齐不齐；qualifiedTeams 显式参赛名单（轮空队不打首轮、不会自动进数据，不播种则名单永远不齐、名次竞猜永远开不了），完赛推导 results 结算）；type=series 为逐场竞猜（任意赛制，round 按北京日期聚类，轮 N 发对应币级）；type=records 为战绩桶（buckets 声明 k=最终战绩串「W:L」+ cap=该战绩队数，打完按实际 W:L 落桶逐桶比对，桶结构随赛制而变——经典 GSL 4 队打 5 场=2:0/2:1/1:2/0:2 各 1；BLAST Rivals 香港式 4 进 3（4 队各打 2 场）=2:0×1 / 1:1×2 / 0:2×1，配错桶会因分布不符永不结算）；type=bracket 为旧类型（兼容保留，新配置用 placement）。未手工配置的 tier=s/a 赛事由客户端 buildAutoEvents 自动收录为 series 视图（按本配置的 tournament 串去重）。本地 UI 走查可用 node tools/pickem-demo.mjs 注入演示赛事。赛事结束后 30 天自动从聚合缓存清理。",
   "events": [
     {
       "id": "iem-beijing-2026",
@@ -65,18 +65,13 @@
           "buckets": [
             {
               "k": "2:0",
-              "label": "2:0 出线",
+              "label": "2:0 直进四强",
               "cap": 1
             },
             {
-              "k": "2:1",
-              "label": "2:1 出线",
-              "cap": 1
-            },
-            {
-              "k": "1:2",
-              "label": "1:2 淘汰",
-              "cap": 1
+              "k": "1:1",
+              "label": "1:1 进六强",
+              "cap": 2
             },
             {
               "k": "0:2",
@@ -96,18 +91,13 @@
           "buckets": [
             {
               "k": "2:0",
-              "label": "2:0 出线",
+              "label": "2:0 直进四强",
               "cap": 1
             },
             {
-              "k": "2:1",
-              "label": "2:1 出线",
-              "cap": 1
-            },
-            {
-              "k": "1:2",
-              "label": "1:2 淘汰",
-              "cap": 1
+              "k": "1:1",
+              "label": "1:1 进六强",
+              "cap": 2
             },
             {
               "k": "0:2",

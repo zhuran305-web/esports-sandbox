@@ -539,11 +539,15 @@ function autoStageRounds(list) {
 }
 
 /** 自动收录的战绩桶模板（1.3.14：auto 赛事小组赛自动升级战绩桶竞猜，仿 BLAST records 模式）。
- *  桶结构=赛制常识推导（与 tools/pickem-config-helper 同规则）：
- *  4 队 → GSL 双败（2:0/2:1/1:2/0:2 各 1；队伍从首轮对阵即可全知，截止=阶段开赛前 1h，预测窗口早）；
- *  8 队×12 场 → 8 队双败（3:0/3:1/2:1/2:2 各 1 + 1:2/0:2 各 2；仅全量可观察时命中）。
- *  其余形态（瑞士轮/循环赛/6 或 10 队组等）返回 null → 保持 series 赛程展示——宁缺勿滥不硬套；
- *  推断误判（4 队非 GSL）由 autoRecordsResults 的分布比对兜底：结构不符不出结果、不结算。 */
+ *  桶结构=赛制推导，**要求证据充分**（与 tools/pickem-config-helper 同规则）：
+ *  4 队×≥5 场 → 经典 GSL 双败（2:0/2:1/1:2/0:2 各 1，每队最多 3 场）；
+ *  8 队×12 场 → 8 队双败（3:0/3:1/2:1/2:2 各 1 + 1:2/0:2 各 2）；
+ *  其余形态返回 null → 保持 series 赛程展示——宁缺勿滥不硬套。
+ *  ⚠ 4 队组的形态歧义（2026-11-09 BLAST 香港实测）：经典 GSL=5 场（2:0/2:1/1:2/0:2），
+ *  BLAST Rivals 式「4 进 3」=4 场（每队只打两场 → 2:0×1/1:1×2/0:2×1）。数据侧两条路都
+ *  只有首轮 2 场带真实队名（TBD 场次被采集器过滤），预测时点无法区分——套错桶会因分布
+ *  不符永不结算（IEM 季军赛同级教训）。故 4 队组只在 ≥5 场时才套 GSL 桶；「4 进 3」形态
+ *  走手工配置（type=records + 自定义 buckets），auto 路径不硬套。 */
 function autoRecordsBuckets(list) {
   var seen = {};
   var n = 0;
@@ -552,7 +556,7 @@ function autoRecordsBuckets(list) {
       if (t && t.name && !seen[t.name]) { seen[t.name] = 1; n += 1; }
     });
   });
-  if (n === 4) return [
+  if (n === 4 && list.length >= 5) return [
     { k: "2:0", label: "2:0 出线", cap: 1 }, { k: "2:1", label: "2:1 出线", cap: 1 },
     { k: "1:2", label: "1:2 淘汰", cap: 1 }, { k: "0:2", label: "0:2 淘汰", cap: 1 }
   ];

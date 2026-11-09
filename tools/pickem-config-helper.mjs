@@ -13,10 +13,15 @@
  *      留空待小组出结果后补）。
  *
  * 桶结构模板（可改）：
- *   4 队 GSL：2:0/2:1/1:2/0:2 各 1        （BLAST Slam/Rivals、IEM、VCT 小组）
- *   8 队双败：3:0/3:1/2:1/2:2/1:2×2/0:2×2 （IEM 北京 8 队组实测）
+ *   4 队 GSL（5 场）：2:0/2:1/1:2/0:2 各 1        （IEM、VCT、BLAST Slam 小组）
+ *   4 队 4进3（4 场）：2:0×1 / 1:1×2 / 0:2×1      （BLAST Rivals 香港站实测：每队只打两场，
+ *                                                  两连胜进四强、一胜一负进六强、两连败出局）
+ *   8 队双败（12 场）：3:0/3:1/2:1/2:2/1:2×2/0:2×2 （IEM 北京 8 队组实测）
  * 风险边界：形态按「队数×场次」推断——特殊赛制（循环、瑞士轮混编、三局种子赛）会被
  * 明确标记「形态未知」而不是硬套模板；生成后仍需人工确认桶结构是否符合官方赛制。
+ * **时点限制**：4 队 4进3 与 4 队 GSL 在「小组开赛前」数据侧只有首轮 2 场带真实队名
+ * （TBD 场次被采集器过滤），两者不可区分——4进3 的自动识别要在首轮打完后（场次齐）才命中，
+ * 因此预测期接入 4进3 赛事需**手工写 buckets**（照上面模板），或赛后核对时用本工具识别。
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
@@ -58,6 +63,13 @@ function stageShape(st) {
     { k: "2:0", label: "2:0 出线", cap: 1 }, { k: "2:1", label: "2:1 出线", cap: 1 },
     { k: "1:2", label: "1:2 淘汰", cap: 1 }, { k: "0:2", label: "0:2 淘汰", cap: 1 }
   ] };
+  // 「4 进 3」（BLAST Rivals 式，2026-11-09 香港站实测）：4 队各打 2 场，两连胜进四强、
+  // 一胜一负进六强、两连败出局 → 战绩分布 2:0×1 / 1:1×2 / 0:2×1（4 场，无第 5 场决定赛）
+  if (n === 4 && matches === 4) return { kind: "gsl43", buckets: [
+    { k: "2:0", label: "2:0 直进四强", cap: 1 },
+    { k: "1:1", label: "1:1 进六强", cap: 2 },
+    { k: "0:2", label: "0:2 淘汰", cap: 1 }
+  ] };
   if (n === 8 && matches === 12) return { kind: "de8", buckets: [
     { k: "3:0", label: "3:0", cap: 1 }, { k: "3:1", label: "3:1", cap: 1 },
     { k: "2:1", label: "2:1", cap: 1 }, { k: "2:2", label: "2:2", cap: 1 },
@@ -77,7 +89,7 @@ byT.forEach(function (g, tn) {
   g.stages.forEach(function (st, sn) {
     if (isPlayoffStageName(sn)) { if (!playoffStage) playoffStage = sn; return; }
     var shape = stageShape(st);
-    if (shape.kind === "gsl4" || shape.kind === "de8") gslStages.push({ sn: sn, shape: shape });
+    if (shape.kind === "gsl4" || shape.kind === "gsl43" || shape.kind === "de8") gslStages.push({ sn: sn, shape: shape });
     else unknownStages.push(sn + "（" + st.teams.size + " 队 × " + st.n + " 场）");
   });
   if (!gslStages.length && !playoffStage) return; // 无可配置形态
@@ -96,7 +108,7 @@ if (!emitTarget) {
   candidates.forEach(function (c) {
     var state = c.finished ? "已完赛（配置无预测价值）" : "可配置";
     log("• " + c.tournament + " [" + c.tier + "/" + c.game + "] " + c.first + " → " + c.last + " · " + state);
-    c.gslStages.forEach(function (s) { log("    records 候选: " + s.sn + "（" + (s.shape.kind === "gsl4" ? "4 队 GSL" : "8 队双败") + "）"); });
+    c.gslStages.forEach(function (s) { log("    records 候选: " + s.sn + "（" + (s.shape.kind === "gsl4" ? "4 队 GSL（5 场）" : s.shape.kind === "gsl43" ? "4 队 4进3（每队两场）" : "8 队双败") + "）"); });
     if (c.playoffStage) log("    placement 候选: " + c.playoffStage);
     if (c.unknownStages.length) log("    形态未知（不自动配桶）: " + c.unknownStages.join(", "));
   });

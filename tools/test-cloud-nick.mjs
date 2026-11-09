@@ -1552,6 +1552,74 @@ function readIfDs() { return rf(path.join(root, "js", "data-source.js"), "utf8")
 function readIfBuild() { return rf(path.join(root, "tools", "build-runtime-data.mjs"), "utf8"); }
 function readIfTrim() { return rf(path.join(root, "tools", "trim-embedded.mjs"), "utf8"); }
 
+/* ---------- 场景 AF（2026-11-09 IEM 未结算事故）：placement 季军赛结构 ----------
+   IEM 北京实际赛制比 [2,2,1] 多一场季军赛（半决赛败者之间，决赛队不打）——6≠5 → degraded
+   → results 永远不推导 → 名次竞猜永不结算。修复：配置 [2,2,1,1] + 推导改「决赛队的倒数
+   第二场比赛的败者=半决赛败者」（对经典 [4,2,1] 与含季军赛结构都成立，并列口径不变）。 */
+console.log("AF. placement 季军赛结构（IEM 北京 6 场实测）：");
+check("① [2,2,1,1] 含季军赛 → results 推导：冠军/亚军正确，季军=半决赛败者并列两队（季军赛胜者也算）", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  function m(id, a, b, w, hAgo) {
+    return { game: "cs2", tournament: "季军赛测试", stage: "Playoffs", teamA: { name: a }, teamB: { name: b },
+      startAt: new Date(Date.now() - hAgo * 3600000).toISOString(), result: w ? { winner: w, score: "2:0" } : null };
+  }
+  var cfg = { id: "brz-ev", game: "cs2", name: "测试", tournament: "季军赛测试", stages: [
+    { id: "po", type: "placement", label: "淘汰赛", stageNames: ["Playoffs"], expectRounds: [2, 2, 1, 1], expectTeams: 6,
+      qualifiedTeams: ["TheMongolz", "MOUZ", "PARIVISION", "Natus Vincere", "FURIA", "BetBoom Team"] }
+  ] };
+  var matches = [
+    m("qf1", "PARIVISION", "Natus Vincere", "B", 60),   // NaVi 胜
+    m("qf2", "FURIA", "BetBoom Team", "B", 58),         // BetBoom 胜
+    m("sf1", "TheMongolz", "Natus Vincere", "A", 30),   // TheMongolz 胜（半决赛）
+    m("sf2", "MOUZ", "BetBoom Team", "A", 28),          // MOUZ 胜（半决赛）
+    m("bronze", "Natus Vincere", "BetBoom Team", "A", 20), // 季军赛 NaVi 胜
+    m("final", "TheMongolz", "MOUZ", "B", 10)           // MOUZ 冠军
+  ];
+  var ev = AG.buildEvent(cfg, matches, null);
+  var s = ev && ev.stages[0];
+  if (!s || s.type !== "placement" || s.degraded) return false;
+  if (!s.results) return false;
+  return s.results.champion === "MOUZ" && s.results.runnerUp === "TheMongolz" &&
+    (s.results.third || []).indexOf("BetBoom Team") >= 0 && (s.results.third || []).indexOf("Natus Vincere") >= 0;
+})());
+check("② 经典 [4,2,1] 结构回归：季军=半决赛败者并列（推导规则改后语义不变）", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var matches = [
+    { game: "cs2", tournament: "经典测试", stage: "Playoffs", teamA: { name: "队1" }, teamB: { name: "队2" }, startAt: new Date(Date.now() - 96 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "经典测试", stage: "Playoffs", teamA: { name: "队3" }, teamB: { name: "队4" }, startAt: new Date(Date.now() - 95 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "经典测试", stage: "Playoffs", teamA: { name: "队5" }, teamB: { name: "队6" }, startAt: new Date(Date.now() - 94 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "经典测试", stage: "Playoffs", teamA: { name: "队7" }, teamB: { name: "队8" }, startAt: new Date(Date.now() - 93 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "经典测试", stage: "Playoffs", teamA: { name: "队1" }, teamB: { name: "队5" }, startAt: new Date(Date.now() - 48 * 3600000).toISOString(), result: { winner: "A", score: "2:1" } },
+    { game: "cs2", tournament: "经典测试", stage: "Playoffs", teamA: { name: "队3" }, teamB: { name: "队7" }, startAt: new Date(Date.now() - 47 * 3600000).toISOString(), result: { winner: "B", score: "1:2" } },
+    { game: "cs2", tournament: "经典测试", stage: "Playoffs", teamA: { name: "队1" }, teamB: { name: "队7" }, startAt: new Date(Date.now() - 24 * 3600000).toISOString(), result: { winner: "B", score: "0:2" } }
+  ];
+  var cfg = { id: "cls-ev", game: "cs2", name: "测试", tournament: "经典测试", stages: [
+    { id: "po", type: "placement", label: "淘汰赛", stageNames: ["Playoffs"], expectRounds: [4, 2, 1], expectTeams: 8, qualifiedTeams: [] }
+  ] };
+  var ev = AG.buildEvent(cfg, matches, null);
+  var s = ev && ev.stages[0];
+  if (!s || s.degraded || !s.results) return false;
+  // 决赛 队1 vs 队7，队7 胜 → 冠军队7、亚军队1；半决赛：队1 胜队5、队7 胜队3 → 季军并列 [队5, 队3]
+  return s.results.champion === "队7" && s.results.runnerUp === "队1" &&
+    (s.results.third || []).indexOf("队5") >= 0 && (s.results.third || []).indexOf("队3") >= 0;
+})());
+check("③ 场次数与 expectRounds 不符（5 场配 [2,2,1,1]）→ degraded、不出结果（宁缺勿滥）", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var cfg = { id: "deg-ev", game: "cs2", name: "测试", tournament: "欠赛测试", stages: [
+    { id: "po", type: "placement", label: "淘汰赛", stageNames: ["Playoffs"], expectRounds: [2, 2, 1, 1], expectTeams: 6, qualifiedTeams: ["甲", "乙", "丙", "丁", "戊", "己"] }
+  ] };
+  var matches = [
+    { game: "cs2", tournament: "欠赛测试", stage: "Playoffs", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: new Date(Date.now() - 48 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "欠赛测试", stage: "Playoffs", teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: new Date(Date.now() - 47 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "欠赛测试", stage: "Playoffs", teamA: { name: "甲" }, teamB: { name: "丙" }, startAt: new Date(Date.now() - 24 * 3600000).toISOString(), result: { winner: "A", score: "2:1" } },
+    { game: "cs2", tournament: "欠赛测试", stage: "Playoffs", teamA: { name: "乙" }, teamB: { name: "丁" }, startAt: new Date(Date.now() - 23 * 3600000).toISOString(), result: { winner: "B", score: "1:2" } },
+    { game: "cs2", tournament: "欠赛测试", stage: "Playoffs", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: new Date(Date.now() - 12 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } }
+  ];
+  var ev = AG.buildEvent(cfg, matches, null);
+  var s = ev && ev.stages[0];
+  return s && s.degraded === true && s.results === null;
+})());
+
 rmSync(tmp, { recursive: true, force: true });
 
 console.log("");

@@ -306,12 +306,25 @@ function buildPlacementStage(cfg, matches) {
   var allDone = list.length > 0 && compact.every(function (m) { return m.winner === "A" || m.winner === "B" || m.canceled === true; });
   if (!degraded && allDone) {
     var finalM = compact.filter(function (m) { return m.round === expect.length - 1; })[0];
-    var semis = compact.filter(function (m) { return m.round === expect.length - 2; });
-    if (finalM && semis.length === expect[expect.length - 2]) {
+    if (finalM) {
       var champion = finalM.winner === "A" ? finalM.a : finalM.b;
       var runnerUp = finalM.winner === "A" ? finalM.b : finalM.a;
-      var third = semis.map(function (s) { return s.winner === "A" ? s.b : s.a; });
-      results = { champion: champion, runnerUp: runnerUp, third: third };
+      // 半决赛败者（季军并列两队）＝「决赛队的倒数第二场比赛的败者」——对两种结构都成立：
+      // 经典 [4,2,1]：决赛队倒数第二场=半决赛，败者即季军；含季军赛的 [2,2,1,1]（IEM 北京
+      // 实测：半决赛败者之间还打一场季军赛，决赛队不打季军赛）：决赛队倒数第二场仍是半决赛。
+      // 季军赛本身不参与推导（胜者也按并列口径算季军——用户在季军赛排期前按「猜中任一半决赛
+      // 败者即对」下的单）。compact 已按开始时间排序。
+      var semiLoser = function (team) {
+        var games = compact.filter(function (m) {
+          return m.winner && (m.a === team || m.b === team);
+        });
+        if (games.length < 2) return null;
+        var semi = games[games.length - 2];
+        return semi.winner === "A" ? semi.b : semi.a;
+      };
+      var t1 = semiLoser(champion);
+      var t2 = semiLoser(runnerUp);
+      if (t1 && t2) results = { champion: champion, runnerUp: runnerUp, third: [t1, t2] };
     }
   }
   return {

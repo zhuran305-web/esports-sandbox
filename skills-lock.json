@@ -4,7 +4,7 @@
     "hb-sdk": {
       "source": "./node_modules/@heybox/hb-sdk/skill",
       "sourceType": "local",
-      "computedHash": "ab3de0bb3fd7346375ec706b6499c734b2444689b35b4c42dfff3fb44cadf5be"
+      "computedHash": "8fe62b0a014ca1c590b511206677684455975328a5e0af0bb7fd378f29785c09"
     }
   }
 }

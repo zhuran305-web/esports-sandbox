@@ -824,7 +824,8 @@ check("数据链路：fetch-pickem 聚合 → build/trim 切片（hash 计入）
   /function normalizePickemData/.test(pickemJsSrc) && /normalizePickemData/.test(dsSrc) &&
   /var PICKEM = normalizePickemData\(DATA\.pickem\)\.events/.test(appSrc) &&
   /pickem\.events\.forEach\(function \(ev\)/.test(appSrc) &&
-  /pickem, matches: matches/.test(buildSrc));
+  /structures: structures/.test(buildSrc) && /structureCount/.test(buildSrc) && // 2026-11-10 赛事结构切片入 hash/meta
+  /pickem, structures: structures, matches: matches/.test(buildSrc));
 check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册（[hidden] 补丁随 sheet-backdrop 继承）",
   /id="view-labs"/.test(htmlSrc) && /id="view-pickem"/.test(htmlSrc) && /id="labsList"/.test(htmlSrc) &&
   /id="pickemSelectors"/.test(htmlSrc) && /id="pickemBody"/.test(htmlSrc) &&
@@ -849,7 +850,7 @@ check("作业页筛选与搜索（1.3.6 统一口径；1.3.12 换主页同款浮
   /pickemEventById\(PICKEM_SCOPED_EVENT\)/.test(appSrc) && // 主页公测入口：scoped 赛事已结束→隐藏按钮
   /scopedWrap\.hidden = !\(scopedEv && scopedEv\.status !== "done"\)/.test(appSrc) &&
   /var pickemGame = "all"/.test(appSrc) && /var pickemQuery = ""/.test(appSrc) &&
-  /function buildAutoEvents/.test(pickemJsSrc) && /buildAutoEvents\(MATCHES, pickemManualTournaments\(\)\)/.test(appSrc) &&
+  /function buildAutoEvents/.test(pickemJsSrc) && /buildAutoEvents\(MATCHES, pickemManualTournaments\(\), STRUCTURES\)/.test(appSrc) &&
   /function autoRecordsBuckets/.test(pickemJsSrc) && // 1.3.14：4 队组自动升级战绩桶（淘汰赛阶段名豁免）
   /isPlayoffStageKey\(sk\) \? null : autoRecordsBuckets/.test(pickemJsSrc) &&
   /id: sk \+ "\|rec"/.test(pickemJsSrc) && // records 阶段 recKey 与同源 series 阶段隔离（历史选择结算通道不冲撞）
@@ -918,8 +919,8 @@ check("轮次优先合并布局（1.3.6 任务 4）：series 阶段合并单面�
   /data-pklocked/.test(appSrc));
 
 check("作业页赛程自动更新（1.3.6）：refreshData 两个 applySnapshot 挂点透传 pickem + 可见视图即时重渲染",
-  /applySnapshot\(cached\.matches, cached\.meta, cached\.teams, cached\.teamColors, cached\.rosters, cached\.pickem\)/.test(appSrc) &&
-  /applySnapshot\(remote\.matches, remote\.meta, remote\.teams, remote\.teamColors, remote\.rosters, remote\.pickem\)/.test(appSrc) &&
+  /applySnapshot\(cached\.matches, cached\.meta, cached\.teams, cached\.teamColors, cached\.rosters, cached\.pickem, cached\.structures\)/.test(appSrc) &&
+  /applySnapshot\(remote\.matches, remote\.meta, remote\.teams, remote\.teamColors, remote\.rosters, remote\.pickem, remote\.structures\)/.test(appSrc) &&
   /if \(!\$\("#view-pickem"\)\.hidden\) renderPickem\(\)/.test(appSrc) &&
   /if \(!\$\("#view-labs"\)\.hidden\) renderLabs\(\)/.test(appSrc) &&
   /if \(!\$\("#view-coinboard"\)\.hidden\) renderCoinBoard\(\)/.test(appSrc) &&
@@ -1493,6 +1494,44 @@ check("⑥ 聚合器 records：打完全部场次按 W:L 落桶；结构不符�
   var ev2 = AG.buildEvent(cfg, matches2, null);
   return ev2.stages[0].results === null;
 })());
+check("⑦ 官方 standings 主证据（2026-11-10）：自采漏采一场致派生 W:L 失真，官方 standings 定案出正确结果", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var cfg = { id: "gsl-ev", game: "cs2", name: "GSL 赛", tournament: "GSL 测试赛", stages: [
+    { id: "groupA", type: "records", label: "Group A · 双败", stageNames: ["Group A"], buckets: GSL_BUCKETS }
+  ] };
+  // 5 场只到 4 场（乙 vs 丁 漏采）：乙派生 1:1（真值 2:1）→ 旧分布比对必 null
+  var matches = [
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: "2026-11-20T10:00:00.000Z", result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: "2026-11-20T12:00:00.000Z", result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "甲" }, teamB: { name: "丙" }, startAt: "2026-11-21T10:00:00.000Z", result: { winner: "A", score: "2:1" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "乙" }, teamB: { name: "丙" }, startAt: "2026-11-22T10:00:00.000Z", result: { winner: "A", score: "2:1" } }
+  ];
+  var structures = { "cs2|GSL 测试赛|Group A": { tid: 1, participants: ["甲", "乙", "丙", "丁"], standings: [
+    { t: "甲", w: 2, l: 0 }, { t: "乙", w: 2, l: 1 }, { t: "丙", w: 1, l: 2 }, { t: "丁", w: 0, l: 2 }
+  ] } };
+  var ev = AG.buildEvent(cfg, matches, null, structures);
+  var s = ev && ev.stages[0];
+  if (!s || !s.results) return false;
+  // 阶段 standings 烘入（桶体展示用）
+  if (!Array.isArray(s.standings) || s.standings.length !== 4) return false;
+  return s.results["2:0"][0] === "甲" && s.results["2:1"][0] === "乙" && s.results["1:2"][0] === "丙" && s.results["0:2"][0] === "丁";
+})());
+check("⑧ 官方 standings 落桶仍不满（官方与桶结构也不符）→ 仍 null（宁缺勿滥不因新证据放宽）", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var cfg = { id: "gsl-ev", game: "cs2", name: "GSL 赛", tournament: "GSL 测试赛", stages: [
+    { id: "groupA", type: "records", label: "Group A", stageNames: ["Group A"], buckets: GSL_BUCKETS }
+  ] };
+  var matches = [
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: "2026-11-20T10:00:00.000Z", result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "GSL 测试赛", stage: "Group A", teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: "2026-11-20T12:00:00.000Z", result: { winner: "A", score: "2:0" } }
+  ];
+  var structures = { "cs2|GSL 测试赛|Group A": { tid: 1, participants: ["甲", "乙", "丙", "丁"], standings: [
+    { t: "甲", w: 1, l: 0 }, { t: "乙", w: 0, l: 1 }, { t: "丙", w: 1, l: 0 }, { t: "丁", w: 0, l: 1 }
+  ] } };
+  var ev = AG.buildEvent(cfg, matches, null, structures);
+  var s = ev && ev.stages[0];
+  return s && Array.isArray(s.standings) && s.results === null;
+})());
 
 
 /* ---------- 场景 W2（用户口径 2026-11-05）：placement 截止铁律 ----------
@@ -1637,6 +1676,61 @@ check("③ 场次数与 expectRounds 不符（5 场配 [2,2,1,1]）→ degraded�
   var s = ev && ev.stages[0];
   return s && s.degraded === true && s.results === null;
 })());
+check("④ bracket 前驱链推导（2026-11-10 主证据）：expectRounds 配错也出正确结果+不炸；冠军/亚军/季军=GF 两个 winner 前驱的败者并列", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var cfg = { id: "brk-ev", game: "cs2", name: "测试", tournament: "括号测试", stages: [
+    { id: "po", type: "placement", label: "淘汰赛", stageNames: ["Playoffs"], expectRounds: [2, 2, 1], expectTeams: 6, qualifiedTeams: [] }
+  ] };
+  var structures = { "cs2|括号测试|Playoffs": { tid: 9, participants: ["甲", "乙", "丙", "丁", "戊", "己"], bracket: [
+    { mid: 101, st: "finished", a: "甲", b: "乙", w: "甲", prev: [] },
+    { mid: 102, st: "finished", a: "丙", b: "丁", w: "丁", prev: [] },
+    { mid: 103, st: "finished", a: "戊", b: "己", w: "戊", prev: [] },
+    { mid: 104, st: "finished", a: "甲", b: "戊", w: "戊", prev: [{ mid: 101, type: "winner" }, { mid: 103, type: "winner" }] },
+    { mid: 105, st: "finished", a: "丁", b: "乙", w: "丁", prev: [{ mid: 102, type: "winner" }] },
+    { mid: 106, st: "finished", a: "戊", b: "丁", w: "戊", prev: [{ mid: 104, type: "winner" }, { mid: 105, type: "winner" }] }
+  ] } };
+  var ev = AG.buildEvent(cfg, [], null, structures);
+  var s = ev && ev.stages[0];
+  if (!s || !s.results) return false;
+  var ok = s.results.champion === "戊" && s.results.runnerUp === "丁" &&
+    (s.results.third || []).indexOf("甲") >= 0 && (s.results.third || []).indexOf("乙") >= 0;
+  // expectRounds [2,2,1]=5 场 ≠ bracket 6 场 → 只告警不炸（走到这里即通过）
+  return ok;
+})());
+check("⑤ bracket 未全完赛 → 不出结果（round 启发式兜底语义不变）；⑥ qualifiedTeams 自动播种（rosters participants）", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  // ⑤ 半决赛未打完
+  var structuresPending = { "cs2|括号测试|Playoffs": { tid: 9, participants: ["甲", "乙"], bracket: [
+    { mid: 101, st: "finished", a: "甲", b: "乙", w: "甲", prev: [] },
+    { mid: 106, st: "not_started", a: "", b: "", w: "", prev: [{ mid: 101, type: "winner" }] }
+  ] } };
+  var cfg = { id: "p-ev", game: "cs2", name: "测试", tournament: "括号测试", stages: [
+    { id: "po", type: "placement", label: "淘汰赛", stageNames: ["Playoffs"], expectRounds: [2, 2, 1], expectTeams: 0, qualifiedTeams: [] }
+  ] };
+  var evP = AG.buildEvent(cfg, [], null, structuresPending);
+  if (!evP || evP.stages[0].results !== null) return false;
+  // ⑥ 播种：participants 6 队 → stage.teams=6、expectTeams=6（客户端名单齐判定的数据基础）
+  var structuresSeed = { "cs2|括号测试|Playoffs": { tid: 9, participants: ["甲", "乙", "丙", "丁", "戊", "己"], bracket: [] } };
+  var evS = AG.buildEvent(cfg, [], null, structuresSeed);
+  var sS = evS && evS.stages[0];
+  if (!sS) return false;
+  return sS.teams.length === 6 && sS.expectTeams === 6;
+})());
+check("⑦ roundLabels 配置覆盖生效（_doc 宣称可配，2026-11-10 起真实现）", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var cfg = { id: "rl-ev", game: "cs2", name: "测试", tournament: "轮名测试", stages: [
+    { id: "po", type: "placement", label: "淘汰赛", stageNames: ["Playoffs"], expectRounds: [2, 1], expectTeams: 4, qualifiedTeams: ["甲", "乙", "丙", "丁"],
+      roundLabels: ["四强", "总决赛"] }
+  ] };
+  var matches = [
+    { game: "cs2", tournament: "轮名测试", stage: "Playoffs", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: new Date(Date.now() - 48 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "轮名测试", stage: "Playoffs", teamA: { name: "丙" }, teamB: { name: "丁" }, startAt: new Date(Date.now() - 47 * 3600000).toISOString(), result: { winner: "A", score: "2:0" } },
+    { game: "cs2", tournament: "轮名测试", stage: "Playoffs", teamA: { name: "甲" }, teamB: { name: "丙" }, startAt: new Date(Date.now() - 24 * 3600000).toISOString(), result: { winner: "A", score: "2:1" } }
+  ];
+  var ev = AG.buildEvent(cfg, matches, null);
+  var s = ev && ev.stages[0];
+  return s && !s.degraded && Array.isArray(s.rounds) && s.rounds[0] === "四强" && s.rounds[1] === "总决赛";
+})());
 
 /* ---------- 场景 AG（2026-11-09 事故）：Sync 调试环境门禁 ----------
    cloud.storage 在新宿主对调试会话（Browser Fake）真实可用——调试台本地测试状态曾以新
@@ -1684,6 +1778,79 @@ check("④ 4进3 战绩桶（BLAST Rivals 香港实测形态）：4 队×4 场 �
 })());
 
 rmSync(tmp, { recursive: true, force: true });
+
+/* ---------- 场景 AH（2026-11-10）：赛事结构（structures）客户端链路 ----------
+   fetch-tournament-structures（官方 rosters/standings/brackets）→ build/trim 切片 →
+   normalizeStructures 白名单 → buildAutoEvents（auto records 结算主证据）与桶体积分条。 */
+console.log("AH. 赛事结构链路（normalizeStructures / stage.standings / auto standings 主证据）：");
+check("① normalizeStructures：白名单（participants/standings）+ 脏条目丢弃 + 封顶", (function () {
+  var raw = {
+    "cs2|T1|Group A": { tid: 1, participants: ["甲", "乙", "", 42], standings: [{ t: "甲", w: 2, l: 0 }, { t: "bad" }, { t: "乙", w: -1, l: 0 }, { t: "丙", w: 1, l: 1 }] },
+    "cs2|T1|Group B": { participants: [], standings: [] }, // 空条目丢弃
+    "bad": 42
+  };
+  var out = PK.normalizeStructures(raw);
+  var a = out["cs2|T1|Group A"];
+  if (!a) return false;
+  if (a.participants.join() !== "甲,乙" ) return false; // 空串/数字过滤
+  if (!Array.isArray(a.standings) || a.standings.length !== 2) return false; // 脏行丢弃
+  if (out["cs2|T1|Group B"] !== undefined) return false; // 全空丢弃
+  if (out["bad"] !== undefined) return false;
+  // 封顶 64
+  var many = {};
+  for (var i = 0; i < 70; i++) many["k" + i] = { participants: ["甲"] };
+  var out2 = PK.normalizeStructures(many);
+  return Object.keys(out2).length === 64;
+})());
+check("② normalizeStage：standings 行清洗透传（脏行丢弃、无行省略）", (function () {
+  var st = PK.normalizePickemData({ events: [{ id: "e", game: "cs2", name: "x", stages: [
+    { id: "g", type: "records", label: "G", buckets: [{ k: "1:0", cap: 1 }], standings: [{ t: "甲", w: 1, l: 0 }, { t: "乙", w: "x", l: 0 }] }
+  ] }] }).events[0].stages[0];
+  if (!Array.isArray(st.standings) || st.standings.length !== 1 || st.standings[0].t !== "甲") return false;
+  var st2 = PK.normalizePickemData({ events: [{ id: "e", game: "cs2", name: "x", stages: [
+    { id: "g", type: "records", label: "G", buckets: [{ k: "1:0", cap: 1 }] }
+  ] }] }).events[0].stages[0];
+  return st2.standings === undefined; // 无数据省略（老数据形状不变）
+})());
+check("③ buildAutoEvents：auto records 结算以官方 standings 为主证据（自采胜者误差不再永不结算）", (function () {
+  var now = Date.now();
+  function m(id, a, b, w, hAgo) {
+    return { id: id, game: "cs2", tournament: "自动桶测试", stage: "Group A", tier: "s",
+      teamA: { name: a }, teamB: { name: b }, startAt: new Date(now - hAgo * 3600000).toISOString(),
+      result: w ? { winner: w, score: "2:0" } : null };
+  }
+  // 4 队×5 场 GSL（autoRecordsBuckets 命中），乙 vs 丁 一场胜者被采反（heal/误差模拟）——
+  // 派生 W:L：甲 2:0 / 乙 1:2 / 丙 1:2 / 丁 1:1 → 分布不符（旧逻辑 null）；
+  // 官方 standings 给真值（甲 2:0 / 乙 2:1 / 丙 1:2 / 丁 0:2）→ 落桶出结果
+  var matches = [m("a1", "甲", "乙", "A", 80), m("a2", "丙", "丁", "A", 79), m("a3", "甲", "丙", "A", 50), m("a4", "丁", "乙", "A", 49), m("a5", "乙", "丙", "A", 20)];
+  var structures = { "cs2|自动桶测试|Group A": { participants: ["甲", "乙", "丙", "丁"], standings: [
+    { t: "甲", w: 2, l: 0 }, { t: "乙", w: 2, l: 1 }, { t: "丙", w: 1, l: 2 }, { t: "丁", w: 0, l: 2 }
+  ] } };
+  var evs = PK.buildAutoEvents(matches, [], structures);
+  var ev = evs.filter(function (e) { return e.id === "auto:自动桶测试"; })[0];
+  if (!ev) return false;
+  var rec = ev.stages.filter(function (s) { return s.type === "records"; })[0];
+  if (!rec) return false;
+  if (!Array.isArray(rec.standings) || rec.standings.length !== 4) return false;
+  if (!rec.results) return false;
+  return (rec.results["2:0"] || []).join() === "甲" && (rec.results["2:1"] || []).join() === "乙" &&
+    (rec.results["1:2"] || []).join() === "丙" && (rec.results["0:2"] || []).join() === "丁";
+})());
+check("④ buildAutoEvents：无 structures 时行为不变（分布比对兜底回归）", (function () {
+  var now = Date.now();
+  function m(id, a, b, w, hAgo) {
+    return { id: id, game: "cs2", tournament: "自动桶回归", stage: "Group A", tier: "s",
+      teamA: { name: a }, teamB: { name: b }, startAt: new Date(now - hAgo * 3600000).toISOString(),
+      result: w ? { winner: w, score: "2:0" } : null };
+  }
+  var matches = [m("b1", "甲", "乙", "A", 80), m("b2", "丙", "丁", "A", 79), m("b3", "甲", "丙", "A", 50), m("b4", "乙", "丁", "A", 49), m("b5", "乙", "丙", "A", 20)];
+  var evs = PK.buildAutoEvents(matches, []);
+  var rec = evs[0].stages.filter(function (s) { return s.type === "records"; })[0];
+  if (!rec || rec.standings !== undefined) return false;
+  if (!rec.results) return false;
+  return rec.results["2:0"][0] === "甲" && rec.results["2:1"][0] === "乙" &&
+    rec.results["1:2"][0] === "丙" && rec.results["0:2"][0] === "丁";
+})());
 
 console.log("");
 if (failures) {

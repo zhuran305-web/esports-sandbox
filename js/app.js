@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -22,6 +22,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var ROSTERS = DATA.rosters || {};
   // Pick'Em 赛事聚合（1.3 实验功能）：fetch-pickem 管线切片（内嵌 + 运行时合并，只增不减）
   var PICKEM = normalizePickemData(DATA.pickem).events;
+  // 赛事结构（2026-11-10）：官方参赛名单/小组积分（fetch-tournament-structures 管线切片）——
+  // auto 事件结构化竞猜与桶体积分条消费；键 game|tournament|stage
+  var STRUCTURES = normalizeStructures(DATA.structures);
   var pickemEventId = ""; // 当前查看的赛事（多赛事时顶部 chip 切换）
   // 队标基址（1.3.12 起改为打包内嵌同源资源）：0.9.6 deploy 构建的 CSP img-src 实测未包含
   // network 批准的 OSS 域（服务端 network_policy entries 为空）——远程队标全被拦回退首字母。
@@ -1964,7 +1967,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   function pickemEvents() {
     var key = DATA_UPDATED_AT + "|" + MATCHES.length + "|" + PICKEM.length;
     if (!pickemAutoCache || pickemAutoCacheKey !== key) {
-      pickemAutoCache = buildAutoEvents(MATCHES, pickemManualTournaments());
+      pickemAutoCache = buildAutoEvents(MATCHES, pickemManualTournaments(), STRUCTURES);
       pickemAutoCacheKey = key;
     }
     var merged = PICKEM.filter(function (ev) { return ev && ev.stages && ev.stages.length; })
@@ -2247,6 +2250,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       }
     } else if (st === "locked") {
       html += '<div class="pickem-note">已截止：开赛前 1 小时锁定选择，赛果出来后自动结算</div>';
+    }
+    // 官方小组积分（2026-11-10）：fetch-tournament-structures 管线切片，聚合器/auto 路径烘进阶段——
+    // records/swiss 通用；无数据（未开赛/老缓存）自然不显示
+    var stRows = stage.standings || [];
+    if (stRows.length) {
+      html += '<div class="pickem-round-label">小组积分</div><div class="pickem-standings">' +
+        stRows.map(function (r) {
+          return '<span class="pk-standing"><b>' + esc(r.t) + "</b><i>" + r.w + "-" + r.l + "</i></span>";
+        }).join("") + "</div>";
     }
     // 轮次流（1.3.6）：对阵与赛果按轮展示（纯展示，选择交互在上方桶）
     if (stage.matches.length) {
@@ -5581,7 +5593,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   }
 
   /* ============================== 运行时数据 ============================== */
-  function applySnapshot(matches, meta, teams, teamColors, rosters, pickem) {
+  function applySnapshot(matches, meta, teams, teamColors, rosters, pickem, structures) {
     if (!matches || !matches.length) return;
 
     var map = {};
@@ -5617,6 +5629,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         if (hit >= 0) PICKEM[hit] = ev;
         else PICKEM.push(ev);
       });
+    }
+    // 赛事结构（2026-11-10）：同键新数据整体替换（官方积分随赛果演进，新值更完整）
+    if (structures) {
+      Object.keys(structures).forEach(function (key) { STRUCTURES[key] = structures[key]; });
     }
     applyTeamTheme(); // 主队的新色到了可能要换肤
     rebuildMatchIndex();
@@ -5677,7 +5693,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       var cached = await loadCachedSnapshot();
       if (cached && cached.meta && cached.meta.updatedAt &&
           cached.meta.updatedAt !== DATA_UPDATED_AT) {
-        applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors, cached.rosters, cached.pickem);
+        applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors, cached.rosters, cached.pickem, cached.structures);
       }
 
       // 宿主明确拒绝服务端 API 时，24 小时内不再自动重试，避免每次启动弹原生错误框
@@ -5699,7 +5715,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         pollBackoffUntil = 0;
         await storageSet(NET_BLOCK_KEY, { at: 0, version: APP_VERSION });
         if (remote.meta.updatedAt && remote.meta.updatedAt !== DATA_UPDATED_AT) {
-          applySnapshot(remote.matches, remote.meta, remote.teams, remote.teamColors, remote.rosters, remote.pickem);
+          applySnapshot(remote.matches, remote.meta, remote.teams, remote.teamColors, remote.rosters, remote.pickem, remote.structures);
           if (manual) toast("赛程已更新");
         } else if (manual) {
           toast("赛程已是最新");

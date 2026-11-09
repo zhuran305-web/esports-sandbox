@@ -98,6 +98,22 @@ function validMatch(m) {
     typeof m.startAt === "string" && !isNaN(new Date(m.startAt).getTime());
 }
 
+/** 官方小组积分行（2026-11-10，fetch-tournament-structures 管线）：[{t 队名, w 胜, l 负}]。
+ *  脏行丢弃；无行返回 undefined（JSON 省略，客户端白名单兼容缺席） */
+var MAX_STAGE_STANDINGS = 16;
+function normStandingsRows(raw) {
+  if (!Array.isArray(raw)) return undefined;
+  var out = [];
+  for (var i = 0; i < raw.length && out.length < MAX_STAGE_STANDINGS; i++) {
+    var r = raw[i];
+    if (!r || typeof r.t !== "string" || !r.t) continue;
+    var w = Number(r.w), l = Number(r.l);
+    if (!isFinite(w) || !isFinite(l) || w < 0 || l < 0) continue;
+    out.push({ t: r.t.slice(0, 48), w: Math.floor(w), l: Math.floor(l) });
+  }
+  return out.length ? out : undefined;
+}
+
 function normalizeStage(raw) {
   if (!raw || (raw.type !== "swiss" && raw.type !== "bracket" && raw.type !== "series" && raw.type !== "placement" && raw.type !== "records")) return null;
   if (typeof raw.id !== "string" || !raw.id) return null;
@@ -115,6 +131,8 @@ function normalizeStage(raw) {
     displayOnly: raw.displayOnly === true && raw.type === "series" ? true : undefined,
     startsAt: typeof raw.startsAt === "string" ? raw.startsAt : "",
     endsAt: typeof raw.endsAt === "string" ? raw.endsAt : "",
+    // 官方小组积分（2026-11-10）：聚合器/自动收录管线烘进阶段，桶体展示用
+    standings: normStandingsRows(raw.standings),
     teams: teams, matches: matches
   };
   if (raw.type === "records") {
@@ -198,6 +216,28 @@ export function normalizePickemData(raw) {
     });
   });
   return { v: 1, events: out };
+}
+
+/** 赛事结构（2026-11-10，fetch-tournament-structures 管线切片）：键 "game|tournament|stage"，
+ *  值 {participants 参赛名单, standings 小组积分}——buildAutoEvents 与桶体展示消费。
+ *  bracket 不下发（仅数据侧推导用）。脏条目丢弃、封顶 64。 */
+var MAX_STRUCTURES = 64;
+export function normalizeStructures(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  var out = {};
+  var keys = Object.keys(raw);
+  var n = 0;
+  for (var i = 0; i < keys.length && n < MAX_STRUCTURES; i++) {
+    var key = keys[i];
+    var e = raw[key];
+    if (!key || !e || typeof e !== "object" || Array.isArray(e)) continue;
+    var parts = Array.isArray(e.participants) ? e.participants.filter(function (x) { return typeof x === "string" && x; }).slice(0, 32) : [];
+    var rows = normStandingsRows(e.standings) || [];
+    if (!parts.length && !rows.length) continue;
+    out[key] = { participants: parts, standings: rows };
+    n++;
+  }
+  return out;
 }
 
 /* ---------- 用户侧记录（state.pickem）校验 ---------- */
@@ -569,16 +609,23 @@ function autoRecordsBuckets(list) {
 }
 
 /** 战绩桶结果推导（与聚合器 recordsResults 同口径）：全部完赛（弃赛容忍）且实际 W:L 分布与
- *  桶容量逐一吻合才出结果——推断误判时宁缺勿滥返回 null（阶段不出结果、选择不结算）。 */
-function autoRecordsResults(teamList, buckets, compact) {
+ *  桶容量逐一吻合才出结果——推断误判时宁缺勿滥返回 null（阶段不出结果、选择不结算）。
+ *  2026-11-10 加固：官方 standings（structures）存在时为落桶主证据（缺行的队回退自采派生，
+ *  漏采/弃赛失真不再导致永不结算）；分布比对保留为 standings 缺失时的兜底。 */
+function autoRecordsResults(teamList, buckets, compact, standings) {
   var allDone = compact.length > 0 && compact.every(function (m) {
     return m.winner === "A" || m.winner === "B" || m.canceled === true;
   });
   if (!allDone) return null;
+  var byName = {};
+  (Array.isArray(standings) ? standings : []).forEach(function (s) {
+    if (s && typeof s.t === "string") byName[s.t] = s;
+  });
   var byBucket = {};
   buckets.forEach(function (b) { byBucket[b.k] = []; });
   teamList.forEach(function (t) {
-    var k = t.w + ":" + t.l;
+    var s = byName[t.name];
+    var k = (s ? s.w : t.w) + ":" + (s ? s.l : t.l);
     if (byBucket[k]) byBucket[k].push(t.name);
   });
   return buckets.every(function (b) { return byBucket[b.k].length === b.cap; }) ? byBucket : null;
@@ -587,7 +634,7 @@ function autoRecordsResults(teamList, buckets, compact) {
 /** 构建自动收录的 records 阶段：id 加 "|rec" 后缀与同源 series 阶段的 recKey 隔离——
  *  历史（1.3.12 时代）逐场选择仍挂在同源 series 阶段正常结算，渲染层按 srcStage 去重隐藏 series
  *  （records 桶体自带「对阵与赛果」展示，无重复观感）。coinTier 与 helper/聚合器一致：A 级铜、其余银。 */
-function buildAutoRecordsStage(sk, list, rounds, buckets, eventIsA) {
+function buildAutoRecordsStage(sk, list, rounds, buckets, eventIsA, structure) {
   var teams = {};
   var order = [];
   var compact = list.map(function (m, i) {
@@ -615,11 +662,13 @@ function buildAutoRecordsStage(sk, list, rounds, buckets, eventIsA) {
     coinTier: eventIsA ? 1 : 2,
     startsAt: list[0].startAt, endsAt: list[list.length - 1].startAt,
     teams: teamList, matches: compact, buckets: buckets,
-    results: autoRecordsResults(teamList, buckets, compact)
+    // 官方小组积分（2026-11-10）：structures 切片随阶段烘入，桶体展示与结算主证据同源
+    standings: structure && Array.isArray(structure.standings) && structure.standings.length ? structure.standings.slice(0, 16) : undefined,
+    results: autoRecordsResults(teamList, buckets, compact, structure && structure.standings)
   };
 }
 
-export function buildAutoEvents(matches, excludeTournaments) {
+export function buildAutoEvents(matches, excludeTournaments, structures) {
   var excluded = {};
   (excludeTournaments || []).forEach(function (t) { excluded[t] = 1; });
   var byEvent = {};
@@ -650,9 +699,11 @@ export function buildAutoEvents(matches, excludeTournaments) {
     stageKeys.forEach(function (sk) {
       var list = ev.stages[sk].slice().sort(function (a, b) { return new Date(a.startAt) - new Date(b.startAt); });
       var rounds = autoStageRounds(list);
+      // 官方结构数据（2026-11-10）：键与 matches 的 (game, tournament, stage) 对齐
+      var structure = structures && structures[ev.game + "|" + tn + "|" + sk] ? structures[ev.game + "|" + tn + "|" + sk] : null;
       // 淘汰赛阶段名先行排除（semifinals 等也是 4 队——绝不能套 GSL 桶），其余按形态推导战绩桶
       var recBuckets = isPlayoffStageKey(sk) ? null : autoRecordsBuckets(list);
-      if (recBuckets) stages.push(buildAutoRecordsStage(sk, list, rounds, recBuckets, allA));
+      if (recBuckets) stages.push(buildAutoRecordsStage(sk, list, rounds, recBuckets, allA, structure));
       var teamsSeen = {};
       var ms = list.map(function (m, i) {
         var startT = new Date(m.startAt).getTime();

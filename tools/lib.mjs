@@ -76,6 +76,7 @@ export function stripTeamLogos(matches) {
     });
     if (copy.bestof !== undefined) delete copy.bestof;
     if (copy.mid !== undefined) delete copy.mid; // 客户端零引用（仅服务端合并用），省运行时包
+    if (copy.tid !== undefined) delete copy.tid; // 同上：structures 抓取键，客户端按 game|tournament|stage 查结构
     if (!copy.note) delete copy.note;
     return copy;
   });
@@ -133,6 +134,9 @@ export function normalizeMatch(raw, source) {
     // PandaScore match id（2026-11-08）：mergeMatches 的同场主键（matchMidKey）——
     // 唯一且稳定，跨「主客交换/队名编辑/同队多场」；manual/liquipedia 为 undefined（JSON 自动省略）
     mid: Number(raw.mid) > 0 ? Math.floor(Number(raw.mid)) : undefined,
+    // PandaScore tournament id（阶段级实体，fetch-tournament-structures 的抓取键）；
+    // manual/liquipedia 为 undefined（JSON 自动省略）。客户端零引用——运行时切片剥离
+    tid: Number(raw.tid) > 0 ? Math.floor(Number(raw.tid)) : undefined,
     note: raw.note ? String(raw.note) : "",
     source: source || raw.source || "manual"
   };
@@ -270,6 +274,8 @@ export function mergeMatches(existing, incoming, options) {
       merged.source = newP >= curP ? m.source : cur.source;
       // 同理：mid（manual 覆盖时不丢已有 mid，否则后续 pandascore 重取会退回 slug 键合并）
       if (merged.mid === undefined && cur.mid !== undefined) merged.mid = cur.mid;
+      // 同理：tid（manual 覆盖时不丢已有 tid——structures 抓取键）
+      if (merged.tid === undefined && cur.tid !== undefined) merged.tid = cur.tid;
       // 手工条目没有队标：沿用已有条目的，避免覆盖时丢图
       ["teamA", "teamB"].forEach(function (side) {
         if (merged[side] && cur[side] && !merged[side].logo && cur[side].logo) {

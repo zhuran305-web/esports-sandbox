@@ -3245,6 +3245,24 @@ html[data-theme="light"] .cer-quote input {
   color: var(--text-dim);
   letter-spacing: .04em;
 }
+/* 官方小组积分条（2026-11-10，fetch-tournament-structures 管线）：桶体「对阵与赛果」前的紧凑积分行 */
+.pickem-standings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pk-standing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--bg-soft, rgba(255, 255, 255, .05));
+  font-size: 11px;
+}
+.pk-standing b { font-weight: 700; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-standing i { font-style: normal; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .pickem-match {
   display: flex;
   align-items: center;

@@ -6,7 +6,7 @@
  */
 import { RUNTIME_DATA_BASE } from "./config.js";
 import { networkGetJson, storageGet, storageSet, getRuntimeMode, whenPlatformReady } from "./platform.js";
-import { normalizePickemData } from "./pickem.js";
+import { normalizePickemData, normalizeStructures } from "./pickem.js";
 
 var CACHE_KEY = "esports_sandbox_remote_v1";
 var MAX_MATCHES = 10000;
@@ -126,11 +126,12 @@ export async function loadCachedSnapshot() {
     teamColors: normalizeTeamColors(cached),
     rosters: normalizeRosters(cached),
     pickem: normalizePickemData(cached.pickem),
+    structures: normalizeStructures(cached.structures),
     checkedAt: typeof cached.checkedAt === "number" ? cached.checkedAt : 0
   };
 }
 
-async function saveCache(meta, matches, teams, teamColors, rosters, pickem, checkedAt) {
+async function saveCache(meta, matches, teams, teamColors, rosters, pickem, structures, checkedAt) {
   return storageSet(CACHE_KEY, {
     meta: meta,
     matches: matches,
@@ -138,6 +139,7 @@ async function saveCache(meta, matches, teams, teamColors, rosters, pickem, chec
     teamColors: teamColors,
     rosters: rosters,
     pickem: pickem,
+    structures: structures,
     checkedAt: checkedAt
   });
 }
@@ -164,6 +166,7 @@ export async function fetchRemoteSnapshot(options) {
       teamColors: cached.teamColors,
       rosters: cached.rosters,
       pickem: cached.pickem,
+      structures: cached.structures,
       checkedAt: cached.checkedAt,
       fromCache: true,
       skipped: true
@@ -181,7 +184,7 @@ export async function fetchRemoteSnapshot(options) {
   if (cached && cached.meta.hash === meta.hash && cached.meta.updatedAt === meta.updatedAt) {
     // 数据未变化：也刷新 checkedAt，让 maxAge 节流在下一轮生效（每轮轮询只花一次 meta 探测）
     cached.checkedAt = Date.now();
-    await saveCache(meta, cached.matches, cached.teams, cached.teamColors, cached.rosters, cached.pickem, cached.checkedAt);
+    await saveCache(meta, cached.matches, cached.teams, cached.teamColors, cached.rosters, cached.pickem, cached.structures, cached.checkedAt);
     return {
       meta: meta,
       matches: cached.matches,
@@ -189,6 +192,7 @@ export async function fetchRemoteSnapshot(options) {
       teamColors: cached.teamColors,
       rosters: cached.rosters,
       pickem: cached.pickem,
+      structures: cached.structures,
       checkedAt: cached.checkedAt,
       fromCache: true
     };
@@ -210,9 +214,10 @@ export async function fetchRemoteSnapshot(options) {
   var teamColors = normalizeTeamColors(raw);
   var rosters = normalizeRosters(raw);
   var pickem = normalizePickemData(raw.pickem);
+  var structures = normalizeStructures(raw.structures);
 
   var checkedAt = Date.now();
-  var cachedOk = await saveCache(meta, matches, teams, teamColors, rosters, pickem, checkedAt);
+  var cachedOk = await saveCache(meta, matches, teams, teamColors, rosters, pickem, structures, checkedAt);
   if (!cachedOk) {
     // 整包约 1.2 MiB，宿主可能对单值设 UTF-8 字节配额；失败只影响下次启动需重下
     console.warn("[data] 快照缓存写入失败，下次启动会重新下载整包");
@@ -224,6 +229,7 @@ export async function fetchRemoteSnapshot(options) {
     teamColors: teamColors,
     rosters: rosters,
     pickem: pickem,
+    structures: structures,
     checkedAt: checkedAt,
     fromCache: false
   };

@@ -98,6 +98,28 @@ var out = {
     } catch (e) { /* 脏数据当空 */ }
     return { v: 1, events: [] };
   })(),
+  // 赛事结构切片（2026-11-10）：fetch-tournament-structures 的官方名单/积分（窗口内赛事，
+  // 只带 participants/standings——bracket 不下发）——离线冷启动的作业页也能看到积分与结构
+  structures: (function () {
+    var out = {};
+    var all = {};
+    var p = path.join(ROOT, "data", "tournament-structures.json");
+    if (existsSync(p)) {
+      try { all = (JSON.parse(readFileSync(p, "utf8")) || {}).structures || {}; } catch (e) { all = {}; }
+    }
+    matches.forEach(function (m) {
+      if (!m || !m.game || !m.tournament || !m.stage) return;
+      var key = m.game + "|" + m.tournament + "|" + m.stage;
+      if (out[key] || !all[key]) return;
+      if (Object.keys(out).length >= 64) return;
+      var e = all[key];
+      out[key] = {
+        participants: Array.isArray(e.participants) ? e.participants.slice(0, 32) : [],
+        standings: Array.isArray(e.standings) ? e.standings.slice(0, 16) : []
+      };
+    });
+    return out;
+  })(),
   matches: stripTeamLogos(matches)
 };
 

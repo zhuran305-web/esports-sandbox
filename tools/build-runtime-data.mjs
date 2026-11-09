@@ -59,8 +59,31 @@ if (existsSync(pickemPath)) {
     if (pickemRaw && Array.isArray(pickemRaw.events)) pickem = { v: 1, events: pickemRaw.events };
   } catch (e) { pickem = { v: 1, events: [] }; }
 }
+// 赛事结构切片（2026-11-10）：fetch-tournament-structures 的官方名单/积分——只带客户端要用的
+// participants/standings（bracket 仅数据侧推导用，不下发）；键 game|tournament|stage 与 matches 对齐，
+// 只输出窗口内出现过的赛事，封顶 64。计入 meta hash（内容变化才翻，确定性序列化）
+var structuresAll = {};
+var structsPath = path.join(ROOT, "data", "tournament-structures.json");
+if (existsSync(structsPath)) {
+  try {
+    var structsRaw = JSON.parse(await readFile(structsPath, "utf8"));
+    if (structsRaw && structsRaw.structures) structuresAll = structsRaw.structures;
+  } catch (e) { structuresAll = {}; }
+}
+var structures = {};
+raw.matches.forEach(function (m) {
+  var nKeys = Object.keys(structures).length;
+  if (!m || !m.game || !m.tournament || !m.stage || nKeys >= 64) return;
+  var key = m.game + "|" + m.tournament + "|" + m.stage;
+  if (structures[key] || !structuresAll[key]) return;
+  var e = structuresAll[key];
+  structures[key] = {
+    participants: Array.isArray(e.participants) ? e.participants.slice(0, 32) : [],
+    standings: Array.isArray(e.standings) ? e.standings.slice(0, 16) : []
+  };
+});
 var updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString();
-var hash = createHash("sha256").update(JSON.stringify({ teams: teams, teamColors: teamColors, rosters: rosters, pickem: pickem, matches: matches })).digest("hex");
+var hash = createHash("sha256").update(JSON.stringify({ teams: teams, teamColors: teamColors, rosters: rosters, pickem: pickem, structures: structures, matches: matches })).digest("hex");
 var meta = {
   schemaVersion: 1,
   updatedAt: updatedAt,
@@ -69,9 +92,10 @@ var meta = {
   teamColorCount: Object.keys(teamColors).length,
   rosterCount: Object.keys(rosters).length,
   pickemCount: pickem.events.length,
+  structureCount: Object.keys(structures).length,
   hash: hash
 };
-var body = JSON.stringify({ updatedAt: updatedAt, teams: teams, teamColors: teamColors, rosters: rosters, pickem: pickem, matches: matches });
+var body = JSON.stringify({ updatedAt: updatedAt, teams: teams, teamColors: teamColors, rosters: rosters, pickem: pickem, structures: structures, matches: matches });
 
 await mkdir(OUT, { recursive: true });
 await writeFile(path.join(OUT, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
@@ -80,6 +104,6 @@ await writeFile(path.join(OUT, "matches.json"), body + "\n", "utf8");
 console.log(
   "[runtime] " + matches.length + " 场 · " + Object.keys(teams).length + " 支队标 · " +
   Object.keys(teamColors).length + " 支主题色 · " + Object.keys(rosters).length + " 套阵容 · " +
-  pickem.events.length + " 个 Pick'Em 赛事 · " +
+  pickem.events.length + " 个 Pick'Em 赛事 · " + Object.keys(structures).length + " 组赛事结构 · " +
   (body.length / 1048576).toFixed(2) + " MiB · hash " + hash.slice(0, 12)
 );

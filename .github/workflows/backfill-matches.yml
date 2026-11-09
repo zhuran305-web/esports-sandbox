@@ -42,6 +42,9 @@ jobs:
             # Pick'Em 赛事聚合（1.4.0）：可选资产，缺失时从空累积
             gh release download data --pattern pickem.json --dir data --clobber \
               || echo "还没有 pickem.json 资产，从空累积"
+            # 赛事结构（2026-11-10）：可选资产，缺失时从空累积
+            gh release download data --pattern tournament-structures.json --dir data --clobber \
+              || echo "还没有 tournament-structures.json 资产，从空累积"
           else
             echo "首次运行：还没有 data release，从空数据开始"
           fi
@@ -72,6 +75,14 @@ jobs:
           fi
           node tools/fetch-team-rosters.mjs --oss --window
 
+      # 赛事结构抓取（2026-11-10）：需要刚更新的 matches.json（取 tid）；continue-on-error 显式声明
+      # ——结构数据缺失只退化到旧推导路径，绝不阻塞数据发布
+      - name: Fetch tournament structures
+        continue-on-error: true
+        env:
+          PANDASCORE_TOKEN: ${{ secrets.PANDASCORE_TOKEN }}
+        run: node tools/fetch-tournament-structures.mjs
+
       # Pick'Em 赛事聚合（1.4.0）：纯本地聚合（matches.json + 配置），零外部依赖；
       # continue-on-error 显式声明——任何问题都不阻塞数据发布
       - name: Fetch pickem events
@@ -97,6 +108,10 @@ jobs:
           # Pick'Em 赛事聚合（1.4.0）：同 team-ids 先例
           if [ -f data/pickem.json ]; then
             gh release upload data data/pickem.json --clobber
+          fi
+          # 赛事结构（2026-11-10）：同 team-ids 先例
+          if [ -f data/tournament-structures.json ]; then
+            gh release upload data data/tournament-structures.json --clobber
           fi
 
       # 2026-10-25 事故修复：backfill 曾只上传 Release 不更新 OSS，导致 OSS 与 Release

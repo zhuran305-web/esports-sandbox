@@ -1943,9 +1943,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var pickemAutoCacheKey = "";
   var pickemGame = "all";       // 作业页游戏筛选（1.3.6，仿主页）
   var pickemQuery = "";         // 作业页搜索词（与 chips/主体同源，假设 75/76）
-  // 公测直入口（1.3.10）：主页「IEM 作业」=只显示该手工赛事、隐藏 tabs/游戏筛选——其他赛事不展示（公测范围仅 IEM）；
+  // 公测直入口（1.3.10 建，1.3.14 起指向 BLAST Rivals 香港站——IEM 北京已结束）：
+  // 主页「BLAST 作业」=只显示该手工赛事、隐藏 tabs/游戏筛选——其他赛事不展示；
   // 实验功能入口仍显示全部
-  var PICKEM_SCOPED_EVENT = "iem-beijing-2026";
+  var PICKEM_SCOPED_EVENT = "blast-rivals-fall-2026";
   var pickemScoped = false;
   var pickemSearchTimer = null;
 
@@ -1984,7 +1985,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   }
 
   /** 作业页统一口径（1.3.6，假设 75/76）：游戏筛选 + 搜索词过滤后的赛事列表——chips 与主体同源。
-   *  公测直入口（1.3.10）锁定 IEM 事件：scoped 时其余赛事一律不出现。 */
+   *  公测直入口（1.3.10）锁定 scoped 事件（1.3.14 起=BLAST 香港）：scoped 时其余赛事一律不出现。 */
   function pickemFilteredEvents() {
     var q = pickemQuery.trim().toLowerCase();
     var base = pickemVisibleEvents();
@@ -2613,7 +2614,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (!body) return;
     var all = pickemVisibleEvents(); // 1.3.14：已结束赛事不进列表/计数/空态（与 pickemFilteredEvents 同源）
     if (pickemScoped) {
-      // 公测直入口：只显示 IEM 作业赛事——选择器整行隐藏（其他赛事不展示）
+      // 公测直入口：只显示 scoped 赛事（1.3.14 起=BLAST 香港）——选择器整行隐藏（其他赛事不展示）
       all = all.filter(function (e) { return e.id === PICKEM_SCOPED_EVENT; });
       if (selRow) selRow.hidden = true;
       if (pickemEventId !== PICKEM_SCOPED_EVENT) pickemEventId = PICKEM_SCOPED_EVENT;
@@ -2929,7 +2930,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#labsList").addEventListener("click", function (e) {
       var row = e.target.closest("[data-labs]");
       if (row && row.dataset.labs) {
-        if (row.dataset.labs === "pickem") pickemScoped = false; // 实验功能入口=完整列表（主页「IEM 作业」才是公测直入口）
+        if (row.dataset.labs === "pickem") pickemScoped = false; // 实验功能入口=完整列表（主页「BLAST 作业」才是公测直入口）
         switchView(row.dataset.labs);
       }
     });
@@ -5390,7 +5391,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     bindPickem();
     $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
     $("#homePickemBtn").addEventListener("click", function () {
-      pickemScoped = true; // 公测直入口：锁定 IEM 作业，其他赛事不展示
+      pickemScoped = true; // 公测直入口：锁定 scoped 赛事（1.3.14 起=BLAST 香港），其他赛事不展示
       switchView("pickem");
     });
 

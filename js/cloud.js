@@ -558,6 +558,19 @@ var STATE_KEY = "state_v1";
 var STATE_MAX_BYTES = 15 * 1024;
 var syncDisabled = false;
 
+/** 调试环境（Browser Fake，runtime.mode=development）判别——cloud.storage 在新宿主对调试
+ *  会话真实可用（2026-11-09 事故）：调试台本地测试状态曾以新时间戳推送真实云端，生产设备
+ *  LWW 拉回覆盖，用户真实竞猜记录被测试状态替换。isMock()（=!isMiniProgram()）区分不了
+ *  fake（fake 里 SDK 已加载）——必须看 runtime.mode。读+写双向禁用，调试与生产彻底隔离。 */
+function isDebugRuntime() {
+  try {
+    var sdk = getSDK();
+    var info = sdk && sdk.environment && typeof sdk.environment.getInfoSync === "function"
+      ? (sdk.environment.getInfoSync() || null) : null;
+    return !!(info && info.runtime && info.runtime.mode === "development");
+  } catch (e) { return false; }
+}
+
 function cloudStorageModule() {
   var sdk = getSDK();
   return sdk && sdk.cloud && sdk.cloud.storage ? sdk.cloud.storage : null;
@@ -583,7 +596,7 @@ export var Sync = {
   },
 
   canWrite: function () {
-    return !syncDisabled && !!cloudStorageModule();
+    return isMiniProgram() && !isDebugRuntime() && !syncDisabled && !!cloudStorageModule();
   },
 
   /** 打包同步记录；超限时按结算时间丢最旧的已结算预测，装不下返回 null（不丢未结算） */
@@ -630,6 +643,7 @@ export var Sync = {
    * 之后必须先成功 get 一次才能再 set——所以冲突后先读云端再决定重写或拉回。
    */
   write: async function (state, updatedAt) {
+    if (isDebugRuntime()) return false; // 调试环境禁写（防测试状态污染真实云端，11-09 事故）
     var cs = cloudStorageModule();
     if (!cs) return false;
     var body = this.pack(state, updatedAt);
@@ -662,6 +676,7 @@ export var Sync = {
   },
 
   read: async function () {
+    if (isDebugRuntime()) return null; // 调试环境禁读（fake 状态与真实云端彻底隔离，11-09 事故）
     var cs = cloudStorageModule();
     if (!cs) return null;
     try {

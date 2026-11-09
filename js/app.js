@@ -517,7 +517,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   }
 
   function maybeRestoreFromCloud() {
-    Sync.read().then(function (rec) {
+    Sync.read().then(function (rec) { // read 内含调试环境门禁（js/cloud.js isDebugRuntime）
       applyCloudRecord(rec);
     }).catch(function (e) { /* 读取失败保持本地 */ });
   }

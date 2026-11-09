@@ -1620,6 +1620,26 @@ check("③ 场次数与 expectRounds 不符（5 场配 [2,2,1,1]）→ degraded�
   return s && s.degraded === true && s.results === null;
 })());
 
+/* ---------- 场景 AG（2026-11-09 事故）：Sync 调试环境门禁 ----------
+   cloud.storage 在新宿主对调试会话（Browser Fake）真实可用——调试台本地测试状态曾以新
+   时间戳推送真实云端，生产设备 LWW 拉回覆盖用户真实竞猜记录。门禁：runtime.mode=
+   development 时读+写双向禁用（isMock() 区分不了 fake——fake 里 SDK 已加载）。 */
+console.log("AG. Sync 调试门禁（development 禁读禁写、production 正常）：");
+var gateOk = await (async function () {
+  var sdk = globalThis.__TEST_SDK || (globalThis.__TEST_SDK = { cloud: {} });
+  sdk.cloud = sdk.cloud || {};
+  var storageWrites = 0;
+  sdk.cloud.storage = { getStorage: async () => null, setStorage: async () => { storageWrites += 1; } };
+  sdk.environment = { getInfoSync: () => ({ runtime: { mode: "development" } }) };
+  var wDev = await Sync.write({ bankroll: 1, predictions: [] }, Date.now());
+  var rDev = await Sync.read();
+  sdk.environment.getInfoSync = () => ({ runtime: { mode: "production" } });
+  var wProd = await Sync.write({ bankroll: 1, predictions: [] }, Date.now());
+  var rProd = await Sync.read();
+  return wDev === false && rDev === null && wProd === true && rProd === null && storageWrites === 1;
+}());
+check("development: write=false/read=null（零存储调用）；production: write=true", gateOk);
+
 rmSync(tmp, { recursive: true, force: true });
 
 console.log("");

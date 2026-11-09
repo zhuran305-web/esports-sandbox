@@ -271,7 +271,43 @@ async function setCors() {
   });
 }
 
+/** 防回退守卫（2026-11-09 实战事故）：手动发布用的是**本地** runtime 快照，若本地
+ *  数据比线上旧（忘了 data:pull），上传会把 OSS 覆盖回旧数据——数据时间戳回退，
+ *  客户端与 FC 兜底的「数据陈旧」判定立刻误报（实测：本地 02:05 快照覆盖 CI 10:07
+ *  的新数据 → FC 发「已 600 分钟未更新」告警）。发布前匿名读线上 meta.updatedAt 比对：
+ *  线上更新则拒绝上传（`--force` 可强制覆盖）。 */
+async function guardAgainstRegression(runtime) {
+  if (flags.has("--force")) {
+    log("⚠ 已带 --force，跳过防回退检查");
+    return;
+  }
+  var localAt = Date.parse(runtime.meta.updatedAt || "") || 0;
+  var remote = null;
+  try {
+    var res = await fetch(publicBase + "meta.json?probe=" + Date.now(), {
+      headers: { "cache-control": "no-cache" }
+    });
+    if (res.ok) remote = await res.json();
+  } catch (e) {
+    log("线上 meta 读取失败（" + String((e && e.message) || e).slice(0, 80) + "），跳过防回退检查");
+    return;
+  }
+  if (!remote || typeof remote.updatedAt !== "string") return;
+  var remoteAt = Date.parse(remote.updatedAt) || 0;
+  if (remoteAt > localAt) {
+    fail(
+      "线上数据比本地新，拒绝上传（防止把 OSS 覆盖回旧快照）：\n" +
+      "  线上 updatedAt = " + remote.updatedAt + "（" + remote.count + " 场）\n" +
+      "  本地 updatedAt = " + runtime.meta.updatedAt + "（" + runtime.meta.count + " 场）\n" +
+      "  先刷新本地：npm run data:pull --force && npm run runtime:build，再发布；\n" +
+      "  确要强行覆盖（如线上数据损坏需回退）时加 --force。"
+    );
+  }
+  log("防回退检查通过：线上 " + remote.updatedAt + " ≤ 本地 " + runtime.meta.updatedAt);
+}
+
 async function upload(runtime) {
+  await guardAgainstRegression(runtime);
   var files = [
     { name: "meta.json", body: runtime.metaBody },
     { name: "matches.json", body: runtime.matchesBody }

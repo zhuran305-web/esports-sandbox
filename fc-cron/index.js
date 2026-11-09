@@ -36,7 +36,8 @@ var https = require("https");
 /* 请求目标白名单：键 → 固定 host。调用处只能传常量键，无法从外部注入地址 */
 var ALLOWED_TARGETS = {
   ossMeta: { host: "esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com", path: "/meta.json" },
-  ghDispatch: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/dispatches" }
+  ghDispatch: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/dispatches" },
+  ghRuns: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/runs?per_page=1" }
 };
 var ALLOWED_HOSTS = { "esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com": true, "api.github.com": true };
 
@@ -185,6 +186,33 @@ function staleMinutes() {
   return isFinite(n) && n > 0 ? n : STALE_DEFAULT_MINUTES;
 }
 
+/** 最近一轮 update-matches run 是否成功且新鲜（≤120 分钟）——陈旧告警的健康复核。
+ *  任何异常（403/网络/超时）返回 false → 走告警路径（fail-open，宁可误报不漏报）。 */
+async function latestRunHealthy(token) {
+  try {
+    var res = await httpsRequest(resolveTarget("ghRuns"), "GET", {
+      "Authorization": "Bearer " + token,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "esports-sandbox-cron"
+    }, null, 10000);
+    if (res.status !== 200) {
+      console.log("[cron] run 健康复核 HTTP " + res.status + "（按不健康处理）");
+      return false;
+    }
+    var j = JSON.parse(res.body);
+    var run = j && j.workflow_runs && j.workflow_runs[0];
+    if (!run) return false;
+    var ageMin = (Date.now() - new Date(run.created_at).getTime()) / 60000;
+    var ok = run.status === "completed" && run.conclusion === "success" && ageMin >= 0 && ageMin < 120;
+    console.log("[cron] run 健康复核：" + run.status + "/" + (run.conclusion || "-") + " · 距今 " + Math.round(ageMin) + " 分钟 → " + (ok ? "健康" : "不健康"));
+    return ok;
+  } catch (e) {
+    console.log("[cron] run 健康复核失败（按不健康处理）：" + ((e && e.message) || e));
+    return false;
+  }
+}
+
 exports.handler = async function (event, context) {
   var token = String(process.env.GITHUB_DISPATCH_TOKEN || "");
 
@@ -253,9 +281,17 @@ exports.handler = async function (event, context) {
       await alertIf("【赛事沙盘】采集兜底 dispatch 失败",
         "workflow_dispatch HTTP " + res.status + " · 数据已陈旧 " + (ageMinutes === null ? "?" : Math.round(ageMinutes)) + " 分钟。GitHub API 异常或 token 失效，请检查。");
     } else if (ageMinutes !== null && ageMinutes >= alertStaleMinutes()) {
-      // 心跳：已成功触发采集但数据持续陈旧——可能 run 连续失败或发布链路停更
-      await alertIf("【赛事沙盘】数据持续陈旧",
-        "OSS 数据已 " + Math.round(ageMinutes) + " 分钟未更新（兜底触发正常，可能采集 run 连续失败或发布链路停更）。");
+      // 陈旧告警前的健康复核（2026-11-09 假警报教训）：数据时间戳=最后「内容变更」时刻
+      // （lib.mjs 设计：内容无变化保留旧时间戳）——赛事空窗期数据不变化属正常。
+      // 先查最近一轮 run：成功且新鲜 → 管线健康、数据只是没变 → 不发告警；
+      // run 失败/缺失/查询失败 → 按故障告警（fail-open，宁可误报不漏报）
+      var healthy = await latestRunHealthy(token);
+      if (healthy) {
+        console.log("[cron] 数据陈旧 " + Math.round(ageMinutes) + " 分钟，但最近 run 成功（内容静默期），跳过告警");
+      } else {
+        await alertIf("【赛事沙盘】数据持续陈旧",
+          "OSS 数据已 " + Math.round(ageMinutes) + " 分钟未更新，且最近一轮采集 run 非成功状态（可能 run 连续失败、调度停摆或发布链路停更）。");
+      }
     }
     return JSON.stringify({ dispatched: res.status === 204, status: res.status, ageMinutes: ageMinutes === null ? null : Math.round(ageMinutes * 10) / 10 });
   } catch (e) {

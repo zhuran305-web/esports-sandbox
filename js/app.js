@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -2219,6 +2219,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         ? "按小组赛最终战绩逐桶比对：猜进「" + esc(buckets[0].label) + "」的队伍须真打出该战绩才算对"
         : "按终局比分逐桶比对：猜进「3:0 晋级」的队伍须真以 3-0 出线才算对") + "</div>";
     }
+    // 奖励展示（与 settleRewards 同源：币级=stage.coinTier）——placement 体有币级文案、逐场行有，
+    // 桶体此前缺失（BLAST Rivals 反馈「奖励还没显示出来」，2026-11-10）
+    if (st === "open" || st === "locked") {
+      var rc = PICKEM_COINS[coinKeyForTier(stage.coinTier || 1)];
+      html += '<div class="pickem-note">奖励：每支落位正确得 ' + rc.icon + " " + esc(rc.name) +
+        "（" + (isRecords ? "按最终战绩逐桶比对" : "按终局比分逐桶比对") + "，赛果出来后自动结算）</div>";
+    }
     html += buckets.map(function (b) {
       return pickemBucketHTML(stage, b, rec, editable, st === "done" ? stage.results : null);
     }).join("");
@@ -2566,7 +2573,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var hasRecords = ev.stages.some(function (s) { return s.type === "records"; });
     if (hasSwiss) return "Major 规则：瑞士轮第 1/2/3 阶段猜对得 🥉/🥈/🥇 · 淘汰赛冠军 💎 亚/季军 🥇";
     if (hasRecords) {
-      var tier = ev.tier === "a" ? "🥉 铜币" : "🥈 银币";
+      // 与 settleRewards 同源（原则 9）：records 币级取 stage.coinTier，不按 ev.tier 推导
+      var recStage0 = null;
+      ev.stages.forEach(function (s) { if (!recStage0 && s.type === "records") recStage0 = s; });
+      var rc2 = PICKEM_COINS[coinKeyForTier((recStage0 && recStage0.coinTier) || 1)];
+      var tier = rc2.icon + " " + rc2.name;
       // auto 赛事没有 placement（淘汰赛纯展示）——文案按形态分流，避免误导「猜冠军得钻石」
       var tail = ev.auto ? " · 淘汰赛等其他阶段仅赛程展示" : " · 淘汰赛冠军 💎/🥇 亚/季军 🥇（S/A）";
       return "战绩桶规则：把每支队伍放进小组赛最终战绩（猜对一桶得 " + tier + "）" + tail;

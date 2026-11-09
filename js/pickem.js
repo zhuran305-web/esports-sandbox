@@ -60,7 +60,7 @@ export var PICKEM_COINS = {
 };
 var COIN_KEY_BY_TIER = { 1: "c", 2: "s", 3: "g" }; // 阶段/轮次币级 → 硬币键（4=钻石仅 placement 冠军）
 
-function coinKeyForTier(tier) {
+export function coinKeyForTier(tier) {
   return COIN_KEY_BY_TIER[tier] || "g"; // 第 3 轮以后（4+ 轮赛制）一律金币
 }
 

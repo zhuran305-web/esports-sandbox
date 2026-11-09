@@ -855,6 +855,11 @@ check("作业页筛选与搜索（1.3.6 统一口径；1.3.12 换主页同款浮
   /id: sk \+ "\|rec"/.test(pickemJsSrc) && // records 阶段 recKey 与同源 series 阶段隔离（历史选择结算通道不冲撞）
   /recTwin\[s\.srcStage\] = 1/.test(appSrc) && /!recTwin\[s\.id\]/.test(appSrc) && // 渲染去重：孪生 series 隐藏（桶体已含对阵与赛果）
   /pk-selectors\[hidden\]/.test(cssSrc)); // [hidden] 显式补丁（浮层常显陷阱）
+check("桶体奖励展示与结算同源（1.3.15）：records/swiss 桶体币级走 stage.coinTier（settleRewards 同源，防 ev.tier 再漂移）",
+  /coinKeyForTier\(stage\.coinTier \|\| 1\)/.test(appSrc) && // pickemSwissBody 奖励行
+  /奖励：每支落位正确得/.test(appSrc) && // 桶体奖励文案在场（placement 有、逐场行有，桶体 2026-11-10 补）
+  /coinKeyForTier\(\(recStage0 && recStage0\.coinTier\) \|\| 1\)/.test(appSrc) && // 规则文案同源
+  /export function coinKeyForTier/.test(pickemJsSrc)); // helper 从 pickem.js 导出
 check("状态与结算：state.pickem 全链（init/load/快照/校验/云合并）+ settlePickem 四挂点 + Sync.pack 白名单",
   /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}/.test(appSrc) &&
   /pickem: normalizePickemState\(parsed\.pickem\)/.test(appSrc) &&

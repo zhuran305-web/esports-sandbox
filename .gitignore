@@ -16,6 +16,7 @@ docs/liquipedia-api-application.md
 data/matches.json
 data/matches.js
 data/pickem.json
+data/tournament-structures.json
 # 内置窗口快照：由 tools/trim-embedded.mjs 生成，不提交
 data/matches-embedded.json
 # 队伍缓存本地镜像：OSS 累积库为准（team-colors 例外：已入库存档）

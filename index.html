@@ -924,38 +924,7 @@
     </div>
   </div>
 
-  <!-- 鸿蒙进入门：强制更新，失败阻断 -->
-  <div class="onboard-backdrop" id="netGateBackdrop" hidden>
-    <div class="onboard" role="dialog" aria-modal="true" aria-labelledby="netGateTitle">
-      <div class="onboard-step is-active">
-        <div class="onboard-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/></svg>
-        </div>
-        <h2 id="netGateTitle">正在更新赛程</h2>
-        <p id="netGateText">进入前需要获取最新赛程与赛果，请稍候。</p>
-      </div>
-      <div class="onboard-actions" id="netGateActions" hidden>
-        <button class="danger-btn" id="netGateRetry" type="button">重试</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 鸿蒙阻断：鸿蒙版服务端能力异常，进入即说明原因并退出 -->
-  <div class="onboard-backdrop harmony-block-backdrop" id="harmonyBlockBackdrop" hidden>
-    <div class="onboard" role="dialog" aria-modal="true" aria-labelledby="harmonyBlockTitle">
-      <div class="onboard-step is-active">
-        <div class="onboard-icon onboard-warn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5"/><path d="M12 16.5v.01"/><path d="M10.3 4.2 2.6 17.5a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/></svg>
-        </div>
-        <h2 id="harmonyBlockTitle">鸿蒙版暂不可用</h2>
-        <p id="harmonyBlockText">小黑盒鸿蒙版的网络与账号功能目前存在异常，赛事沙盘在鸿蒙设备上无法正常使用。请改用 <b>Android / iOS 版小黑盒</b> 打开。</p>
-        <p class="onboard-dim" id="harmonyBlockHint">5 秒后自动退出小程序。</p>
-      </div>
-      <div class="onboard-actions">
-        <button class="danger-btn" id="harmonyBlockExit" type="button">退出小程序</button>
-      </div>
-    </div>
-  </div>
+  <!-- 鸿蒙进入门/硬阻断已删（2026-11-11 清理）：1.1.x 遗留，网络全平台一致后无平台分支 -->
 
   <div class="scroll-rail" id="scrollRail" aria-hidden="true"><span id="scrollThumb"></span></div>
 

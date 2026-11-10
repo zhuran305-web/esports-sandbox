@@ -3,7 +3,7 @@ import { Cloud, Sync } from "./cloud.js";
 import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary, teamHistory, pickedTeamOf, mainTeamLevel, MAIN_LEVEL_THRESHOLDS } from "./collection.js";
 import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
-import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
@@ -58,7 +58,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.15";
+  var APP_VERSION = "1.3.16";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -2351,40 +2351,6 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       "</button>";
   }
 
-  function pickemBracketBody(ev, stage, st, rec) {
-    if (stage.degraded) {
-      return '<div class="pickem-note">该阶段赛制结构与预期不符（非单败 ' + stage.matches.length + " 场），暂只展示赛程</div>" + pickemTeamStrip(stage);
-    }
-    var myW = rec && rec.picks ? rec.picks.w : {};
-    var html = "";
-    var lastRound = -1;
-    stage.matches.forEach(function (m) {
-      if (m.round !== lastRound) {
-        lastRound = m.round;
-        html += '<div class="pickem-round-label">' + esc((stage.rounds && stage.rounds[m.round]) || "对阵") + "</div>";
-      }
-      var start = new Date(m.startAt).getTime();
-      var open = !m.winner && !!m.a && !!m.b && !isNaN(start) && Date.now() < start - PICKEM_DEADLINE_MS;
-      var my = myW[m.id] || "";
-      var hit = !!(m.winner && my && my === m.winner);
-      var miss = !!(m.winner && my && !hit);
-      html += '<div class="pickem-match' + (m.winner ? " is-done" : "") + '">' +
-        '<span class="pickem-match-time">' + esc(fmtTime(m.startAt)) + "</span>" +
-        '<div class="pickem-match-sides">' +
-          pickemSideHTML(stage, m, "A", my, open) +
-          '<span class="pickem-vs">VS</span>' +
-          pickemSideHTML(stage, m, "B", my, open) +
-        "</div>" +
-        (hit ? '<span class="pickem-mark hit">✓</span>' : "") + (miss ? '<span class="pickem-mark miss">✗</span>' : "") +
-        "</div>";
-    });
-    if (st === "locked") html += '<div class="pickem-note">对阵确定后逐轮开放，各场开赛前 1 小时截止</div>';
-    if (st === "open" && !pickableSeriesMatches(stage).length) {
-      html += '<div class="pickem-note">对阵待上一轮赛果确定，确定后开放竞猜</div>';
-    }
-    return html;
-  }
-
   /* 系列赛（1.3.4）：任意赛制逐场猜（双败小组/联赛等）——已结束场次只展示，剩余场次逐场可猜；
      计分只算「用户猜过的」场次（中途接入公平），不发全对加成 */
   /* ---------- 树状展示（1.3.6，更接近官方 Major Pick'Em） ----------
@@ -2603,8 +2569,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (stage.type !== "placement") {
       return '<div class="pickem-stage" data-pstage="' + esc(key) + '">' + head +
         (stage.type === "swiss" || stage.type === "records" ? pickemSwissBody(ev, stage, st, rec)
-          : stage.type === "bracket" ? pickemBracketBody(ev, stage, st, rec)
-            : "") +
+          : "") +
         "</div>";
     }
     // placement（淘汰赛）：头部可折叠，默认展开（1.3.10：完赛默认收起被平台拒——首屏内容不可见；保留手动折叠）
@@ -4398,122 +4363,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     });
   }
 
-  /* ============================== 鸿蒙硬阻断（1.1.5 起停用） ============================== */
-  /*
-   * 1.1.3/1.1.4 曾用这套阻断让鸿蒙进入即退出。1.1.5 为了验证「握手晚到降级」（1.1.4 修复的
-   * 第一层问题）是否就是鸿蒙表现为本地模式的全部原因，暂时改回进入门 + 重试的流程；
-   * 若鸿蒙真机仍报 SERVER_API_REQUIRED（第二层：客户端 effective network 判 local），
-   * 再把 showHarmonyBlock 的调用恢复回来即可。
-   */
-  var harmonyBlocked = false;
-  var harmonyExiting = false;
-  var harmonyCountdown = null;
-
-  function setHarmonyHint(text) {
-    var hint = $("#harmonyBlockHint");
-    if (hint) hint.textContent = text;
-  }
-
-  async function exitHarmonyBlock() {
-    if (harmonyExiting) return;
-    harmonyExiting = true;
-    if (harmonyCountdown) {
-      clearInterval(harmonyCountdown);
-      harmonyCountdown = null;
-    }
-    setHarmonyHint("正在退出小程序…");
-    // 只做本地握手，拿到 navigation.close；握手本身不涉及服务端 API
-    await initPlatform();
-    var closed = await closeMiniProgram();
-    if (!closed) {
-      harmonyExiting = false;
-      setHarmonyHint("自动退出失败，请点右上角「…」关闭小程序，或点下方按钮重试。");
-    }
-  }
-
-  function startHarmonyCountdown() {
-    if (harmonyExiting || harmonyCountdown) return;
-    var left = 5;
-    setHarmonyHint(left + " 秒后自动退出小程序。");
-    harmonyCountdown = setInterval(function () {
-      left -= 1;
-      if (left <= 0) {
-        exitHarmonyBlock();
-        return;
-      }
-      setHarmonyHint(left + " 秒后自动退出小程序。");
-    }, 1000);
-  }
-
-  function showHarmonyBlock() {
-    if (harmonyBlocked) return;
-    harmonyBlocked = true;
-    var backdrop = $("#harmonyBlockBackdrop");
-    if (backdrop) backdrop.hidden = false;
-    document.body.style.overflow = "hidden";
-    var exitBtn = $("#harmonyBlockExit");
-    if (exitBtn) exitBtn.addEventListener("click", exitHarmonyBlock);
-
-    // 握手完成前页面可能还没被宿主显示，倒计时从握手结束才开始，保证提示能被看到
-    setHarmonyHint("正在准备退出小程序…");
-    initPlatform().then(function () {
-      if (!harmonyBlocked || harmonyExiting) return;
-      startHarmonyCountdown();
-    });
-  }
-
-  /* 鸿蒙进入门：强制更新一次；失败则阻断整个小程序 */
-  var gateRetrying = false;
-
-  function showNetGate(mode) {
-    var backdrop = $("#netGateBackdrop");
-    if (!backdrop) return;
-    $("#netGateTitle").textContent = mode === "error" ? "小程序无法使用" : "正在更新赛程";
-    $("#netGateText").textContent = mode === "error"
-      ? "赛程数据更新失败，请检查网络后重试。"
-      : "进入前需要获取最新赛程与赛果，请稍候。";
-    $("#netGateActions").hidden = mode !== "error";
-    backdrop.hidden = false;
-    document.body.style.overflow = "hidden";
-  }
-
-  function hideNetGate() {
-    var backdrop = $("#netGateBackdrop");
-    if (backdrop) backdrop.hidden = true;
-    document.body.style.overflow = "";
-  }
-
-  async function runHarmonyGate() {
-    if (gateRetrying) return false;
-    if (!isRuntimeEnabled() || getRuntimeMode() === "preview") {
-      hideNetGate();
-      maybeShowOnboard();
-      return true;
-    }
-    gateRetrying = true;
-    showNetGate("loading");
-    // 宿主网络可能在握手完成后才就绪：失败后间隔重试，不要把第一次失败当成永久失败
-    var ok = false;
-    for (var attempt = 0; attempt < 3 && !ok; attempt++) {
-      if (attempt > 0) {
-        await new Promise(function (resolve) { setTimeout(resolve, 2500); });
-      }
-      ok = await refreshData(true);
-    }
-    gateRetrying = false;
-    if (ok) {
-      hideNetGate();
-      maybeShowOnboard();
-    } else {
-      showNetGate("error");
-    }
-    return ok;
-  }
-
-  function bindNetGate() {
-    var retry = $("#netGateRetry");
-    if (retry) retry.addEventListener("click", function () { runHarmonyGate(); });
-  }
+  /* 鸿蒙硬阻断/进入门已删（2026-11-11 清理）：1.1.x 遗留的 showHarmonyBlock（从未启用）与
+   * runHarmonyGate 进入门（仅鸿蒙走的强制拉取门）——云存储 1.3.396+ 修复、网络全平台一致后，
+   * boot 已统一走 maybeShowOnboard + refreshData（失败路径=数据加载失败空态），无平台分支。 */
 
   function buildPostText() {
     var s = recordStats();
@@ -6718,7 +6570,6 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     bindEvents();
     bindHostEvents();
     bindOnboard();
-    bindNetGate();
     initHistory();
     initScrollRail();
     initPageLifecycle();
@@ -6731,12 +6582,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       $("#openCount").textContent = "赛程数据加载失败，请稍后重试";
       $("#matchList").innerHTML =
         '<div class="empty-state"><strong>赛程数据加载失败</strong>请检查网络后刷新页面，或稍后再试</div>';
-      if (isHarmonyOS()) {
-        runHarmonyGate();
-      } else {
-        maybeShowOnboard();
-        refreshData();
-      }
+      maybeShowOnboard();
+      refreshData();
       scheduleLatePlatformRecovery(platformReady);
       return;
     }
@@ -6746,16 +6593,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     renderDuelBanner();
     resolveDeepLink(); // 分享目标在内置窗口内时先定位；运行时数据到达后 applySnapshot 会再试
     resolveVersusLink();
-    if (isHarmonyOS()) {
-      runHarmonyGate();
-    } else {
-      maybeShowOnboard();
-      refreshData();
-    }
+    maybeShowOnboard();
+    refreshData();
     scheduleLatePlatformRecovery(platformReady);
 
     if (events.length) {
-      if (!isHarmonyOS()) syncBoards();
+      syncBoards();
       var total = events.reduce(function (s, e) { return s + e.pred.profit; }, 0);
       var wins = events.filter(function (e) { return e.pred.won; }).length;
       setTimeout(function () {
@@ -6806,6 +6649,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (!MATCHES.some(function (m) { return m && m.lv === true; })) return;
       pollLive();
     }, LIVE_POLL_INTERVAL);
+    pollLive(); // boot 立即拉一轮（不等 2.5 分钟——开屏即有实时比分）
 
     // 启动完成：云端恢复的达标余额此后可正常触发庆祝页
     bootDone = true;

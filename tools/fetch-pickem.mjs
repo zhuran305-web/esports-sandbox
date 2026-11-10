@@ -244,41 +244,8 @@ function buildRecordsStage(cfg, matches, structure) {
   return stage;
 }
 
-function buildBracketStage(cfg, matches) {
-  var expect = Array.isArray(cfg.expectRounds) && cfg.expectRounds.length ? cfg.expectRounds : DEFAULT_EXPECT_ROUNDS;
-  var list = matches.slice().sort(function (a, b) { return ts(a.startAt) - ts(b.startAt); });
-  var teams = {};
-  var order = [];
-  // 分轮：按开赛时间切块 [4,2,1]；场次对不上则降级（只展示不可猜）
-  var degraded = list.length !== expect.reduce(function (s, n) { return s + n; }, 0);
-  var roundLabelCfg = Array.isArray(cfg.roundLabels) ? cfg.roundLabels : null; // _doc 宣称可配，2026-11-10 起真实现
-  var roundLabels = [];
-  var roundOf = {};
-  if (!degraded) {
-    var idx = 0;
-    expect.forEach(function (n, ri) {
-      roundLabels.push((roundLabelCfg && roundLabelCfg[ri]) || ROUND_LABELS[n] || "第 " + (ri + 1) + " 轮");
-      for (var i = 0; i < n; i++) roundOf[idx++] = ri;
-    });
-  }
-  var compact = list.map(function (m, i) {
-    var a = compactTeam(m.teamA), b = compactTeam(m.teamB);
-    [a, b].forEach(function (t) {
-      if (!t) return;
-      if (!teams[t.name]) { teams[t.name] = t; teams[t.name].w = 0; teams[t.name].l = 0; order.push(t.name); }
-    });
-    var winner = m.result && (m.result.winner === "A" || m.result.winner === "B") ? m.result.winner : "";
-    return { id: m.id, a: a ? a.name : "", b: b ? b.name : "", startAt: m.startAt, winner: winner, score: (m.result && m.result.score) || "", round: degraded ? 0 : (roundOf[i] || 0), canceled: m.canceled === true || undefined };
-  });
-  return {
-    id: cfg.id, type: "bracket", label: cfg.label || cfg.id,
-    startsAt: list.length ? list[0].startAt : "", endsAt: list.length ? list[list.length - 1].startAt : "",
-    teams: order.map(function (n) { return teams[n]; }),
-    matches: compact,
-    rounds: degraded ? [] : roundLabels,
-    degraded: degraded
-  };
-}
+/* bracket 旧类型构建器已删（2026-11-11 清理）：历史数据零使用（聚合缓存/内嵌/配置均无
+ * type=bracket），新配置用 placement——normalizeStage 拒收即历史事件整体丢弃不崩溃。 */
 
 function buildSeriesStage(cfg, matches) {
   // 系列赛（逐场猜）：任意赛制皆可（双败/联赛/瑞士轮转写）——已结束场次随 matches 带出（只展示不参与计分）。
@@ -426,8 +393,7 @@ function buildEvent(cfg, allMatches, cachedEvent, structures) {
         }
       }
     }
-    if (scfg.type === "bracket") stages.push(buildBracketStage(scfg, sm));
-    else if (scfg.type === "series") stages.push(buildSeriesStage(scfg, sm));
+    if (scfg.type === "series") stages.push(buildSeriesStage(scfg, sm));
     else if (scfg.type === "placement") stages.push(buildPlacementStage(scfg, sm, structure));
     else if (scfg.type === "records") {
       var recStage = buildRecordsStage(scfg, sm, structure);

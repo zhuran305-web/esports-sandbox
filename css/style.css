@@ -2434,13 +2434,6 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
 }
 .onboard-backdrop[hidden] { display: none; }
 
-/* 鸿蒙阻断：不透明底，避免背后未初始化的页面透出来 */
-.harmony-block-backdrop {
-  background: var(--bg);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
 .onboard {
   width: 100%;
   max-width: 360px;

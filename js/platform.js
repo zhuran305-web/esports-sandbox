@@ -427,21 +427,10 @@ export async function copyShareLink(extra) {
   }
 }
 
-/**
- * 宿主截图分享：截取指定区域并唤起系统分享/保存流程（saveToAlbum 提供相册入口）。
- * options: { rect?: {x,y,width,height}（窗口逻辑像素）, saveToAlbum?, watermarkTheme?, post?, delay? }。
- * SDK ≥0.9.1 默认叠加官方水印，截图区域底部需预留 ≥57 逻辑像素空白。
- * 返回 null = 流程已唤起（结果不透明，不能据返回值判断是否保存）；字符串 = 错误码。
- */
-export async function shareScreenshot(options) {
-  if (!sdk || !sdk.share || typeof sdk.share.screenshot !== "function") return "UNSUPPORTED";
-  try {
-    await sdk.share.screenshot(options || {});
-    return null;
-  } catch (e) {
-    return (e && e.code) || "FAILED";
-  }
-}
+/* 宿主截图包装 shareScreenshot 已删（2026-11-11 清理）：1.1.30 实测宿主流程给不出相册入口
+ * 且返回值不透明，包装从未被调用——保留只会误导。保存图片定稿=「全屏预览 + 系统截屏」
+ * （app.js #cardFullscreen）；未来宿主开放相册入口时从 git 历史恢复本函数（SDK ≥0.9.1
+ * 默认水印、底部预留 57 逻辑像素、返回 null=已唤起/字符串=错误码 的语义不变）。 */
 
 /** 启动链接携带的 extra（同步、免权限、不依赖握手）；无有效数据返回 undefined。 */
 export function getLaunchExtra() {

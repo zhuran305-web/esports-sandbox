@@ -115,7 +115,9 @@ function normStandingsRows(raw) {
 }
 
 function normalizeStage(raw) {
-  if (!raw || (raw.type !== "swiss" && raw.type !== "bracket" && raw.type !== "series" && raw.type !== "placement" && raw.type !== "records")) return null;
+  // bracket 旧类型已删（2026-11-11 清理）：历史数据零使用（pickem.json/embedded 类型分布实测
+  // 仅 records/placement/series/swiss），normalize 拒收即历史事件整体丢弃显示空态不崩溃（1.3.4 兼容口径）
+  if (!raw || (raw.type !== "swiss" && raw.type !== "series" && raw.type !== "placement" && raw.type !== "records")) return null;
   if (typeof raw.id !== "string" || !raw.id) return null;
   var teams = (Array.isArray(raw.teams) ? raw.teams : []).filter(validTeam).slice(0, 24).map(function (t) {
     return { name: t.name, short: typeof t.short === "string" ? t.short : "", region: typeof t.region === "string" ? t.region : "", logo: typeof t.logo === "string" ? t.logo : "", w: typeof t.w === "number" && isFinite(t.w) ? t.w : 0, l: typeof t.l === "number" && isFinite(t.l) ? t.l : 0 };
@@ -183,10 +185,9 @@ function normalizeStage(raw) {
         third: pr.third.filter(function (n) { return typeof n === "string" && n; }).slice(0, 2)
       };
     }
-  } else if (raw.type === "bracket") {
-    out.rounds = Array.isArray(raw.rounds) ? raw.rounds.filter(function (s) { return typeof s === "string"; }) : [];
-    out.degraded = raw.degraded === true;
   }
+  // bracket 旧类型的 normalize 分支已删（2026-11-11 清理）：历史数据零使用；
+  // 用户 state 里 1.3.3 时代的 bracket 选择记录仍由 normalizePickemState 的 rec.type 门放行（历史数据兼容）
   // series（逐场猜）：无轮次标签/无降级概念——round 由聚合器按日期聚类
   return out;
 }
@@ -334,7 +335,7 @@ export function stageAllDone(stage) {
  *  displayOnly（auto 事件纯展示，2026-11-08）恒空。 */
 export function pickableSeriesMatches(stage, now) {
   now = now || Date.now();
-  if (!stage || (stage.type !== "series" && stage.type !== "bracket")) return [];
+  if (!stage || stage.type !== "series") return [];
   if (stage.displayOnly) return [];
   return stage.matches.filter(function (m) {
     if (!m.a || !m.b) return false;

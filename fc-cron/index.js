@@ -22,7 +22,10 @@
  *
  * 告警触发：①workflow_dispatch 失败/异常→立即告警（GitHub 不可达时 workflow 自身无法告警，
  * 本函数是唯一能发通知的通道）；②数据陈旧 ≥ALERT_STALE_MINUTES→每小时一条心跳（FC 每小时
- * 一轮 timer，天然限频）。workflow 侧另有 run 失败告警（tools/alert-notify.mjs，55min 频控），
+ * 一轮 timer，天然限频；**发前经 run 健康复核：最近 10 条里有成功 run 且 ≤120min → 内容静默期，
+ * 跳过**——2026-11-10 修复：复核此前取 runs[0]，恰是本轮刚 dispatch 的 queued run，静默期必误报）。
+ * dispatch 幂等闸：15 分钟内已有 run 则跳过（消灭同小时 2-3 条重复 run/取消噪音）。
+ * workflow 侧另有 run 失败告警（tools/alert-notify.mjs，55min 频控），
  * 两者互补：run 失败靠 workflow 通道，GitHub 全链路故障靠本函数通道。
  *
  * 安全（SSRF 面为零）：请求目标全部硬编码——host 只能取 ALLOWED_HOSTS / 告警白名单键，path 只能取
@@ -37,7 +40,7 @@ var https = require("https");
 var ALLOWED_TARGETS = {
   ossMeta: { host: "esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com", path: "/meta.json" },
   ghDispatch: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/dispatches" },
-  ghRuns: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/runs?per_page=1" }
+  ghRuns: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/runs?per_page=10" }
 };
 var ALLOWED_HOSTS = { "esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com": true, "api.github.com": true };
 
@@ -186,8 +189,12 @@ function staleMinutes() {
   return isFinite(n) && n > 0 ? n : STALE_DEFAULT_MINUTES;
 }
 
-/** 最近一轮 update-matches run 是否成功且新鲜（≤120 分钟）——陈旧告警的健康复核。
- *  任何异常（403/网络/超时）返回 false → 走告警路径（fail-open，宁可误报不漏报）。 */
+/** 最近一批 update-matches run 里「最新的一条成功 run」是否新鲜（≤120 分钟）——陈旧告警的健康复核。
+ *  为什么不能取 workflow_runs[0]（2026-11-10 误报修复）：本函数在**本轮 dispatch 之后**调用，
+ *  runs[0] 恰是自己刚创建的 queued/in_progress run（或同小时被 concurrency 取消的重复排队实例），
+ *  status!==completed → 恒判不健康——数据内容静默 ≥100 分钟时每小时误发「数据持续陈旧」。
+ *  改为在最近 10 条里找最新成功 run：只要有一轮成功且 ≤120 分钟，管线就是健康的（内容静默属正常）。
+ *  任何异常（403/网络/超时）仍返回 false → 走告警路径（fail-open，宁可误报不漏报）。 */
 async function latestRunHealthy(token) {
   try {
     var res = await httpsRequest(resolveTarget("ghRuns"), "GET", {
@@ -201,14 +208,49 @@ async function latestRunHealthy(token) {
       return false;
     }
     var j = JSON.parse(res.body);
+    var runs = (j && j.workflow_runs) || [];
+    if (!runs.length) return false;
+    // runs 按 created_at 倒序；找最新的一条 completed+success，检查其年龄
+    for (var i = 0; i < runs.length; i++) {
+      var run = runs[i];
+      if (run.status !== "completed" || run.conclusion !== "success") continue;
+      var ageMin = (Date.now() - new Date(run.created_at).getTime()) / 60000;
+      var ok = ageMin >= 0 && ageMin < 120;
+      console.log("[cron] run 健康复核：最新成功 run 距今 " + Math.round(ageMin) + " 分钟（跳过 " + i + " 条未完成/未成功）→ " + (ok ? "健康" : "不健康"));
+      return ok;
+    }
+    console.log("[cron] run 健康复核：最近 " + runs.length + " 条内无成功 run → 不健康");
+    return false;
+  } catch (e) {
+    console.log("[cron] run 健康复核失败（按不健康处理）：" + ((e && e.message) || e));
+    return false;
+  }
+}
+
+/** dispatch 幂等闸（2026-11-10）：最近一条 run（无论状态）创建于 15 分钟内 → 本轮不重复 dispatch。
+ *  背景：FC 每小时实测创建 2-3 条同小时重复 run（平台重试/POST 超时但实际已创建），
+ *  concurrency 只能取消排队者——重复 run 既浪费配额，又喂出上面的假「不健康」复核。 */
+async function recentRunExists(token, minutes) {
+  try {
+    var res = await httpsRequest(resolveTarget("ghRuns"), "GET", {
+      "Authorization": "Bearer " + token,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "esports-sandbox-cron"
+    }, null, 10000);
+    if (res.status !== 200) {
+      console.log("[cron] 幂等闸复核 HTTP " + res.status + "（保守：视为无近期 run，照常 dispatch）");
+      return false;
+    }
+    var j = JSON.parse(res.body);
     var run = j && j.workflow_runs && j.workflow_runs[0];
     if (!run) return false;
     var ageMin = (Date.now() - new Date(run.created_at).getTime()) / 60000;
-    var ok = run.status === "completed" && run.conclusion === "success" && ageMin >= 0 && ageMin < 120;
-    console.log("[cron] run 健康复核：" + run.status + "/" + (run.conclusion || "-") + " · 距今 " + Math.round(ageMin) + " 分钟 → " + (ok ? "健康" : "不健康"));
-    return ok;
+    var exists = ageMin >= 0 && ageMin < minutes;
+    console.log("[cron] 幂等闸：最近 run 距今 " + Math.round(ageMin) + " 分钟（" + run.status + "/" + (run.conclusion || "-") + "）→ " + (exists ? "有近期 run，跳过 dispatch" : "无近期 run，照常 dispatch"));
+    return exists;
   } catch (e) {
-    console.log("[cron] run 健康复核失败（按不健康处理）：" + ((e && e.message) || e));
+    console.log("[cron] 幂等闸复核失败（保守：照常 dispatch）：" + ((e && e.message) || e));
     return false;
   }
 }
@@ -241,6 +283,11 @@ exports.handler = async function (event, context) {
   if (!token) {
     console.log("[cron] 缺少 GITHUB_DISPATCH_TOKEN，跳过");
     return JSON.stringify({ error: "no_token" });
+  }
+  // 2.5) dispatch 幂等闸（2026-11-10）：15 分钟内已有 run → 本轮不再 dispatch（消灭同小时重复 run
+  // 与 concurrency 取消噪音；复核失败按保守放行——宁可多抓一轮，不可漏抓）
+  if (await recentRunExists(token, 15)) {
+    return JSON.stringify({ skipped: true, reason: "recent_run", ageMinutes: ageMinutes === null ? null : Math.round(ageMinutes * 10) / 10 });
   }
   var at = alertTarget();
   var scfg = smtpConfig();

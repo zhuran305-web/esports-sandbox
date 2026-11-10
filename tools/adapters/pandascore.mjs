@@ -30,7 +30,8 @@ function logoPath(url) {
 }
 
 // 游戏 id -> PandaScore 路由 slug（注意：路由别名与 /videogames 的 slug 不同）
-var SLUGS = {
+// 2026-11-11 导出：fetch-tournament-structures 的 tier 过滤发现复用同一张路由表
+export var SLUGS = {
   cs2: "csgo",
   valorant: "valorant",
   lol: "lol",

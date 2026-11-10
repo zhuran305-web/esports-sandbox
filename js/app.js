@@ -4,7 +4,7 @@ import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummar
 import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, isHarmonyOS, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
-import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot } from "./data-source.js";
+import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 
@@ -39,6 +39,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   // 选手位置徽章（PandaScore role 原文 → 中文；仅 LoL/Dota2/OW 有值）——阵容行与选手卡同源
   var ROLE_LABELS = { top: "上单", jungle: "打野", mid: "中单", adc: "ADC", support: "辅助", "midlaner": "中单", "adc/upport": "ADC", "upport": "辅助", "jungler": "打野", carry: "核心", "offlane": "三号位", solo: "中单" };
   var matchIndex = new Map();
+  var matchMidIndex = new Map(); // PandaScore mid → match 对象引用（live.json 补丁定位，2026-11-11）
   rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";
   var STORAGE_KEY = "esports_sandbox_v2";
@@ -532,9 +533,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
   function rebuildMatchIndex() {
     matchIndex = new Map();
+    matchMidIndex = new Map();
     MATCHES.forEach(function (m) {
       if (m && m.id) matchIndex.set(m.id, m);
+      if (m && m.mid > 0) matchMidIndex.set(Math.floor(m.mid), m); // live.json 补丁按 mid 定位（2026-11-11）
     });
+  }
+
+  function matchByMid(mid) {
+    return matchMidIndex.get(Math.floor(mid)) || null;
   }
 
   function matchById(id) {
@@ -5810,7 +5817,67 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var POLL_MAX_AGE = 10 * 60 * 1000;      // 轮询/回前台节流：10 分钟内查过就只走本地缓存
   var POLL_BACKOFF = 15 * 60 * 1000;      // 限流退避：RATE_LIMITED 后暂停自动轮询
   var pollBackoffUntil = 0;
+  // live 轻量轮询（2026-11-11 深度接入二期）：独立于主轮询的互斥/退避——live.json 只有几 KB，
+  // 2.5 分钟一次；失败静默退避 10 分钟，绝不 toast（live 抖动属正常）
+  var LIVE_POLL_INTERVAL = 150 * 1000;
+  var LIVE_POLL_BACKOFF = 10 * 60 * 1000;
+  var livePolling = false;
+  var liveBackoffUntil = 0;
   var refreshing = false;
+
+  /* ---------- live.json 轻量轮询（2026-11-11 深度接入二期） ----------
+     独立小文件几 KB，2.5 分钟一次；补丁就地 Object.assign 到 matchMidIndex 引用对象——
+     不重建 MATCHES/不重排（statusOf 是活计算，lv/result 就位后分组自动归类）。
+     finished 迁移才跑结算与重渲染资金视图（比分更新绝不动钱）。失败静默退避 10 分钟。 */
+  async function pollLive() {
+    livePolling = true;
+    try {
+      var doc = await fetchLiveSnapshot();
+      if (doc) applyLivePatch(doc);
+    } catch (e) {
+      liveBackoffUntil = Date.now() + LIVE_POLL_BACKOFF;
+    } finally {
+      livePolling = false;
+    }
+  }
+
+  function applyLivePatch(doc) {
+    var touched = false, finishedMigration = false;
+    (doc.live || []).forEach(function (r) {
+      var m = matchByMid(r.mid);
+      if (!m) return; // 不在窗口（新开赛）：等主轮询整包带进来
+      if (r.lsc !== undefined && m.lsc !== r.lsc) { m.lsc = r.lsc; touched = true; }
+      if (r.gs !== undefined && m.gs !== r.gs) { m.gs = r.gs; touched = true; }
+      if (m.lv !== true) { m.lv = true; touched = true; }
+    });
+    (doc.finished || []).forEach(function (r) {
+      var m = matchByMid(r.mid);
+      if (!m) return;
+      if (m.result && (m.result.winner === "A" || m.result.winner === "B")) return; // 整包已结算，以整包为准
+      if (!r.result || !(r.result.winner === "A" || r.result.winner === "B")) return;
+      m.result = r.result;
+      if (r.endAt) m.endAt = r.endAt;
+      m.lv = undefined; // finished 语义优先，清掉 running 标记
+      touched = true;
+      finishedMigration = true;
+    });
+    if (!touched) return;
+    rebuildMatchIndex(); // 就地改的是同一批引用，重建 Map 无成本且防漂移
+    // 重渲染子集：受影响视图才刷（比 applySnapshot 全量尾部轻一个量级）
+    renderDuelBanner();
+    if (!$("#view-matches").hidden) renderMatches();
+    else matchesDirty = true;
+    if (!$("#view-schedule").hidden) renderSchedule();
+    if (!$("#view-match").hidden) renderMatchDetail();
+    if (finishedMigration) {
+      settlePending();
+      settleDuels();
+      settlePickem();
+      if (!$("#view-board").hidden) renderBoard();
+      if (!$("#view-pickem").hidden) renderPickem();
+      syncBoards();
+    }
+  }
 
   async function refreshData(manual) {
     if (refreshing) {
@@ -5829,7 +5896,6 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           cached.meta.updatedAt !== DATA_UPDATED_AT) {
         applySnapshot(cached.matches, cached.meta, cached.teams, cached.teamColors, cached.rosters, cached.pickem, cached.structures);
       }
-
       // 宿主明确拒绝服务端 API 时，24 小时内不再自动重试，避免每次启动弹原生错误框
       var blocked = await storageGet(NET_BLOCK_KEY);
       if (typeof blocked === "string") {
@@ -6732,6 +6798,14 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       refreshData(false);
       if (!$("#view-board").hidden) renderBoard();
     }, POLL_INTERVAL);
+
+    // live 轻量轮询（2026-11-11 深度接入二期）：live.json 只有几 KB（独立小文件，不触发整包），
+    // 2.5 分钟一次；存在 lv 场次才发请求。独立互斥/退避——失败半径与主轮询隔离，静默绝不 toast。
+    setInterval(function () {
+      if (Date.now() < liveBackoffUntil || livePolling) return;
+      if (!MATCHES.some(function (m) { return m && m.lv === true; })) return;
+      pollLive();
+    }, LIVE_POLL_INTERVAL);
 
     // 启动完成：云端恢复的达标余额此后可正常触发庆祝页
     bootDone = true;

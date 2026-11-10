@@ -21,7 +21,21 @@
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
+import { mergeMatches, validateMatches, writeOutputs } from "./lib.mjs";
+import { toRaw, SLUGS } from "./adapters/pandascore.mjs";
+
+// 路由 slug → 游戏 id 反查（toRaw 需要 game 维度；detail.videogame.slug 是路由 slug）
+var SLUG_BY_ROUTE = {};
+Object.keys(SLUGS).forEach(function (g) { SLUG_BY_ROUTE[SLUGS[g]] = g; });
+
+/** 单场详情 → raw 形状（复用 pandascore toRaw；未覆盖的游戏返回 null 跳过补抓） */
+function toPandaRaw(detail) {
+  var game = detail && detail.videogame ? SLUG_BY_ROUTE[detail.videogame.slug] : null;
+  if (!game) return null;
+  return toRaw(detail, game);
+}
 
 var ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 var API = "https://api.pandascore.co";
@@ -140,9 +154,40 @@ async function main() {
 
   var r = classifyIncidents(fresh, src.matches, window);
   log("对账：update " + r.updated + " · creation 漏抓疑似 " + r.createdMissed.length + " · deletion 仍持有 " + r.deleted.length);
-  r.createdMissed.forEach(function (x) {
-    console.warn("[incidents] ! 疑似漏抓新增：mid=" + x.mid + " beginAt=" + x.beginAt + "（窗口内本地无此 mid——全量重采应自愈，连续多轮出现才需排查）");
-  });
+
+  // 自愈（2026-11-11 v2）：creation 漏抓 → GET /matches/{id}（全局单场免费，实测 200）→
+  // normalizeMatch → mergeMatches 并入 matches.json——「疑似漏抓」从只警告升级为定向补抓；
+  // 与每小时全量重采天然收敛（mid 键合并），失败才降级为警告
+  if (r.createdMissed.length) {
+    var fetched = 0;
+    for (var ci = 0; ci < r.createdMissed.length && ci < 10; ci++) {
+      var miss = r.createdMissed[ci];
+      try {
+        var dres = await fetch(API + "/matches/" + miss.mid, {
+          headers: { "Authorization": "Bearer " + token, "Accept": "application/json" },
+          signal: AbortSignal.timeout(25000)
+        });
+        if (!dres.ok) throw new Error("HTTP " + dres.status);
+        var detail = await dres.json();
+        var raw = toPandaRaw(detail);
+        if (raw) {
+          var merged = mergeMatches(src.matches, [Object.assign({}, raw, { source: "pandascore" })], { retentionDays: 45 });
+          var errs = validateMatches(merged.matches);
+          if (errs.length) throw new Error("合并校验失败：" + errs[0]);
+          src.matches = merged.matches;
+          await writeOutputs(ROOT, src.matches);
+          fetched++;
+          log("  + 已自动补抓 mid=" + miss.mid + "：" + (raw.teamA ? raw.teamA.name + " vs " + raw.teamB.name : "?"));
+        }
+      } catch (e) {
+        console.warn("[incidents] ! 补抓失败 mid=" + miss.mid + "：" + (e.message || e));
+      }
+      await sleep(1200);
+    }
+    if (fetched < r.createdMissed.length) {
+      console.warn("[incidents] ! " + (r.createdMissed.length - fetched) + " 场补抓失败（连续多轮出现才需排查，全量重采每小时自愈兜底）");
+    }
+  }
   r.deleted.forEach(function (x) {
     console.warn("[incidents] ! 官方已删除但本地仍持有：mid=" + x.mid + " · " + x.match.tournament + " " + x.match.teamA.name + " vs " + x.match.teamB.name + "（不自动删——账本完整性优先）");
   });
@@ -152,7 +197,8 @@ async function main() {
   log("游标推进 → " + since + (dry ? "（dry-run 未写盘）" : ""));
 }
 
-main().catch(function (e) {
+var isMainGuard = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href; // 直调才跑 main（test:cloud 导入零副作用）
+if (isMainGuard) main().catch(function (e) {
   console.error("[incidents] 失败：" + (e && e.message ? e.message : e));
   process.exit(1);
 });

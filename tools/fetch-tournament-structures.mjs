@@ -20,7 +20,9 @@
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
+import { SLUGS } from "./adapters/pandascore.mjs";
 
 var ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 var API = "https://api.pandascore.co";
@@ -171,6 +173,47 @@ async function main() {
     if (!done) g.allDone = false;
   });
 
+  // tier 过滤直发现（2026-11-11 v3）：/{game}/tournaments/running|upcoming?filter[tier]=s——
+  // S/A 赛事**无需等 matches 进窗**即可发现（修复「playoffs 未排期→无组→名单播种永不启动」时序缺口）；
+  // 列表对象内嵌 teams/expected_roster，有值则 participants 直接提取（省 /rosters 调用）
+  var slugs = Object.keys(SLUGS);
+  for (var si = 0; si < slugs.length; si++) {
+    var game = slugs[si];
+    for (var ri = 0; ri < 2; ri++) {
+      try {
+        var lpath = "/" + SLUGS[game] + "/tournaments/" + (ri === 0 ? "running" : "upcoming") +
+          "?filter[tier]=s&per_page=12&sort=begin_at";
+        var lres = await fetch(API + lpath, {
+          headers: { "Authorization": "Bearer " + token, "Accept": "application/json" },
+          signal: AbortSignal.timeout(25000)
+        });
+        if (!lres.ok) throw new Error("HTTP " + lres.status);
+        var llist = await lres.json();
+        (Array.isArray(llist) ? llist : []).forEach(function (t) {
+          if (!t || !(t.id > 0) || !t.name || !t.serie || !t.league) return;
+          var serieName = t.serie.full_name || t.serie.name || "";
+          if (!serieName) return;
+          var tournament = (t.league.name || "") + " · " + serieName;
+          var key = game + "|" + tournament + "|" + t.name;
+          var endMs = t.end_at ? new Date(t.end_at).getTime() : Infinity;
+          var beginMs = t.begin_at ? new Date(t.begin_at).getTime() : Infinity;
+          var names = (Array.isArray(t.teams) && t.teams.length ? t.teams : Array.isArray(t.expected_roster) ? t.expected_roster : [])
+            .map(function (x) { return x && typeof x.name === "string" ? x.name : ""; })
+            .filter(Boolean);
+          if (!groups[key]) {
+            groups[key] = { tid: Math.floor(t.id), allDone: isFinite(endMs) && endMs < Date.now(), count: 0, earliest: beginMs, listingParticipants: names.slice(0, MAX_PARTICIPANTS) };
+          } else if (!groups[key].tid) {
+            groups[key].tid = Math.floor(t.id);
+          }
+        });
+      } catch (e) {
+        log("  ! " + game + " " + (ri === 0 ? "running" : "upcoming") + " 发现失败：" + (e.message || e));
+      }
+      await sleep(RATE_MS);
+    }
+  }
+  log("tier 直发现完成（groups 合计 " + Object.keys(groups).length + " 组）");
+
   var targets = Object.keys(groups).filter(function (k) { return groups[k].tid > 0; });
   // 已完赛且缓存里没有 bracket 数据的组无法判 finished——只要组内场次全完赛就标 finished 定格
   var now = Date.now();
@@ -201,7 +244,9 @@ async function main() {
     var g = groups[key];
     var parts = key.split("|");
     log("[" + (i + 1) + "/" + pending.length + "] " + key + " (tid " + g.tid + ")");
-    var rostersRes = await apiGet("/tournaments/" + g.tid + "/rosters", token);
+    // participants：tier 列表内嵌 teams/expected_roster 有值 → 直接用（省 /rosters 调用）；空才兜底调用
+    var listingParticipants = g.listingParticipants && g.listingParticipants.length ? g.listingParticipants : null;
+    var rostersRes = listingParticipants ? null : await apiGet("/tournaments/" + g.tid + "/rosters", token);
     await sleep(RATE_MS);
     var standingsRes = await apiGet("/tournaments/" + g.tid + "/standings", token);
     await sleep(RATE_MS);
@@ -218,7 +263,7 @@ async function main() {
     if (!bracketRes || bracketRes.skip) bracketRes = null;
     if (!rostersRes && !standingsRes && !bracketRes) { skipped404++; }
 
-    var participants = rostersRes ? normParticipants(rostersRes.body) : (structs[key] ? structs[key].participants || [] : []);
+    var participants = rostersRes ? normParticipants(rostersRes.body) : (listingParticipants || (structs[key] ? structs[key].participants || [] : []));
     var standings = standingsRes ? normStandings(standingsRes.body) : (structs[key] ? structs[key].standings || [] : []);
     var bracket = bracketRes ? normBracket(bracketRes.body) : (structs[key] ? structs[key].bracket || [] : []);
 
@@ -265,7 +310,8 @@ async function main() {
   log("完成：抓 " + fetched + " · 404 " + skipped404 + " · 失败 " + errors + " · 缓存 " + Object.keys(structs).length + " 条 · " + (body.length / 1024).toFixed(1) + " KiB" + (DRY ? "（dry-run 未写盘）" : ""));
 }
 
-main().catch(function (e) {
+var isMainGuard = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href; // 直调才跑 main（test:cloud 导入零副作用）
+if (isMainGuard) main().catch(function (e) {
   console.error("[structures] 失败：" + (e && e.message ? e.message : e));
   process.exit(1);
 });

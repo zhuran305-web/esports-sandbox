@@ -75,8 +75,9 @@ export function stripTeamLogos(matches) {
       }
     });
     if (copy.bestof !== undefined) delete copy.bestof;
-    if (copy.mid !== undefined) delete copy.mid; // 客户端零引用（仅服务端合并用），省运行时包
-    if (copy.tid !== undefined) delete copy.tid; // 同上：structures 抓取键，客户端按 game|tournament|stage 查结构
+    // mid 保留在运行时包（2026-11-11 live.json 高频链路）：客户端按 mid 定位实时补丁目标
+    // （PandaScore running 响应只有 mid，无法映射本地派生 id）；+4400×8B ≈ +35KB 可接受
+    if (copy.tid !== undefined) delete copy.tid; // structures 抓取键，客户端按 game|tournament|stage 查结构
     if (!copy.note) delete copy.note;
     return copy;
   });

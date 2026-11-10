@@ -40,7 +40,9 @@ var https = require("https");
 var ALLOWED_TARGETS = {
   ossMeta: { host: "esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com", path: "/meta.json" },
   ghDispatch: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/dispatches" },
-  ghRuns: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/runs?per_page=10" }
+  ghRuns: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/update-matches.yml/runs?per_page=10" },
+  // live.json 高频链路（2026-11-11）：every10 触发器分支 dispatch 的独立 workflow（单写 live.json，零互扰）
+  ghDispatchLive: { host: "api.github.com", path: "/repos/zhuran305-web/esports-sandbox/actions/workflows/refresh-live.yml/dispatches" }
 };
 var ALLOWED_HOSTS = { "esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com": true, "api.github.com": true };
 
@@ -257,6 +259,36 @@ async function recentRunExists(token, minutes) {
 
 exports.handler = async function (event, context) {
   var token = String(process.env.GITHUB_DISPATCH_TOKEN || "");
+
+  // triggerName 分支（2026-11-11 live.json 高频链路）：FC timer 事件带 {triggerName,triggerTime}。
+  // every10（live 刷新）走短路路径——不查 meta 陈旧度、不走 hourly 的幂等闸/健康复核
+  //（live dispatch 是无状态独立 workflow，10 分钟节奏与 hourly 的闸互不相干）；解析失败回落 hourly 主流程
+  var triggerName = "";
+  try {
+    var ev = typeof event === "string" ? JSON.parse(event) : event;
+    triggerName = ev && ev.triggerName ? String(ev.triggerName) : "";
+  } catch (e) { triggerName = ""; }
+  if (triggerName === "every10") {
+    console.log("[cron] live 刷新分支（triggerName=every10）→ dispatch refresh-live.yml");
+    try {
+      var liveRes = await httpsRequest(resolveTarget("ghDispatchLive"), "POST", {
+        "Authorization": "Bearer " + token,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "esports-sandbox-cron",
+        "Content-Type": "application/json"
+      }, JSON.stringify({ ref: "main" }), 10000);
+      console.log("[cron] refresh-live dispatch HTTP " + liveRes.status);
+      // dispatch 失败只记日志不在此告警：alertIf 定义在 handler 后段（此处不可用），
+      // 且 refresh-live.yml 自带 failure 告警步骤（下一轮 10 分钟后自然重试）
+      return JSON.stringify({ dispatched: liveRes.status === 204, live: true, status: liveRes.status });
+    } catch (e) {
+      var liveMsg = String((e && e.message) || e);
+      console.log("[cron] refresh-live dispatch 失败（下轮 10 分钟后重试）：" + liveMsg);
+      return JSON.stringify({ error: "live_dispatch_failed", detail: liveMsg });
+    }
+  }
+  // 非 every10（hourly 主触发器/手动 --test）：走既有陈旧检查 + 采集兜底流程
 
   // 1) 数据新鲜度检查：未陈旧则跳过（GitHub 自身 cron 偶尔正常时避免双触发）
   var stale = true;

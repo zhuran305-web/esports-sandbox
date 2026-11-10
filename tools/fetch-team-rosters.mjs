@@ -185,13 +185,61 @@ async function main() {
   }
 
   var targets = Object.keys(teamIds).filter(function (k) { return !windowSet || windowSet.has(k); });
+
+  // 事件驱动（2026-11-11 v2）：/players?range[modified_at]=since,now → 变更选手的 current_team
+  // → 只重抓这些队（替代旧 schema 的盲重抓；存量补齐仍由「首名无 id」判定兜底）
+  var changedTeams = null;
+  var cursorPath = path.join(ROOT, "data", "player-cursor.json");
+  var cursor = { v: 1, since: "" };
+  try { cursor = JSON.parse(readFileSync(cursorPath, "utf8")) || cursor; } catch (e) { /* 首轮 */ }
+  if (!cursor.since && !force) {
+    log("player-cursor 首轮：只建游标（全量走 schema 判定），不做事件驱动");
+    cursor.since = new Date(Date.now() - 3600000).toISOString();
+    writeFileSync(cursorPath, JSON.stringify(cursor) + "\n", "utf8");
+  } else if (!force) {
+    try {
+      var changedPlayers = [];
+      for (var pg = 1; pg <= 5; pg++) {
+        var pr = await fetch("https://api.pandascore.co/players?per_page=100&page=" + pg +
+          "&sort=-modified_at&range[modified_at]=" + encodeURIComponent(cursor.since) + "," + encodeURIComponent(new Date().toISOString()), {
+          headers: { "Authorization": "Bearer " + token, "Accept": "application/json" },
+          signal: AbortSignal.timeout(25000)
+        });
+        if (!pr.ok) throw new Error("HTTP " + pr.status);
+        var pl = await pr.json();
+        changedPlayers = changedPlayers.concat(Array.isArray(pl) ? pl : []);
+        if ((Array.isArray(pl) ? pl.length : 0) < 100) break;
+        await sleep(RATE_MS);
+      }
+      var idsByTeam = {};
+      Object.keys(teamIds).forEach(function (k) {
+        var pid = teamIds[k];
+        if (pid > 0 && !idsByTeam[pid]) idsByTeam[pid] = k;
+      });
+      changedTeams = {};
+      changedPlayers.forEach(function (p) {
+        if (!p || !p.current_team || !(p.current_team.id > 0)) return;
+        var k = idsByTeam[p.current_team.id];
+        if (k) changedTeams[k] = 1;
+      });
+      log("事件驱动：近窗变更选手 " + changedPlayers.length + " 名 → 涉及队伍 " + Object.keys(changedTeams).length + " 支");
+      cursor.since = new Date(Date.now() - 60000).toISOString(); // 60s 重叠防边界漏事件
+      writeFileSync(cursorPath, JSON.stringify(cursor) + "\n", "utf8");
+    } catch (e) {
+      log("  ! 事件驱动查询失败（保守：退回全量判定）：" + (e.message || e));
+      changedTeams = null;
+    }
+  }
+
   var pending = targets.filter(function (k) {
     if (force) return true;
     var c = cache[k];
-    if (!c || c.pid !== teamIds[k]) return true;
-    // 2026-11-10 字段扩展（id/img/fn/ln）：旧 schema 缓存（有选手但首名无 id）视为待更新，
-    // 由每日回填增量补齐；无阵容的空缓存保持命中（避免每轮重抓）
+    if (!c || c.pid !== teamIds[k]) return true; // 新队/换 pid：必抓
+    // 旧 schema 兜底（2026-11-10 存量补齐；本轮已完成后恒命中）
     if (c.players && c.players.length && !(c.players[0].id > 0)) return true;
+    // 事件驱动（2026-11-11 v2）：changedTeams 就绪 → 只抓变更涉及的队；
+    // 查询失败（null）→ 保守跳过本轮增量（下轮重试），绝不盲抓全量
+    if (changedTeams) return !!changedTeams[k];
     return false;
   });
   log("队伍 id " + targets.length + " 支（--window " + (windowSet ? "开" : "关") + "）· 缓存命中 " +

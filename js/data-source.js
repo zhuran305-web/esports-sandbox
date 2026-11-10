@@ -111,6 +111,55 @@ function baseUrl() {
   return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/";
 }
 
+/* ---------- live.json 轻量轮询（2026-11-11 深度接入二期） ----------
+   独立小文件（几 KB，refresh-live 每 10 分钟写）——高频刷新不触发 1.99MiB 整包下载。
+   纯内存缓存不写 storage：几 KB 且 2-3 分钟即过期，storage 序列化开销不值得；
+   失败静默（陈旧值兜底），绝不 toast/不设全局退避——live 轮询抖动属正常。 */
+var MAX_LIVE_ENTRIES = 60;
+var liveCache = null;     // {updatedAt, live:[{mid,lsc,gs}], finished:[{mid,result,endAt}]}
+var liveCacheAt = 0;
+
+function validLiveDoc(doc) {
+  return !!doc && Array.isArray(doc.live) && Array.isArray(doc.finished);
+}
+
+function normalizeLiveDoc(raw) {
+  if (!raw || !validLiveDoc(raw)) return null;
+  function rows(list) {
+    return (Array.isArray(list) ? list : []).filter(function (r) {
+      return !!r && typeof r.mid === "number" && r.mid > 0;
+    }).slice(0, MAX_LIVE_ENTRIES);
+  }
+  var out = {
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : "",
+    live: rows(raw.live),
+    finished: rows(raw.finished)
+  };
+  return out; // 空集也返回（真实静默态，客户端据此停轮询）
+}
+
+export async function fetchLiveSnapshot(options) {
+  if (!isRuntimeEnabled()) return null;
+  if (getRuntimeMode() === "unknown") {
+    await whenPlatformReady(5000);
+  }
+  if (getRuntimeMode() === "preview") return null; // 预览态无 effective network（不弹 SERVER_API_REQUIRED）
+  var force = options && options.force === true;
+  if (!force && liveCache && Date.now() - liveCacheAt < 60000) return liveCache; // 1 分钟内存节流
+
+  try {
+    var raw = await networkGetJson(baseUrl() + "live.json?t=" + Date.now(), 10000);
+    var doc = normalizeLiveDoc(raw);
+    if (doc) {
+      liveCache = doc;
+      liveCacheAt = Date.now();
+    }
+    return doc || liveCache; // 失败静默：返回陈旧内存值
+  } catch (e) {
+    return liveCache; // 静默（陈旧值兜底或 null）
+  }
+}
+
 export async function loadCachedSnapshot() {
   var cached = await storageGet(CACHE_KEY);
   if (!cached) return null;

@@ -48,6 +48,9 @@ jobs:
             # incidents 游标（2026-11-10）：可选资产，缺失时首轮只建游标不发警告
             gh release download data --pattern incidents-cursor.json --dir data --clobber \
               || echo "还没有 incidents-cursor.json 资产，从空累积"
+            # 选手变更游标（2026-11-11）：可选资产，缺失时首轮只建游标
+            gh release download data --pattern player-cursor.json --dir data --clobber \
+              || echo "还没有 player-cursor.json 资产，从空累积"
           else
             echo "首次运行：还没有 data release，从空数据开始"
           fi
@@ -127,6 +130,10 @@ jobs:
           # incidents 游标（2026-11-10）：同 team-ids 先例
           if [ -f data/incidents-cursor.json ]; then
             gh release upload data data/incidents-cursor.json --clobber
+          fi
+          # 选手变更游标（2026-11-11）：同 team-ids 先例
+          if [ -f data/player-cursor.json ]; then
+            gh release upload data data/player-cursor.json --clobber
           fi
 
       # 2026-10-25 事故修复：backfill 曾只上传 Release 不更新 OSS，导致 OSS 与 Release

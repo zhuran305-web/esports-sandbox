@@ -16,8 +16,10 @@ import OpenApi from "@alicloud/openapi-client";
 const SERVICE = "esports-sandbox-cron";
 const FUNCTION = "dispatch";
 const TRIGGER = "every30";
+const TRIGGER_LIVE = "every10"; // live.json 高频刷新（2026-11-11）：每 10 分钟 dispatch refresh-live.yml
 const REGION = "cn-hangzhou";
 const CRON_EXPRESSION = "0 5 * * * *"; // FC 6 段 cron：每小时第 5 分钟（秒 分 时 日 月 周）——错开 GitHub 整点轮，月增 ~3.6 元
+const CRON_LIVE_EXPRESSION = "0 */10 * * * *"; // 每 10 分钟整——live 比分高频链路（refresh-live.yml）
 
 const env = {};
 fs.readFileSync(".env", "utf8").split(/\r?\n/).forEach((l) => {
@@ -52,7 +54,11 @@ function makeZip() {
 }
 
 async function testInvoke() {
-  const res = await client.invokeFunction(SERVICE, FUNCTION, {});
+  // payload 即 handler 收到的 event——--trigger=every10 验证 live 分支（缺省=hourly 主流程）
+  const payloadArg = process.argv.find((a) => a.startsWith("--trigger="));
+  const payload = payloadArg ? { triggerName: payloadArg.split("=")[1] } : {};
+  console.log("[fc-cron] invoke payload:", JSON.stringify(payload));
+  const res = await client.invokeFunction(SERVICE, FUNCTION, JSON.stringify(payload));
   console.log("[fc-cron] invoke 结果：", JSON.stringify(res.body).slice(0, 500));
 }
 
@@ -136,8 +142,30 @@ async function main() {
     console.log(`[fc-cron] timer trigger 已存在并更新：${TRIGGER}`);
   }
 
-  console.log("[fc-cron] 部署完成 · 每小时第 5 分钟检查一次（数据陈旧 >35 分钟才触发采集，兜底最坏延迟 ~1.5 小时）");
-  console.log("[fc-cron] 立即验证：node tools/deploy-cron-fc.mjs --test");
+  // 第二触发器（2026-11-11 live.json 高频链路）：每 10 分钟 dispatch refresh-live.yml。
+  // handler 按 event.triggerName 分支（every10 → 直接 dispatch refresh-live，跳过 meta 陈旧检查）
+  const liveTriggerConfigJson = JSON.stringify({
+    cronExpression: CRON_LIVE_EXPRESSION,
+    enable: true,
+    payload: "",
+  });
+  try {
+    await client.createTrigger(SERVICE, FUNCTION, {
+      triggerName: TRIGGER_LIVE,
+      triggerType: "timer",
+      triggerConfig: liveTriggerConfigJson,
+    });
+    console.log(`[fc-cron] timer trigger 已创建：${TRIGGER_LIVE}（${CRON_LIVE_EXPRESSION}）`);
+  } catch (e) {
+    if (!/AlreadyExist/i.test(String(e.code))) throw e;
+    await client.updateTrigger(SERVICE, FUNCTION, TRIGGER_LIVE, {
+      triggerConfig: liveTriggerConfigJson,
+    });
+    console.log(`[fc-cron] timer trigger 已存在并更新：${TRIGGER_LIVE}`);
+  }
+
+  console.log("[fc-cron] 部署完成 · 每小时第 5 分钟采集兜底（陈旧 >35 分钟才触发）+ 每 10 分钟 live 刷新（refresh-live.yml）");
+  console.log("[fc-cron] 立即验证：node tools/deploy-cron-fc.mjs --test [--trigger=every10]");
 }
 
 main().catch((e) => {

@@ -1818,9 +1818,70 @@ check("④ 客户端接线（静态）：statusOf lv 优先于时间估算 + 卡
     /md-games/.test(appSrc) && /md-game-live/.test(appSrc);
 })());
 
+/* ---------- 场景 AK（2026-11-11 二期）：live.json 高频链路 ----------
+   publish-live-oss 全局 running/past → live.json（几 KB 独立小文件，不进 meta hash）→
+   客户端 fetchLiveSnapshot（内存缓存+静默降级）→ applyLivePatch 就地补丁（matchMidIndex 引用）
+   → finished 迁移才结算。客户端匹配必须用 mid（停剥后进 runtime 包）。 */
+console.log("AK. live 高频链路（live.json 形状 / applyLivePatch / mid 定位）：");
+var LIVE = await import(pathToFileURL(path.join(root, "tools", "publish-live-oss.mjs")).href);
+check("① buildLiveDoc：running→live（mid/lsc/gs）+ past finished（mid/result/endAt）；非完赛局/无比分剔除", (function () {
+  var running = [{
+    id: 5001, status: "running",
+    opponents: [{ opponent: { id: 11, name: "甲" } }, { opponent: { id: 22, name: "乙" } }],
+    results: [{ team_id: 11, score: 1 }, { team_id: 22, score: 0 }],
+    games: [{ position: 1, status: "finished", winner: { id: 11 }, length: 1820 }, { position: 2, status: "running" }]
+  }];
+  var past = [{
+    id: 5002, status: "finished", winner_id: 22, end_at: "2026-11-11T10:00:00Z",
+    opponents: [{ opponent: { id: 11, name: "甲" } }, { opponent: { id: 22, name: "乙" } }],
+    results: [{ team_id: 11, score: 1 }, { team_id: 22, score: 2 }],
+    games: [{ position: 1, status: "finished", winner: { id: 22 }, length: 1900 }]
+  }, {
+    id: 5003, status: "canceled", opponents: [{ opponent: { id: 11 } }, { opponent: { id: 22 } }], results: []
+  }];
+  var doc = LIVE.buildLiveDoc(running, past);
+  if (doc.live.length !== 1 || doc.live[0].mid !== 5001) return false;
+  if (doc.live[0].lsc !== "1:0" || doc.live[0].gs !== "A1820") return false;
+  if (doc.finished.length !== 1 || doc.finished[0].mid !== 5002) return false;
+  if (doc.finished[0].result.winner !== "B" || doc.finished[0].result.score !== "1:2") return false;
+  return doc.finished[0].endAt === "2026-11-11T10:00:00Z"; // canceled 无比分 → 剔除
+})());
+check("② 客户端接线（静态）：fetchLiveSnapshot 降级门/内存缓存 + applyLivePatch 就地补丁 + mid 索引 + 独立轮询 + mid 停剥", (function () {
+  var dsSrc2 = rf(path.join(root, "js", "data-source.js"), "utf8");
+  return /export async function fetchLiveSnapshot/.test(dsSrc2) &&
+    /getRuntimeMode\(\) === "preview"\) return null/.test(dsSrc2) && // 预览态降级（不弹 SERVER_API_REQUIRED）
+    /var liveCache = null/.test(dsSrc2) && /normalizeLiveDoc/.test(dsSrc2) &&
+    /function applyLivePatch/.test(appSrc) && /matchMidIndex/.test(appSrc) &&
+    /function matchByMid/.test(appSrc) && /LIVE_POLL_INTERVAL/.test(appSrc) &&
+    /finishedMigration/.test(appSrc) && /settlePickem\(\);/.test(appSrc) &&
+    /mid 保留在运行时包/.test(libSrc); // stripTeamLogos 停剥 mid
+})());
+
+/* ---------- 场景 AL（2026-11-11 二期）：结构管线 v3（tier 直发现 + listing participants） ---------- */
+console.log("AL. 结构管线 v3（tier 直发现 / listing participants）：");
+check("① tier 直发现（静态）：filter[tier]=s 调用 + listingParticipants 提取 + rosters 兜底", (function () {
+  var stSrc = rf(path.join(root, "tools", "fetch-tournament-structures.mjs"), "utf8");
+  return /filter\[tier\]=s&per_page=12/.test(stSrc) &&
+    /listingParticipants/.test(stSrc) &&
+    /listingParticipants \? null : await apiGet/.test(stSrc) &&
+    /import { SLUGS } from ".\/adapters\/pandascore.mjs"/.test(stSrc) &&
+    /export var SLUGS/.test(pandasSrc);
+})());
+check("② incidents 自愈（静态）：creation→GET /matches/{id} 补抓 + validate 守卫 + writeOutputs", (function () {
+  var incSrc = rf(path.join(root, "tools", "fetch-incidents.mjs"), "utf8");
+  return /已自动补抓/.test(incSrc) && /\/matches\/" \+ miss\.mid/.test(incSrc) &&
+    /validateMatches\(merged\.matches\)/.test(incSrc) && /writeOutputs\(ROOT, src\.matches\)/.test(incSrc);
+})());
+check("③ rosters 事件驱动（静态）：range[modified_at] + player-cursor 游标 + changedTeams 过滤", (function () {
+  var bfSrc2 = rf(path.join(root, ".github", "workflows", "backfill-matches.yml"), "utf8");
+  return /range\[modified_at\]/.test(rostersTool) && /player-cursor\.json/.test(rostersTool) &&
+    /if \(changedTeams\) return !!changedTeams\[k\];/.test(rostersTool) &&
+    /player-cursor\.json/.test(bfSrc2);
+})());
 /* ---------- 场景 AJ（2026-11-10 深度接入）：incidents 对账 ----------
    官方 /incidents?type=match&since= 增量流（每对象只留最新一条）；对账=漏抓/删除警告，
-   删除只警告不删数据（账本完整性纪律）；游标必须单调推进（乱序/空批次不回退）。 */
+   删除只警告不删数据（账本完整性纪律）；游标必须单调推进（乱序/空批次不回退）。
+   2026-11-11 v2：creation 漏抓升级为 GET /matches/{id} 定向补抓自愈（见 AL ②）。 */
 console.log("AJ. incidents 对账（游标推进 / creation 漏抓 / deletion 仍持有）：");
 var INC = await import(pathToFileURL(path.join(root, "tools", "fetch-incidents.mjs")).href);
 check("① classifyIncidents：creation 窗口内漏抓 / deletion 仍持有 / update 计数 / 窗口外忽略", (function () {

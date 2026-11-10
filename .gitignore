@@ -37,3 +37,4 @@ public/logos/
 public/players/
 data/team-ids.json
 data/incidents-cursor.json
+data/player-cursor.json

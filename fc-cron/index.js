@@ -260,15 +260,18 @@ async function recentRunExists(token, minutes) {
 exports.handler = async function (event, context) {
   var token = String(process.env.GITHUB_DISPATCH_TOKEN || "");
 
-  // triggerName 分支（2026-11-11 live.json 高频链路）：FC timer 事件带 {triggerName,triggerTime}。
-  // every10（live 刷新）走短路路径——不查 meta 陈旧度、不走 hourly 的幂等闸/健康复核
-  //（live dispatch 是无状态独立 workflow，10 分钟节奏与 hourly 的闸互不相干）；解析失败回落 hourly 主流程
+  // 分支判定（2026-11-11）：FC timer 事件的 triggerName 形状未经实证——解析落空会静默走错
+  // 分支（实测：every10 上线后 20 分钟零 dispatch）。改用**当前 UTC 分钟数**确定性分支：
+  // every10 在 :00/:10/:20/:30/:40/:50 触发（minutes % 10 === 0），hourly 在 :05——两节奏天然互斥，
+  // 不依赖事件形状；triggerName 仍可显式覆盖（SDK 直调 --trigger=every10 实测用）。
   var triggerName = "";
   try {
     var ev = typeof event === "string" ? JSON.parse(event) : event;
     triggerName = ev && ev.triggerName ? String(ev.triggerName) : "";
   } catch (e) { triggerName = ""; }
-  if (triggerName === "every10") {
+  var utcMinutes = new Date().getUTCMinutes();
+  var isLiveTick = triggerName === "every10" || (triggerName === "" && utcMinutes % 10 === 0);
+  if (isLiveTick) {
     console.log("[cron] live 刷新分支（triggerName=every10）→ dispatch refresh-live.yml");
     try {
       var liveRes = await httpsRequest(resolveTarget("ghDispatchLive"), "POST", {

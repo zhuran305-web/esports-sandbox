@@ -1777,6 +1777,96 @@ check("④ 4进3 战绩桶（BLAST Rivals 香港实测形态）：4 队×4 场 �
     (s.results["0:2"] || []).join() === "丁";
 })());
 
+/* ---------- 场景 AI（2026-11-10 深度接入）：实时三件套 lv/lsc/gs ----------
+   lv=官方 running 信号（statusOf 优先于时间估算）、lsc=实时比分、gs=局进度串 "A1584,A1508"。
+   键恒存在（未发生=undefined）——mergeMatches 的 Object.assign 复制 own key，
+   running→finished 后旧实时数据被显式覆盖不残留；JSON.stringify 自动省略 undefined。 */
+console.log("AI. 实时三件套（lv/lsc/gs 采集与 merge 刷新）：");
+var LIB = await import(pathToFileURL(path.join(root, "tools", "lib.mjs")).href);
+check("① normalizeMatch：lv/lsc/gs 白名单透传，键恒存在（未发生=undefined）", (function () {
+  var n1 = LIB.normalizeMatch({ id: "x", game: "cs2", tournament: "T", stage: "S", startAt: "2026-11-20T10:00:00Z",
+    teamA: { name: "甲" }, teamB: { name: "乙" }, lv: true, lsc: "1:0", gs: "A1584,B1520" }, "pandascore");
+  if (n1.lv !== true || n1.lsc !== "1:0" || n1.gs !== "A1584,B1520") return false;
+  var n2 = LIB.normalizeMatch({ id: "x", game: "cs2", tournament: "T", stage: "S", startAt: "2026-11-20T10:00:00Z",
+    teamA: { name: "甲" }, teamB: { name: "乙" } }, "pandascore");
+  return "lv" in n2 && n2.lv === undefined && "lsc" in n2 && n2.lsc === undefined && "gs" in n2 && n2.gs === undefined;
+})());
+check("② mergeMatches：running→finished 转换后旧实时数据被显式覆盖不残留", (function () {
+  var base = { game: "cs2", tournament: "T", stage: "S", startAt: "2026-11-20T10:00:00Z",
+    teamA: { name: "甲" }, teamB: { name: "乙" } };
+  var existing = [Object.assign({}, base, { id: "m1", mid: 9001, lv: true, lsc: "1:0", gs: "A1584" })];
+  var incoming = [Object.assign({}, base, { id: "m1", mid: 9001, result: { winner: "A", score: "2:0" } })];
+  var merged = LIB.mergeMatches(existing, incoming, { retentionDays: 45 }).matches;
+  var m = merged[0];
+  if (!m.result || m.result.winner !== "A") return false; // finished 落定
+  return m.lv === undefined && m.lsc === undefined && m.gs === undefined; // 旧实时数据清干净
+})());
+check("③ mergeMatches：纯 running 更新（无 result）照常刷新 lv/lsc/gs", (function () {
+  var base = { game: "cs2", tournament: "T", stage: "S", startAt: "2026-11-20T10:00:00Z",
+    teamA: { name: "甲" }, teamB: { name: "乙" } };
+  var existing = [Object.assign({}, base, { id: "m1", mid: 9001 })];
+  var incoming = [Object.assign({}, base, { id: "m1", mid: 9001, lv: true, lsc: "1:1", gs: "A1800,B1750" })];
+  var merged = LIB.mergeMatches(existing, incoming, { retentionDays: 45 }).matches;
+  var m = merged[0];
+  return m.lv === true && m.lsc === "1:1" && m.gs === "A1800,B1750";
+})());
+check("④ 客户端接线（静态）：statusOf lv 优先于时间估算 + 卡片实时分 + 详情页局记分", (function () {
+  var body = appSrc.slice(appSrc.indexOf("function statusOf"), appSrc.indexOf("function statusOf") + 700);
+  return /if \(m\.lv === true\) return "live"/.test(body) && // lv 优先（在时间估算前）
+    body.indexOf("m.lv === true") < body.indexOf("now < start + matchDurationMs") &&
+    /team-score is-live/.test(appSrc) && /function parseGameLog/.test(appSrc) &&
+    /md-games/.test(appSrc) && /md-game-live/.test(appSrc);
+})());
+
+/* ---------- 场景 AJ（2026-11-10 深度接入）：incidents 对账 ----------
+   官方 /incidents?type=match&since= 增量流（每对象只留最新一条）；对账=漏抓/删除警告，
+   删除只警告不删数据（账本完整性纪律）；游标必须单调推进（乱序/空批次不回退）。 */
+console.log("AJ. incidents 对账（游标推进 / creation 漏抓 / deletion 仍持有）：");
+var INC = await import(pathToFileURL(path.join(root, "tools", "fetch-incidents.mjs")).href);
+check("① classifyIncidents：creation 窗口内漏抓 / deletion 仍持有 / update 计数 / 窗口外忽略", (function () {
+  var matches = [
+    { mid: 100, tournament: "T", teamA: { name: "甲" }, teamB: { name: "乙" }, startAt: "2026-11-10T10:00:00Z" }
+  ];
+  var now = Date.now();
+  var window = { fromMs: now - 3 * 86400000, toMs: now + 10 * 86400000 };
+  var items = [
+    { change_type: "creation", modified_at: "2026-11-10T12:00:00Z", object: { id: 200, begin_at: new Date(now + 86400000).toISOString() } }, // 窗口内、本地无 → 漏抓
+    { change_type: "creation", modified_at: "2026-11-10T12:01:00Z", object: { id: 201, begin_at: new Date(now + 40 * 86400000).toISOString() } }, // 窗口外 → 忽略
+    { change_type: "creation", modified_at: "2026-11-10T12:02:00Z", object: { id: 100, begin_at: new Date(now + 86400000).toISOString() } }, // 本地已有 → 不算漏抓
+    { change_type: "deletion", modified_at: "2026-11-10T12:03:00Z", object: { id: 100 } }, // 仍持有 → deletion
+    { change_type: "deletion", modified_at: "2026-11-10T12:04:00Z", object: { id: 300 } }, // 本来就没有 → 忽略
+    { change_type: "update", modified_at: "2026-11-10T12:05:00Z", object: { id: 100 } }
+  ];
+  var r = INC.classifyIncidents(items, matches, window);
+  if (r.createdMissed.length !== 1 || r.createdMissed[0].mid !== 200) return false;
+  if (r.deleted.length !== 1 || r.deleted[0].mid !== 100) return false;
+  if (r.updated !== 1) return false;
+  return r.maxModified === "2026-11-10T12:05:00Z";
+})());
+check("② nextCursor：取批次最大 modified_at；空批次保持旧游标；序列单调不回退", (function () {
+  if (INC.nextCursor([{ modified_at: "2026-11-10T12:05:00Z" }, { modified_at: "2026-11-10T12:09:00Z" }], "2026-11-10T12:00:00Z") !== "2026-11-10T12:09:00Z") return false;
+  if (INC.nextCursor([], "2026-11-10T12:00:00Z") !== "2026-11-10T12:00:00Z") return false;
+  var c = "2026-11-10T00:00:00Z";
+  [[{ modified_at: "2026-11-10T01:00:00Z" }], [], [{ modified_at: "2026-11-10T00:30:00Z" }]].forEach(function (batch) { c = INC.nextCursor(batch, c); });
+  return c === "2026-11-10T01:00:00Z"; // 乱序/空批次后游标仍单调
+})());
+check("③ 数据链路（静态）：游标资产 + 对账步骤 + 两 workflow 接线", (function () {
+  var bfSrc = rf(path.join(root, ".github", "workflows", "backfill-matches.yml"), "utf8");
+  return /Fetch incidents/.test(wfSrc) && /Fetch incidents/.test(bfSrc) &&
+    /incidents-cursor\.json/.test(wfSrc) && /incidents-cursor\.json/.test(bfSrc) &&
+    /export function classifyIncidents/.test(rf(path.join(root, "tools", "fetch-incidents.mjs"), "utf8"));
+})());
+check("④ U+ rosters 字段扩展与选手卡链路（静态）", (function () {
+  var dsSrc2 = rf(path.join(root, "js", "data-source.js"), "utf8");
+  return /playerImgPath\(p\.image_url\)/.test(rostersTool) &&
+    /id: p\.id > 0 \? Math\.floor\(p\.id\) : undefined/.test(rostersTool) &&
+    /img: typeof p\.img === "string" && p\.img \? p\.img : undefined/.test(dsSrc2) &&
+    /PLAYER_BASE = "players\/"/.test(appSrc) && /function playerAvatarHTML/.test(appSrc) &&
+    /function openPlayerSheet/.test(appSrc) && /id="playerSheet"/.test(htmlSrc) &&
+    /pack-player-avatars/.test(JSON.stringify(pkgJson)) &&
+    /\.md-games/.test(cssSrc) && /\.player-sheet/.test(cssSrc) && /\.team-score\.is-live/.test(cssSrc);
+})());
+
 rmSync(tmp, { recursive: true, force: true });
 
 /* ---------- 场景 AH（2026-11-10）：赛事结构（structures）客户端链路 ----------

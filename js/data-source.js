@@ -93,7 +93,12 @@ function normalizeRosters(raw) {
     players = players.filter(function (p) {
       return p && typeof p.n === "string" && p.n;
     }).slice(0, 5).map(function (p) {
-      return { n: p.n, r: typeof p.r === "string" ? p.r : "", l: typeof p.l === "string" ? p.l : "" };
+      // 2026-11-10 深度接入：id/img/fn/ln（选手卡 + 打包头像）；缺省 undefined（老缓存无这些字段）
+      return { n: p.n, r: typeof p.r === "string" ? p.r : "", l: typeof p.l === "string" ? p.l : "",
+        id: typeof p.id === "number" && p.id > 0 ? p.id : undefined,
+        img: typeof p.img === "string" && p.img ? p.img : undefined,
+        fn: typeof p.fn === "string" && p.fn ? p.fn : undefined,
+        ln: typeof p.ln === "string" && p.ln ? p.ln : undefined };
     });
     if (!players.length) return;
     out[key] = players;

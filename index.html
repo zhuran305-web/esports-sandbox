@@ -839,6 +839,23 @@
     </div>
   </div>
 
+  <!-- 选手卡（2026-11-10 深度接入）：复用 sheet-backdrop（自带 [hidden] 补丁），pagehide 自动关闭已注册 OVERLAY_SELECTORS -->
+  <div class="sheet-backdrop" id="playerSheet" hidden>
+    <div class="sheet player-sheet" role="dialog" aria-modal="true" aria-labelledby="playerSheetTitle">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <h2 id="playerSheetTitle">选手信息</h2>
+          <p id="playerSheetMeta" class="sheet-meta"></p>
+        </div>
+        <button class="icon-btn" id="playerSheetClose" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div id="playerSheetBody"></div>
+    </div>
+  </div>
+
   <!-- 新手引导 -->
   <!-- 分享卡全屏预览（保存兜底：宿主截图流程不可用时，让用户直接系统截屏） -->
   <div class="card-full" id="cardFullscreen" hidden>

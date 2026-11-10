@@ -34,4 +34,6 @@ Pandascore Token.txt
 .DS_Store
 Thumbs.db
 public/logos/
+public/players/
 data/team-ids.json
+data/incidents-cursor.json

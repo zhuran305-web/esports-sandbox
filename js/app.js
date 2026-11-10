@@ -33,6 +33,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   // 文件名沿用 teams 映射路径（内容为 WebP 字节，浏览器按内容嗅探渲染）。
   // OSS 远程镜像（tools/mirror-team-logos.mjs）保留：作为打包源 + 未来恢复远程高清版的备胎。
   var LOGO_BASE = "logos/";
+  // 选手头像打包资源（2026-11-10 深度接入）：tools/pack-player-avatars.mjs 产物 public/players/，
+  // 文件名 = roster.img 的 djb2（与 logoPackName 同算法）——改一处必改另一处
+  var PLAYER_BASE = "players/";
+  // 选手位置徽章（PandaScore role 原文 → 中文；仅 LoL/Dota2/OW 有值）——阵容行与选手卡同源
+  var ROLE_LABELS = { top: "上单", jungle: "打野", mid: "中单", adc: "ADC", support: "辅助", "midlaner": "中单", "adc/upport": "ADC", "upport": "辅助", "jungler": "打野", carry: "核心", "offlane": "三号位", solo: "中单" };
   var matchIndex = new Map();
   rebuildMatchIndex();
   var DATA_UPDATED_AT = DATA.updatedAt || "";
@@ -230,7 +235,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var OVERLAY_SELECTORS = [
     "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
     "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#pickemGamePopover", "#pickemEvPopover", "#duelDialogBackdrop", "#duelHelpBackdrop",
-    "#pickemSheet"
+    "#pickemSheet", "#playerSheet"
   ];
 
   function closeAllOverlays() {
@@ -554,15 +559,29 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return hours * 3600000;
   }
 
+  /** 解析局进度串 "A1584,A1508" → [{w:"A",t:1584},...]（采集端编码见 pandascore.mjs toRaw） */
+  function parseGameLog(str) {
+    if (typeof str !== "string" || !str) return [];
+    return str.split(",").map(function (seg) {
+      var w = seg.charAt(0);
+      var t = parseInt(seg.slice(1), 10);
+      if (w !== "A" && w !== "B") return null;
+      return { w: w, t: isFinite(t) && t > 0 ? t : 0 };
+    }).filter(Boolean);
+  }
+
   function statusOf(m) {
     if (m.result && (m.result.winner === "A" || m.result.winner === "B")) {
       return "finished";
     }
+    // 官方 running 信号优先（2026-11-10 深度接入）：比「开赛时间+BO 估算时长」可靠——
+    // 超时未结束是 awaiting 而非 live 的误判、以及「预计时长内其实已结束」的空窗都被它纠正
+    if (m.lv === true) return "live";
     var now = Date.now();
     var start = new Date(m.startAt).getTime();
     if (now < start - 3600000) return "open";      // 开赛前 1 小时停止竞猜
     if (now < start) return "locked";               // 已截止，尚未开赛
-    if (now < start + matchDurationMs(m)) return "live"; // 预计比赛进行中
+    if (now < start + matchDurationMs(m)) return "live"; // 预计比赛进行中（无 lv 信号时的估算兜底）
     return "awaiting";                              // 已超过预计时长，等待赛果
   }
 
@@ -1415,6 +1434,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (st === "finished") {
         var scoreParts = String(m.result.score || "").split(":");
         right = '<span class="team-score">' + esc((scoreParts[side === "A" ? 0 : 1] || "").trim() || "-") + "</span>";
+      } else if (st === "live" && m.lsc) {
+        // 实时比分（2026-11-10）：官方 running 场次的当前比分；无实时信号保持原留白
+        var liveParts = String(m.lsc).split(":");
+        right = '<span class="team-score is-live">' + esc((liveParts[side === "A" ? 0 : 1] || "").trim() || "-") + "</span>";
       } else if (st === "open") {
         right = '<span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>';
       }
@@ -1893,6 +1916,24 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         (m.note ? matchDetailInfoRow("备注", esc(m.note)) : "") +
       "</div>";
 
+    // 局记分（2026-11-10 深度接入）：gs="A1584,A1508"（逐局胜方+秒）——官方 games 免费字段；
+    // running 场次附实时比分提示；无 gs（BO1 未开/数据未及）自然不显示
+    var gamesLog = parseGameLog(m.gs);
+    var gamesBlock = "";
+    if (gamesLog.length) {
+      var gameRows = gamesLog.map(function (g, gi) {
+        var winName = g.w === "A" ? m.teamA.name : m.teamB.name;
+        var mm = Math.floor(g.t / 60), ss = ("0" + (g.t % 60)).slice(-2);
+        return '<div class="md-game-row"><span class="md-game-no">第 ' + (gi + 1) + " 局</span>" +
+          '<span class="md-game-win">' + esc(winName) + " 胜</span>" +
+          (g.t ? '<span class="md-game-len">' + mm + ":" + ss + "</span>" : "") +
+        "</div>";
+      }).join("");
+      var liveNote = m.lv === true && m.lsc
+        ? '<div class="md-game-live">当前比分 <b>' + esc(m.lsc) + "</b> · 比赛进行中</div>" : "";
+      gamesBlock = '<div class="md-games"><div class="md-games-head">局记分</div>' + gameRows + liveNote + "</div>";
+    }
+
     // 我的预测卡（下过注才有）
     var predCard = "";
     if (pred) {
@@ -1931,6 +1972,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     body.innerHTML =
       hero +
       info +
+      gamesBlock +
       predCard +
       actionsHTML +
       '<p class="md-source">赛程与赛果数据来自公开赛事数据平台（PandaScore），以赛事官方公布为准</p>';
@@ -3265,17 +3307,25 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var codex = state.collection[currentTeamKey];
 
     var html = "";
-    // 战队选手阵容（1.3.2）：PandaScore 花名册（键 game:name，规避同名不同游戏队）；数组形状，无数据整块隐藏
+    // 战队选手阵容（1.3.2）：PandaScore 花名册（键 game:name，规避同名不同游戏队）；数组形状，无数据整块隐藏。
+    // 2026-11-10 深度接入：行加选手头像（players/<djb2>.webp 同源打包）+ 点击开选手卡抽屉
     var rosterPlayers = ROSTERS[currentTeamKey];
     if (Array.isArray(rosterPlayers) && rosterPlayers.length) {
-      var ROLE_LABEL = { top: "上单", jungle: "打野", mid: "中单", adc: "ADC", support: "辅助", "midlaner": "中单", "adc/upport": "ADC", "upport": "辅助", "jungler": "打野", carry: "核心", "offlane": "三号位", solo: "中单" };
-      html += '<div class="section-head"><h2>阵容</h2><span class="section-sub">公开赛果平台数据</span></div>' +
-        '<div class="roster-list">' + rosterPlayers.map(function (p) {
-          var role = p.r ? (ROLE_LABEL[p.r.toLowerCase()] || p.r) : "";
-          return '<div class="roster-row">' +
-            (p.l ? '<span class="roster-nat">' + esc(p.l.toUpperCase()) + "</span>" : '<span class="roster-nat roster-nat-none">–</span>') +
-            '<b class="roster-name">' + esc(p.n) + "</b>" +
-            (role ? '<span class="roster-role">' + esc(role) + "</span>" : "") +
+      html += '<div class="section-head"><h2>阵容</h2><span class="section-sub">点选手看详情 · 公开赛果平台数据</span></div>' +
+        '<div class="roster-list">' + rosterPlayers.map(function (p, pi) {
+          var role = p.r ? (ROLE_LABELS[p.r.toLowerCase()] || p.r) : "";
+          var realName = [p.fn, p.ln].filter(Boolean).join(" ");
+          return '<div class="roster-row" data-player="' + pi + '" role="button">' +
+            playerAvatarHTML(p) +
+            '<span class="roster-main">' +
+              '<b class="roster-name">' + esc(p.n) + "</b>" +
+              '<span class="roster-meta">' +
+                (p.l ? '<span class="roster-nat">' + esc(p.l.toUpperCase()) + "</span>" : '<span class="roster-nat roster-nat-none">–</span>') +
+                (role ? '<span class="roster-role">' + esc(role) + "</span>" : "") +
+                (realName ? '<span class="player-real-inline">' + esc(realName) + "</span>" : "") +
+              "</span>" +
+            "</span>" +
+            '<span class="chevron roster-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>' +
           "</div>";
         }).join("") + "</div>";
     }
@@ -3331,6 +3381,80 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
 
     $("#teamBody").innerHTML = html;
+  }
+
+  /* ---------- 选手卡（2026-11-10 深度接入）：阵容行点击 → 底部抽屉 ---------- */
+
+  function playerAvatarHTML(p) {
+    // 复用 avatarHTML 的 has-logo/img/fallback 结构与全局 error 降级（img 挂了加 .no-logo 露首字）
+    var initial = esc((p && p.n || "?").slice(0, 1));
+    if (!p || !p.img) {
+      return '<span class="avatar player-avatar" style="' + avatarStyle(p ? p.n : "?") + '">' + initial + "</span>";
+    }
+    return '<span class="avatar player-avatar has-logo">' +
+      '<img class="avatar-img" src="' + PLAYER_BASE + logoPackName(p.img) + '" alt="" loading="lazy" decoding="async">' +
+      '<span class="avatar-fallback">' + initial + "</span></span>";
+  }
+
+  var playerSheetCtx = null; // {teamKey, idx}
+
+  function closePlayerSheet() {
+    var el = $("#playerSheet");
+    if (el) el.hidden = true;
+    playerSheetCtx = null;
+    document.body.style.overflow = "";
+  }
+
+  function openPlayerSheet(teamKey, idx) {
+    var roster = ROSTERS[teamKey];
+    if (!roster || !roster[idx]) return;
+    playerSheetCtx = { teamKey: teamKey, idx: idx };
+    var p = roster[idx];
+    var sep = teamKey.indexOf(":");
+    var game = teamKey.slice(0, sep), teamName = teamKey.slice(sep + 1);
+    var role = p.r ? (ROLE_LABELS[p.r.toLowerCase()] || p.r) : "";
+    var realName = [p.fn, p.ln].filter(Boolean).join(" ");
+    $("#playerSheetTitle").textContent = p.n;
+    $("#playerSheetMeta").textContent = gameMeta(game).label + " · " + teamName;
+
+    // 该队近 5 场（MATCHES 直查，与战队资料页「近 45 天战绩」同数据源）
+    var recentList = MATCHES.filter(function (m2) {
+      return m2.game === game && ((m2.teamA && m2.teamA.name === teamName) || (m2.teamB && m2.teamB.name === teamName));
+    }).sort(function (a, b) { return new Date(b.startAt) - new Date(a.startAt); }).slice(0, 5);
+    var recent = recentList.map(function (m2) {
+      var opp = m2.teamA.name === teamName ? m2.teamB.name : m2.teamA.name;
+      var won = null, score = "";
+      if (m2.result && (m2.result.winner === "A" || m2.result.winner === "B")) {
+        score = m2.result.score || "";
+        won = (m2.result.winner === "A" ? m2.teamA.name : m2.teamB.name) === teamName;
+      }
+      var badge = won === null
+        ? '<span class="history-badge pending">…</span>'
+        : '<span class="history-badge ' + (won ? "won" : "lost") + '">' + (won ? "W" : "L") + "</span>";
+      return '<div class="history-item">' + badge +
+        '<span class="history-main"><span class="history-title">vs ' + esc(opp) + (score ? " · " + esc(score) : "") + "</span>" +
+        '<span class="history-sub">' + esc(fmtTime(m2.startAt)) + "</span></span></div>";
+    }).join("");
+
+    $("#playerSheetBody").innerHTML =
+      '<div class="player-card">' +
+        playerAvatarHTML(p) +
+        '<div class="player-card-main"><b class="player-name">' + esc(p.n) + "</b>" +
+          (realName ? '<span class="player-real">' + esc(realName) + "</span>" : "") +
+          '<span class="player-tags">' +
+            (p.l ? '<span class="roster-nat">' + esc(p.l.toUpperCase()) + "</span>" : "") +
+            (role ? '<span class="roster-role">' + esc(role) + "</span>" : "") +
+          "</span>" +
+        "</div>" +
+      "</div>" +
+      '<div class="section-head"><h2>所属队伍</h2></div>' +
+      '<div class="player-team-row">' + avatarHTML({ name: teamName }) +
+        '<span class="team-main"><span class="team-name">' + esc(teamName) + '</span><span class="team-sub">' + esc(gameMeta(game).label) + " · 数据窗口 45 天</span></span></div>" +
+      '<div class="section-head"><h2>该队近况</h2><span class="section-sub">近 ' + recentList.length + " 场</span></div>" +
+      (recentList.length ? '<div class="history-list">' + recent + "</div>" : '<div class="codex-empty">窗口内没有该队的比赛</div>');
+
+    $("#playerSheet").hidden = false;
+    document.body.style.overflow = "hidden";
   }
 
   /* ---------- 成就殿堂页（1.2.10：解锁卡片网格 + 称号装备） ---------- */
@@ -4838,6 +4962,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           "对阵双方：队标、全名、缩写与所属赛区",
           "状态与时间：可竞猜 / 已截止 / 正在比赛 / 待赛果 / 已结算，开始时间、预计时长与结束时间",
           "比赛信息：赛制（BO1/BO3…）、赛事等级（S/A/B/C/D）、所属赛事与阶段、游戏项目",
+          "进行中的比赛显示<strong>实时比分</strong>；多局比赛（BO3/BO5）显示<strong>局记分</strong>（逐局胜方与用时）",
           "已结束的比赛显示<strong>最终比分与胜方</strong>"
         ] },
         { h: "能做什么", ul: [
@@ -5578,8 +5703,16 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#view-team").addEventListener("click", function (e) {
       var mainBtn = e.target.closest("#teamMainBtn");
       if (mainBtn) { toggleMainTeam(); return; }
+      var prow = e.target.closest("[data-player]");
+      if (prow) { openPlayerSheet(currentTeamKey, Number(prow.dataset.player) || 0); return; }
       var row = e.target.closest("[data-open-match]");
       if (row) openSheet(row.dataset.openMatch);
+    });
+
+    // 选手卡抽屉（2026-11-10）：关闭按钮 + 点 backdrop 关闭
+    $("#playerSheetClose").addEventListener("click", closePlayerSheet);
+    $("#playerSheet").addEventListener("click", function (e) {
+      if (e.target === $("#playerSheet")) closePlayerSheet();
     });
 
     document.addEventListener("keydown", function (e) {
@@ -5588,6 +5721,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       else if (!$("#tournamentPopover").hidden) closeTournamentSheet();
       else if (!$("#schedGamePopover").hidden) closeSchedGame();
       else if (!$("#schedTournamentPopover").hidden) closeSchedTournament();
+      else if (!$("#playerSheet").hidden) closePlayerSheet();
       else if (!$("#sheetBackdrop").hidden) closeSheet();
     });
   }

@@ -9,9 +9,11 @@
  *   node tools/fetch-team-rosters.mjs --force    全量重抓（忽略缓存）
  *
  * 数据源：PandaScore GET /teams/{id}（需要 PANDASCORE_TOKEN），team 对象内嵌 players[]。
- * 提取：每队前 5 名 active 选手 { n: 职业ID, r: 位置（仅 LoL/Dota2/OW 有值）, l: 国籍 ISO 码 }；
- *       age/birthday 是付费档字段，不采集。
- * 缓存：{ "game:name": { pid, players: [...], at } }，LRU 1500 队；同 pid 命中缓存直接跳过（--force 重抓）。
+ * 提取：每队前 5 名 active 选手 { n: 职业ID, r: 位置（仅 LoL/Dota2/OW 有值）, l: 国籍 ISO 码,
+ *       id: PandaScore player id, img: 头像相对路径（pack-player-avatars 打包 64px WebP）,
+ *       fn/ln: 真实姓名 }——2026-11-10 深度接入扩展；age/birthday 是付费档字段，不采集。
+ * 缓存：{ "game:name": { pid, players: [...], at } }，LRU 1500 队；同 pid 命中缓存直接跳过
+ *       （--force 重抓；旧 schema 条目——首名选手无 id——也会增量重抓补新字段）。
  * 产物：data/team-rosters.json（本地镜像）+ OSS team-rosters.json（--oss 时）；
  *       build-runtime-data.mjs / trim-embedded.mjs 会按窗口队伍切片进 runtime 与内嵌数据。
  * 限速：350ms/次（每日回填一轮，几百次请求在 1000/h 配额内）；单队失败跳过、不阻塞。
@@ -87,14 +89,38 @@ async function ossPut(key, body) {
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-/* 抽取花名册：前 5 名 active 选手，压缩键名（n/r/l）控制体积 */
+/* 抽取花名册：前 5 名 active 选手，压缩键名（n/r/l/id/img/fn/ln）控制体积。
+ * 2026-11-10 深度接入扩展：id=PandaScore player id（选手卡身份键）、img=头像相对路径
+ * （剥 CDN 前缀，pack-player-avatars 按 djb2 打包 64px WebP，客户端 players/<djb2>.webp 引用）、
+ * fn/ln=真实姓名（官方免费字段；部分选手缺失，客户端按有无降级）。 */
+var PLAYER_IMG_PREFIXES = [
+  "https://cdn-api.pandascore.co/images/player/image/",
+  "https://cdn.pandascore.co/images/player/image/"
+];
+function playerImgPath(url) {
+  var u = String(url || "").trim();
+  if (!u) return "";
+  for (var i = 0; i < PLAYER_IMG_PREFIXES.length; i++) {
+    if (u.indexOf(PLAYER_IMG_PREFIXES[i]) === 0) return u.slice(PLAYER_IMG_PREFIXES[i].length);
+  }
+  return "";
+}
 function extractPlayers(team) {
   var list = Array.isArray(team.players) ? team.players : [];
   return list
     .filter(function (p) { return p && p.name && p.active !== false; })
     .slice(0, ROSTER_CAP)
     .map(function (p) {
-      return { n: String(p.name).slice(0, 24), r: p.role ? String(p.role).slice(0, 16) : "", l: p.nationality ? String(p.nationality).slice(0, 2).toLowerCase() : "" };
+      var img = playerImgPath(p.image_url);
+      return {
+        n: String(p.name).slice(0, 24),
+        r: p.role ? String(p.role).slice(0, 16) : "",
+        l: p.nationality ? String(p.nationality).slice(0, 2).toLowerCase() : "",
+        id: p.id > 0 ? Math.floor(p.id) : undefined,
+        img: img || undefined,
+        fn: p.first_name ? String(p.first_name).slice(0, 32) : undefined,
+        ln: p.last_name ? String(p.last_name).slice(0, 32) : undefined
+      };
     });
 }
 
@@ -160,7 +186,13 @@ async function main() {
 
   var targets = Object.keys(teamIds).filter(function (k) { return !windowSet || windowSet.has(k); });
   var pending = targets.filter(function (k) {
-    return force || !cache[k] || cache[k].pid !== teamIds[k];
+    if (force) return true;
+    var c = cache[k];
+    if (!c || c.pid !== teamIds[k]) return true;
+    // 2026-11-10 字段扩展（id/img/fn/ln）：旧 schema 缓存（有选手但首名无 id）视为待更新，
+    // 由每日回填增量补齐；无阵容的空缓存保持命中（避免每轮重抓）
+    if (c.players && c.players.length && !(c.players[0].id > 0)) return true;
+    return false;
   });
   log("队伍 id " + targets.length + " 支（--window " + (windowSet ? "开" : "关") + "）· 缓存命中 " +
     (targets.length - pending.length) + " · 待抓 " + pending.length);

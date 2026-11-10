@@ -137,6 +137,13 @@ export function normalizeMatch(raw, source) {
     // PandaScore tournament id（阶段级实体，fetch-tournament-structures 的抓取键）；
     // manual/liquipedia 为 undefined（JSON 自动省略）。客户端零引用——运行时切片剥离
     tid: Number(raw.tid) > 0 ? Math.floor(Number(raw.tid)) : undefined,
+    // 实时三件套（2026-11-10 深度接入）：lv=官方 running 信号（statusOf 优先于时间估算）、
+    // lsc=实时比分 "1:0"（仅 running）、gs=已完局串 "A1584,A1508"（胜方+秒，详情页局记分）。
+    // 键恒存在（未发生=undefined）——mergeMatches 的 Object.assign 复制 own key，
+    // running→finished 后旧实时数据被显式覆盖不残留；JSON.stringify 自动省略 undefined
+    lv: raw.lv === true ? true : undefined,
+    lsc: typeof raw.lsc === "string" && raw.lsc ? raw.lsc : undefined,
+    gs: typeof raw.gs === "string" && raw.gs ? raw.gs : undefined,
     note: raw.note ? String(raw.note) : "",
     source: source || raw.source || "manual"
   };

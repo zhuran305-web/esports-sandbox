@@ -1183,6 +1183,7 @@ html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .
   background: var(--surface);
   padding: 4px 14px;
 }
+/* 阵容行（2026-11-10 深度接入改版）：头像 + 主信息列 + 箭头，整行可点开选手卡 */
 .roster-row {
   display: flex;
   align-items: center;
@@ -1190,7 +1191,16 @@ html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .
   padding: 10px 0;
   border-bottom: 1px dashed var(--border-soft);
   min-width: 0;
+  cursor: pointer;
 }
+.roster-row:active { background: var(--surface-2, rgba(255, 255, 255, .04)); }
+.roster-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.roster-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.roster-meta .roster-nat { flex: 0 0 auto; }
+.player-real-inline { font-size: 10px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--text-faint); }
+.avatar.player-avatar { width: 40px; height: 40px; flex: 0 0 auto; font-size: 15px; }
+.avatar.player-avatar .avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .roster-row:last-child { border-bottom: none; }
 .roster-nat {
   flex: 0 0 auto;
@@ -1205,7 +1215,7 @@ html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .
   padding: 2px 4px;
 }
 .roster-nat-none { color: var(--text-faint); border-style: dashed; }
-.roster-name { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-name { flex: 0 1 auto; min-width: 0; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-role {
   flex: 0 0 auto;
   font-size: 10px;
@@ -1950,6 +1960,56 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   align-self: center;
 }
 .md-source { margin: 14px 2px 0; font-size: 10.5px; color: var(--text-faint); text-align: center; }
+
+/* 局记分（2026-11-10 深度接入）：详情页逐局胜方+时长；running 场次附实时比分 */
+.md-games {
+  margin-top: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  padding: 4px 14px;
+}
+.md-games-head { font-size: 11px; font-weight: 800; color: var(--text-dim); letter-spacing: .04em; padding: 8px 0 2px; }
+.md-game-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border-soft);
+  font-size: 12px;
+  min-width: 0;
+}
+.md-game-row:last-of-type { border-bottom: none; }
+.md-game-no { flex: 0 0 auto; color: var(--text-dim); font-size: 11px; min-width: 44px; }
+.md-game-win { flex: 1 1 auto; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-game-len { flex: 0 0 auto; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.md-game-live { padding: 8px 0 10px; font-size: 11.5px; color: var(--text-dim); }
+.md-game-live b { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* 实时比分（2026-11-10）：主页 live 卡片的当前比分（区别于完赛终分） */
+.team-score.is-live { color: var(--accent); animation: live-pulse 2s ease-in-out infinite; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* 选手卡抽屉（2026-11-10）：playerSheet 复用 .sheet 结构；卡片 = 头像 + 姓名列 + 徽章 */
+.player-sheet .player-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 2px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.player-sheet .player-card .player-avatar { width: 56px; height: 56px; font-size: 20px; }
+.player-card-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.player-name { font-size: 16px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-real { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-tags { display: flex; align-items: center; gap: 6px; }
+.player-team-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+}
+.player-team-row .avatar { width: 34px; height: 34px; }
 
 /* 赛程搜索 */
 .schedule-search {

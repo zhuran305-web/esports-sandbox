@@ -6,7 +6,8 @@
  * 覆盖 15 个路由：CS2 / 瓦罗兰特 / 英雄联盟 / Dota 2 / 彩虹六号 / PUBG / 王者荣耀（kog）/
  * 无尽对决 / 守望先锋 / 火箭联盟 / EA Sports FC / 使命召唤 / 星际争霸2 / 星际母巢之战 / 英雄联盟手游。
  * 不覆盖 Apex、堡垒之夜、街霸、饿狼传说（这些用 Liquipedia 或手工数据）。
- * 速率：免费额度 1000 请求/小时；本适配器每轮 15 个游戏 × 2 个端点 = 30 次起（含翻页通常约 33 次）。
+ * 速率：免费额度 1000 请求/小时；本适配器每轮 15 个游戏 × 3 端点（upcoming/running/past）= 45 次起
+ * （2026-11-10 加 running 端点：实时比分/局进度/官方进行中信号；含翻页通常约 48 次）。
  */
 import { normalizeMatch } from "../lib.mjs";
 
@@ -87,13 +88,30 @@ function toRaw(item, game) {
   var serie = item.serie ? item.serie.full_name : "";
   var tournament = league && serie ? league + " · " + serie : league || "PandaScore 赛事";
 
+  // 进行中信号 + 实时比分 + 局进度（2026-11-10 深度接入）：全部来自列表响应免费字段。
+  // lv=官方 running 信号（/lives 端点实测只含「有 websocket 直播」的场次、连进行中都不含——不可用）；
+  // lsc=running 时 results 的实时比分（winner_id 尚为 null，需按 opponents 映射成 A:B）；
+  // gs=已打完各局（winner.id→A/B + length 秒），编码 "A1584,A1508"（紧凑串，merge 覆盖式刷新）
+  var isRunning = item.status === "running";
+  var liveScore = "";
+  if (isRunning) {
+    var sA = results.filter(function (x) { return x.team_id === op1.id; })[0];
+    var sB = results.filter(function (x) { return x.team_id === op2.id; })[0];
+    if (sA && sB && typeof sA.score === "number" && typeof sB.score === "number") liveScore = sA.score + ":" + sB.score;
+  }
+  var gameStr = (item.games || []).map(function (g) {
+    if (g.status !== "finished" || !g.winner) return null;
+    var w = g.winner.id === op1.id ? "A" : g.winner.id === op2.id ? "B" : null;
+    if (!w) return null;
+    return w + (typeof g.length === "number" && g.length > 0 ? Math.floor(g.length) : "");
+  }).filter(Boolean).join(",");
+
   return {
     game: game,
     tournament: tournament,
     stage: item.tournament ? item.tournament.name : "赛程",
     mid: item.id, // PandaScore match id（2026-11-08）：mergeMatches 的同场主键
-    // PandaScore tournament id（2026-11-10）：阶段级实体（Group A/Playoffs 各一个 tid），
-    // fetch-tournament-structures 按 tid 拉 rosters/standings/brackets；客户端零引用（运行时剥离）
+    // PandaScore tournament id（阶段级实体，fetch-tournament-structures 按 tid 拉 rosters/standings/brackets；客户端零引用）
     tid: item.tournament && item.tournament.id > 0 ? item.tournament.id : undefined,
     startAt: startAt,
     endAt: item.end_at || "",
@@ -104,6 +122,11 @@ function toRaw(item, game) {
     status: result ? "finished" : undefined,
     result: result,
     canceled: canceled || undefined,
+    // 实时三件套（merge 时显式 undefined 也会覆盖旧值——Object.assign 复制 own key，
+    // 场次从 running 转 finished 后旧 lv/lsc/gs 不会残留）
+    lv: isRunning || undefined,
+    lsc: liveScore || undefined,
+    gs: gameStr || undefined,
     note: ""
   };
 }
@@ -186,6 +209,23 @@ export async function collectPandascore(options) {
       }
       await sleep(RATE_LIMIT_MS);
     }
+
+    // 进行中场次（2026-11-10 深度接入）：upcoming/past 都不含 running——实时比分（lsc）与局进度（gs）
+    // 只有这里给；lv=官方 running 信号。begin_at 必在近窗内（仍走 inWindow 防御）；失败仅本轮缺
+    // 实时数据，不阻塞采集
+    try {
+      var running = await fetchList("/" + slug + "/matches/running?page[size]=50", token);
+      running.forEach(function (item) {
+        recordTeamIds(item, game);
+        var raw = toRaw(item, game);
+        if (!raw || !inWindow(raw)) return;
+        var normalized = normalizeMatch(raw, "pandascore");
+        if (normalized) matches.push(normalized);
+      });
+    } catch (e) {
+      errors.push(game + " running: " + (e && e.message ? e.message : String(e)));
+    }
+    await sleep(RATE_LIMIT_MS);
 
     // 过去赛果：同样按范围过滤，按时间倒序翻页
     for (var q = 1; q <= pastPages; q++) {

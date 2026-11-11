@@ -72,6 +72,14 @@ jobs:
           else
             echo "首次运行：还没有 data release，从空数据开始"
           fi
+          # 战队阵容缓存（1.3.2）：权威累积在 OSS（公共读桶），Release 资产仅作副本。
+          # build-runtime-data 只读本地 data/team-rosters.json——缺了它会把 runtime 阵容切片清空。
+          # 2026-11-11 修：此前本 workflow 既不恢复也不抓取该文件，每小时 build 出 rosters={} 并发布，
+          # 把线上阵容切片清零（rosterCount 恒 0、天禄等队伍资料页无阵容）；先试 Release 资产，再匿名
+          # 拉 OSS，双通道兜底。缺文件时只退化（本轮切片为空，下轮重试），不影响其余数据发布。
+          gh release download data --pattern team-rosters.json --dir data --clobber 2>/dev/null \
+            || curl -fsSL "https://${OSS_BUCKET}.oss-${OSS_REGION}.aliyuncs.com/${OSS_PREFIX:+$OSS_PREFIX/}team-rosters.json" -o data/team-rosters.json \
+            || echo "阵容缓存拉取失败，本轮 runtime 阵容切片为空（下轮自动重试）"
           if [ -f data/matches.json ]; then
             cp data/matches.json "$RUNNER_TEMP/matches.previous.json"
             echo "has_previous=true" >> "$GITHUB_OUTPUT"

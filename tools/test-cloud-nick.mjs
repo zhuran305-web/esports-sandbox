@@ -576,6 +576,12 @@ check("rosters 链路静态：工具 + workflow + build/trim 切片 + 客户端�
   /function normalizeRosters/.test(dsSrc) && /rosters: normalizeRosters\(cached\)/.test(dsSrc) &&
   /roster-list/.test(appSrc) && /roster-row/.test(cssSrc) &&
   /公开赛果平台数据/.test(appSrc));
+// 反回退（2026-11-11）：阵容缓存只在 OSS 累积，update-matches 必须恢复它才能 build——
+// 否则每小时清空线上阵容切片（rosterCount 恒 0，天禄等队伍资料页无阵容）。固化双通道恢复 + backfill 回传资产。
+check("rosters 反回退：update-matches 恢复 team-rosters.json（gh Release + OSS 匿名双通道）+ backfill 回传该资产",
+  /--pattern team-rosters\.json/.test(umSrc) && /team-rosters\.json/.test(bfSrc) &&
+  /gh release upload data data\/team-rosters\.json/.test(bfSrc) &&
+  /阵容切片为 0/.test(buildSrc));
 
 /* ---------- 场景 V：1.4.0 Pick'Em 赛事竞猜（js/pickem.js 纯函数直跑） ---------- */
 console.log("V. Pick'Em 赛事竞猜：");

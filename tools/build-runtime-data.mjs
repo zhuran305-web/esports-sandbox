@@ -107,3 +107,11 @@ console.log(
   pickem.events.length + " 个 Pick'Em 赛事 · " + Object.keys(structures).length + " 组赛事结构 · " +
   (body.length / 1048576).toFixed(2) + " MiB · hash " + hash.slice(0, 12)
 );
+
+// 阵容切片为 0 是「数据缺失」而非「正常为空」——发布会把线上阵容清空（2026-11-11 事故：
+// update-matches 未恢复 data/team-rosters.json，每小时清空线上阵容切片）。显式告警，别静默。
+if (Object.keys(rosters).length === 0) {
+  console.warn("[runtime] 警告：阵容切片为 0（data/team-rosters.json " +
+    (Object.keys(rostersAll).length ? "有 " + Object.keys(rostersAll).length + " 队但无窗口匹配" : "缺失") +
+    "）——发布将清空线上阵容切片，请检查 Restore/采集步骤是否恢复了该文件");
+}

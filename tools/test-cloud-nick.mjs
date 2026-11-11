@@ -903,9 +903,10 @@ check("硬币排行榜（1.3.5）：编码/解码/提交/读取 + 视图接线 +
   /id="templeCeremony"/.test(htmlSrc) === true &&
   /"#templeCeremony"/.test(appSrc) === true);
 
-check("series 逐场链路（1.3.4）：聚合器 + 渲染 + 逐场点选 + 结算整段门控（含 placement）",
-  /function buildSeriesStage/.test(fpkSrc) && /scfg\.type === "series"\) stages\.push\(buildSeriesStage/.test(fpkSrc) &&
-  /function buildPlacementStage/.test(fpkSrc) && /scfg\.type === "placement"\) stages\.push\(buildPlacementStage/.test(fpkSrc) &&
+check("series 逐场链路（1.3.4）：聚合器 + 渲染 + 逐场点选 + 结算整段门控（含 placement；2026-11-11 起接线带 builtById 供 qualifyFrom 推导）",
+  /function buildSeriesStage/.test(fpkSrc) && /scfg\.type === "series"\) \{ var ss = buildSeriesStage\(scfg, sm\); if \(ss\) \{ stages\.push\(ss\); builtById\[ss\.id\] = ss; \} \}/.test(fpkSrc) &&
+  /function buildPlacementStage/.test(fpkSrc) && /scfg\.type === "placement"\) \{ var ps = buildPlacementStage\(scfg, sm, structure, builtById\)/.test(fpkSrc) &&
+  /function deriveQualifiedFromGroups/.test(fpkSrc) && /qualifyFrom/.test(fpkSrc) &&
   /function pickableSeriesMatches/.test(pickemJsSrc) && /stage\.type === "series"\) \{\s*if \(stage\.displayOnly\) return false;[^\n]*\n\s*return pickableSeriesMatches/.test(pickemJsSrc) &&
   /function pickemMergedSeriesHTML/.test(appSrc) && /pickableSeriesMatches/.test(appSrc) &&
   /stage\.type === "series" \|\| stage\.type === "placement" \|\| stage\.type === "records"\) && !stageAllDone\(stage\)\) return/.test(appSrc) &&
@@ -1781,6 +1782,44 @@ check("④ 4进3 战绩桶（BLAST Rivals 香港实测形态）：4 队×4 场 �
   return (s.results["2:0"] || []).join() === "甲" &&
     (s.results["1:1"] || []).slice().sort().join() === ["丙", "乙"].sort().join() &&
     (s.results["0:2"] || []).join() === "丁";
+})());
+check("⑤ qualifyFrom 自动推导晋级名单（2026-11-11）：小组完赛+桶落满 → 播种；未完赛/分布不符/官方 rosters 规模不符不播种", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  var t = 0;
+  function m(stage, a, b, w) {
+    t += 1;
+    return { id: "q" + t, game: "cs2", tournament: "晋级测试", stage: stage, teamA: { name: a }, teamB: { name: b },
+      startAt: new Date(Date.UTC(2026, 11, stage === "Playoffs" ? 13 : 11, t % 24)).toISOString(),
+      result: w ? { winner: w, score: "2:0" } : null };
+  }
+  function cfgWith() {
+    return { id: "q-ev", game: "cs2", name: "测试", tournament: "晋级测试", stages: [
+      { id: "groupA", type: "records", label: "Group A", stageNames: ["Group A"], buckets: [
+        { k: "2:0", label: "2:0", cap: 1 }, { k: "1:1", label: "1:1", cap: 2 }, { k: "0:2", label: "0:2", cap: 1 }
+      ] },
+      { id: "playoffs", type: "placement", label: "淘汰赛", stageNames: ["Playoffs"], expectTeams: 3,
+        qualifyFrom: [{ stage: "groupA", buckets: ["2:0", "1:1"] }] }
+    ] };
+  }
+  function teamNames(ps) { return ps ? ps.teams.map(function (x) { return x.name; }).join() : ""; }
+  // R1：甲胜乙、丙胜丁；胜者赛 甲胜丙；败者赛 乙胜丁 → 甲 2:0、丙/乙 1:1、丁 0:2（4进3 分布吻合）
+  var full = [m("Group A", "甲", "乙", "A"), m("Group A", "丙", "丁", "A"), m("Group A", "甲", "丙", "A"), m("Group A", "乙", "丁", "A")];
+  var playoffMatch = m("Playoffs", "甲", "丙", "");
+  var ev1 = AG.buildEvent(cfgWith(), full.concat([playoffMatch]), null);
+  var ps1 = ev1 && ev1.stages[1];
+  if (!ps1 || ps1.type !== "placement" || ps1.degraded !== true) return false;
+  if (teamNames(ps1).split(",").sort().join() !== ["甲", "丙", "乙"].sort().join()) return false;
+  // ② 小组未完赛（败者赛无赛果）→ 不播种（playoffs 只有已排期场次的队伍）
+  var ev2 = AG.buildEvent(cfgWith(), full.slice(0, 3).concat([m("Group A", "乙", "丁", "")]).concat([playoffMatch]), null);
+  if (teamNames(ev2 && ev2.stages[1]) !== "甲,丙") return false;
+  // ③ 分布不符（加打一场 → 甲 3:0 落不进任何桶）→ 不播种
+  var ev3 = AG.buildEvent(cfgWith(), full.concat([m("Group A", "甲", "丁", "A")]).concat([playoffMatch]), null);
+  if (teamNames(ev3 && ev3.stages[1]) !== "甲,丙") return false;
+  // ④ 官方 rosters 5 队 ≠ expectTeams 3 → 不采用，落到 qualifyFrom 推导
+  var st = { "cs2|晋级测试|Playoffs": { participants: ["外1", "外2", "外3", "外4", "外5"] } };
+  var ev4 = AG.buildEvent(cfgWith(), full.concat([playoffMatch]), null, st);
+  if (teamNames(ev4 && ev4.stages[1]).split(",").sort().join() !== ["甲", "丙", "乙"].sort().join()) return false;
+  return true;
 })());
 
 /* ---------- 场景 AI（2026-11-10 深度接入）：实时三件套 lv/lsc/gs ----------

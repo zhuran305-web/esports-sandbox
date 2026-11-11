@@ -276,7 +276,51 @@ function buildSeriesStage(cfg, matches) {
   };
 }
 
-function buildPlacementStage(cfg, matches, structure) {
+/* 小组完赛自动推导晋级名单（2026-11-11）：placement 阶段可声明 qualifyFrom——
+ * [{ stage: "groupA", buckets: ["2:0","1:1"] }, …]：源 records 阶段全部完赛（胜/负/取消）
+ * 且每个声明桶**恰好落满 cap** 时，按桶序取桶内队伍为晋级名单。
+ * 分布不符（出现配置外战绩，如 4进3 组打出 2:1）/未完赛/与 expectTeams 对不上——一律不推导
+ * （宁缺勿滥，与 recordsResults 同族守卫；桶 cap 校验天然拦截数据异常）。
+ * 优先级：配置显式 qualifiedTeams（人工覆盖）> 官方 rosters participants > 本推导。 */
+function deriveQualifiedFromGroups(cfg, builtStages) {
+  var qf = Array.isArray(cfg.qualifyFrom) ? cfg.qualifyFrom.filter(function (q) {
+    return q && typeof q.stage === "string" && Array.isArray(q.buckets) &&
+      q.buckets.length > 0 && q.buckets.every(function (b) { return typeof b === "string" && /^\d+:\d+$/.test(b); });
+  }) : [];
+  if (!qf.length) return null;
+  var names = [], seen = {}, ok = true;
+  for (var i = 0; i < qf.length && ok; i++) {
+    var q = qf[i];
+    var st = builtStages ? builtStages[q.stage] : null;
+    if (!st || st.type !== "records") { ok = false; break; }
+    var ms = st.matches || [];
+    var done = ms.length > 0 && ms.every(function (m) { return m.winner === "A" || m.winner === "B" || m.canceled === true; });
+    if (!done) { ok = false; break; }
+    var byKey = {}, caps = {};
+    (st.buckets || []).forEach(function (b) { caps[b.k] = b.cap; });
+    (st.teams || []).forEach(function (t) {
+      var k = t.w + ":" + t.l;
+      (byKey[k] = byKey[k] || []).push(t.name);
+    });
+    for (var j = 0; j < q.buckets.length && ok; j++) {
+      var bk = q.buckets[j];
+      var cap = caps[bk];
+      var got = byKey[bk] || [];
+      if (!cap || got.length !== cap) { ok = false; break; }
+      got.forEach(function (n) { if (!seen[n]) { seen[n] = 1; names.push(n); } });
+    }
+  }
+  if (!ok) return null;
+  var expectN = typeof cfg.expectTeams === "number" && cfg.expectTeams >= 2 ? Math.round(cfg.expectTeams) : 0;
+  if (expectN && names.length !== expectN) {
+    log("! " + (cfg.id || "?") + "：qualifyFrom 推导 " + names.length + " 队 ≠ expectTeams " + expectN + "，不播种（宁缺勿滥）");
+    return null;
+  }
+  if (names.length < 2) return null;
+  return { names: names, source: "qualifyFrom(" + qf.map(function (q) { return q.stage; }).join("+") + ")" };
+}
+
+function buildPlacementStage(cfg, matches, structure, builtStages) {
   // 淘汰赛名次竞猜：猜冠军（钻石币）/亚军（金币）/季军（金币，半决赛败者并列两队）；
   // A 级赛事（event.tier="a"）币级整体降一级：冠军金币/亚季军银币（币级在客户端 settleRewards 按 tier 决定）。
   // 轮次结构复用 bracket 的 [4,2,1] 切块，可用 expectRounds 覆盖（6 队轮空制=[2,2,1]，IEM 北京实测）；
@@ -291,8 +335,25 @@ function buildPlacementStage(cfg, matches, structure) {
   var teams = {};
   var order = [];
   var seedNames = Array.isArray(cfg.qualifiedTeams) ? cfg.qualifiedTeams.filter(function (n) { return typeof n === "string" && n; }) : [];
+  var seedSource = seedNames.length ? "配置显式名单" : "";
   if (!seedNames.length && structure && Array.isArray(structure.participants) && structure.participants.length) {
-    seedNames = structure.participants.slice(0, 16);
+    // 官方名单规模守卫（2026-11-11）：rosters 可能在晋级确定前列出未定/全部队伍——与 expectTeams
+    // 声明规模不一致时不播种（宁缺勿滥），落到 qualifyFrom 推导或留空
+    var expectN0 = typeof cfg.expectTeams === "number" && cfg.expectTeams >= 2 ? Math.round(cfg.expectTeams) : 0;
+    if (!expectN0 || structure.participants.length === expectN0) {
+      seedNames = structure.participants.slice(0, 16);
+      seedSource = "官方 rosters";
+    } else {
+      log("! " + (cfg.id || "?") + "：官方 rosters " + structure.participants.length + " 队 ≠ expectTeams " + expectN0 + "，不采用（宁缺勿滥）");
+    }
+  }
+  if (!seedNames.length) {
+    var derived = deriveQualifiedFromGroups(cfg, builtStages);
+    if (derived) {
+      seedNames = derived.names;
+      seedSource = derived.source;
+      log("  " + (cfg.id || "?") + "：" + seedSource + " 自动推导晋级名单 " + seedNames.length + " 队：" + seedNames.join(" / "));
+    }
   }
   seedNames.forEach(function (n) {
     if (!teams[n]) { teams[n] = { name: n, short: "", region: "", logo: "" }; order.push(n); }
@@ -377,6 +438,7 @@ function buildEvent(cfg, allMatches, cachedEvent, structures) {
     return m.game === cfg.game && m.tournament === cfg.tournament;
   });
   var stages = [];
+  var builtById = {}; // 已构建阶段（qualifyFrom 推导晋级名单的源：按 id 取 records 阶段的完赛分布）
   var swissOrdinal = 0;
   (cfg.stages || []).forEach(function (scfg) {
     var sm = evMatches.filter(function (m) { return (scfg.stageNames || []).indexOf(m.stage) >= 0; });
@@ -393,11 +455,11 @@ function buildEvent(cfg, allMatches, cachedEvent, structures) {
         }
       }
     }
-    if (scfg.type === "series") stages.push(buildSeriesStage(scfg, sm));
-    else if (scfg.type === "placement") stages.push(buildPlacementStage(scfg, sm, structure));
+    if (scfg.type === "series") { var ss = buildSeriesStage(scfg, sm); if (ss) { stages.push(ss); builtById[ss.id] = ss; } }
+    else if (scfg.type === "placement") { var ps = buildPlacementStage(scfg, sm, structure, builtById); if (ps) { stages.push(ps); builtById[ps.id] = ps; } }
     else if (scfg.type === "records") {
       var recStage = buildRecordsStage(scfg, sm, structure);
-      if (recStage) stages.push(recStage);
+      if (recStage) { stages.push(recStage); builtById[recStage.id] = recStage; }
     }
     else {
       // 瑞士轮：coinTier 按 swiss 阶段序号（第 1 个=铜、第 2 个=银、第 3 个及以后=金）——major 三阶段对应

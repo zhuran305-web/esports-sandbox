@@ -10,7 +10,8 @@
  *          | placement { id, type:"placement", label, ..., matches:[{...,round}], rounds:[labels], degraded,
  *                    results:{champion, runnerUp, third:[队名,队名]}|null }   // 淘汰赛名次竞猜
  *                    （degraded=部分对阵未排期：名单齐（8 队）仍可名次竞猜，结算仍需完整 7 场推导 results）
- *          | bracket { ... 旧类型，兼容保留；淘汰赛应使用 placement }
+ *                    （rec.type="bracket" 历史记录兼容放行见下方 normalizePickemState；类型本身 1.3.16 已删除，
+ *                     normalizeStage 拒收 bracket 阶段——淘汰赛一律用 placement）
  *   用户侧记录（state.pickem，键 = eventId + ":" + stageId）：
  *     swiss     rec = { type:"swiss", picks:{adv30:[],adv:[],out03:[]}, pickedAt, settled, settledAt, score, total, prize }
  *     series    rec = { type:"series", picks:{w:{matchId:"A"|"B"}}, ...同上 }

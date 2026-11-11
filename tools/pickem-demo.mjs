@@ -40,8 +40,12 @@ function demoEvent() {
         results: null
       },
       {
-        id: "po", type: "bracket", label: "淘汰赛 · 八强",
+        // 2026-11-12 夜间自查：1.3.16 已删除 bracket 类型（normalizeStage 拒收 → 整块不渲染），
+        // demo 改用现行 placement 类型（expectTeams=8 + 显式名单播种，与 pickem-events.json 同构）
+        id: "po", type: "placement", label: "淘汰赛 · 八强",
         startsAt: iso(3 * 3600000), endsAt: iso(5 * 86400000),
+        expectTeams: 8,
+        qualifiedTeams: names.slice(0, 8),
         teams: teams.slice(0, 8),
         matches: [
           { id: "demo-qf1", a: names[0], b: names[1], startAt: iso(3 * 3600000), winner: "", score: "", round: 0 },

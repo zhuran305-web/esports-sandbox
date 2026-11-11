@@ -169,8 +169,14 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
   // 榜单专用大数缩写（1.3.1）：≥1亿 → x.x亿、≥100万 → xxx.x万，其余全量——
   // 防止「赚 999,999,999 沙粒」这类长数字把昵称列挤没
+  // 2026-11-12 夜间自查增补：线上真实榜单存在异常巨大的 extra.second（最高 ~3.9e21，
+  // 显示成 15+ 字符的「39311868281807.2亿」再次挤压版面）——补 万亿/亿亿/万亿亿 档位，
+  // 任何输入 ≤7 位数字 + 单位；不改 <1e12 的既有显示。
   function fmtCompact(n) {
     n = Math.max(0, Math.round(Number(n) || 0));
+    if (n >= 1e20) return (Math.round(n / 1e19) / 10) + "万亿亿";
+    if (n >= 1e16) return (Math.round(n / 1e15) / 10) + "亿亿";
+    if (n >= 1e12) return (Math.round(n / 1e11) / 10) + "万亿";
     if (n >= 1e8) return (Math.round(n / 1e7) / 10) + "亿";
     if (n >= 1e6) return (Math.round(n / 1e5) / 10) + "万";
     return fmtNum(n);

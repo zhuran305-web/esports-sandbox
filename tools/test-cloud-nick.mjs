@@ -541,6 +541,9 @@ check("榜单布局防挤压（1.3.1）：fmtCompact 大数缩写 + 数字列封
   /function fmtCompact/.test(appSrc) && /fmtCompact\(e\.second\)/.test(appSrc) &&
   /max-width: 46%/.test(cssSrc) && /flex: 1 1 auto; \/\* 弹性占位/.test(cssSrc) &&
   /board-second \{ max-width: 100%; overflow: hidden/.test(cssSrc));
+check("榜单超大数档位（2026-11-12 夜间自查）：fmtCompact 含 万亿/亿亿/万亿亿 档位——真实榜单异常 extra.second（~3.9e21）不再显示 15+ 字符",
+  /1e20\)\s*return[^;]+万亿亿/.test(appSrc) && /1e16\)\s*return[^;]+亿亿/.test(appSrc) && /1e12\)\s*return[^;]+万亿/.test(appSrc) &&
+  appSrc.indexOf('1e20) return') < appSrc.indexOf('1e16) return') && appSrc.indexOf('1e16) return') < appSrc.indexOf('1e12) return'));
 check("选择器计数与列表同口径（1.3.2）：homeListMatches 收敛 + 两处计数复用",
   /function homeListMatches/.test(appSrc) &&
   /var windowMatches = homeListMatches\(\);/.test(appSrc) &&

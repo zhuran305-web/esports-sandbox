@@ -544,6 +544,20 @@ check("榜单布局防挤压（1.3.1）：fmtCompact 大数缩写 + 数字列封
 check("榜单超大数档位（2026-11-12 夜间自查）：fmtCompact 含 万亿/亿亿/万亿亿 档位——真实榜单异常 extra.second（~3.9e21）不再显示 15+ 字符",
   /1e20\)\s*return[^;]+万亿亿/.test(appSrc) && /1e16\)\s*return[^;]+亿亿/.test(appSrc) && /1e12\)\s*return[^;]+万亿/.test(appSrc) &&
   appSrc.indexOf('1e20) return') < appSrc.indexOf('1e16) return') && appSrc.indexOf('1e16) return') < appSrc.indexOf('1e12) return'));
+check("榜单超大数档位行为级（2026-11-12 夜间自查）：从 app.js 提取 fmtCompact 沙箱执行 10 用例往返",
+  (function () {
+    var m = appSrc.match(/function fmtCompact[\s\S]*?\n  \}/);
+    if (!m) return false;
+    var fmtNumStub = function (n) { return Number(n).toLocaleString("en-US"); };
+    var fn = new Function("fmtNum", m[0].replace("function fmtCompact", "return function fmtCompact") + ";")(fmtNumStub);
+    var cases = [
+      [3.93e21, "39.3万亿亿"], [8.57e16, "8.6亿亿"], [2.09e10, "209亿"], [1.54e9, "15.4亿"],
+      [1e12, "1万亿"], [3.93e12, "3.9万亿"], [1.5e6, "1.5万"], [999999, "999,999"], [0, "0"], [12345, "12,345"]
+    ];
+    return cases.every(function (c) { return fn(c[0]) === c[1]; });
+  })());
+check("demo 注入工具防回归（2026-11-12 夜间自查）：pickem-demo 不得再发已删除的 bracket 类型（1.3.16 normalizeStage 拒收 → 阶段静默不渲染）",
+  /type:\s*"bracket"/.test(rf(path.join(root, "tools", "pickem-demo.mjs"), "utf8")) === false);
 check("选择器计数与列表同口径（1.3.2）：homeListMatches 收敛 + 两处计数复用",
   /function homeListMatches/.test(appSrc) &&
   /var windowMatches = homeListMatches\(\);/.test(appSrc) &&

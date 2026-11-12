@@ -170,6 +170,14 @@ function normalizeStage(raw) {
       });
       out.results = ok ? clean : null;
     }
+    // 延迟截止（2026-11-12）：pickOpenRounds=开放轮数（配置）；pickDeadline=聚合器下发的截止时间戳。
+    // 语义见 swissPickDeadline——两端同规则，聚合器数据延迟时客户端本地镜像兜底。
+    if (typeof raw.pickOpenRounds === "number" && raw.pickOpenRounds >= 1 && raw.pickOpenRounds <= 5) {
+      out.pickOpenRounds = Math.round(raw.pickOpenRounds);
+    }
+    if (typeof raw.pickDeadline === "number" && raw.pickDeadline > 0 && isFinite(raw.pickDeadline)) {
+      out.pickDeadline = raw.pickDeadline;
+    }
   } else if (raw.type === "placement") {
     out.rounds = Array.isArray(raw.rounds) ? raw.rounds.filter(function (s) { return typeof s === "string"; }) : [];
     out.degraded = raw.degraded === true;
@@ -351,14 +359,47 @@ export function pickableSeriesMatches(stage, now) {
  *  淘汰赛名单一确定（哪怕半决赛/决赛尚未排期）就应可预测——1.3.6 放宽 degraded 一票否决。 */
 export var PICKEM_PLACEMENT_TEAMS = 8;
 
+/** swiss 延迟截止（2026-11-12，PGL Major Stage 1 需求）：配置 pickOpenRounds=N 时，
+ *  竞猜保持开放到「已完赛 N 轮」之后——每轮场数 = 队伍数/2，N 轮完赛 = 阈值场次；
+ *  截止时刻 = 届时最早一场未开赛比赛（必然是第 N+1 轮首场，Swiss 配对时序保证：
+ *  上一轮没打完官方不会命名下一轮对阵）开赛前 1 小时。
+ *  返回值：null = 阈值未到/未配置（保持可猜，宁开勿锁）；数字 = 截止时间戳。
+ *  优先级：聚合器下发的 stage.pickDeadline（权威）> 客户端本地镜像（防数据侧延迟，两端同规则）。
+ *  未配置 pickOpenRounds 的 swiss 走旧语义（阶段首场 -1h）。 */
+export function swissPickDeadline(stage, now) {
+  if (!stage || stage.type !== "swiss") return null;
+  if (typeof stage.pickDeadline === "number" && stage.pickDeadline > 0 && isFinite(stage.pickDeadline)) return stage.pickDeadline;
+  var rounds = typeof stage.pickOpenRounds === "number" && stage.pickOpenRounds >= 1 ? Math.min(5, Math.round(stage.pickOpenRounds)) : 0;
+  if (!rounds) return null;
+  var teams = Array.isArray(stage.teams) ? stage.teams.length : 0;
+  if (teams < 2) return null;
+  var per = Math.max(1, Math.round(teams / 2));
+  var threshold = per * rounds;
+  var ms = Array.isArray(stage.matches) ? stage.matches : [];
+  var finished = 0, minStart = Infinity;
+  ms.forEach(function (m) {
+    if (m.winner === "A" || m.winner === "B" || m.canceled === true) { finished += 1; return; }
+    if (!m.a || !m.b) return; // 待定对阵不参与截止计算
+    var t = new Date(m.startAt).getTime();
+    if (!isNaN(t) && t < minStart) minStart = t;
+  });
+  if (finished < threshold || minStart === Infinity) return null; // 阈值未到/再无未赛场次
+  return minStart - PICKEM_DEADLINE_MS;
+}
+
 /** 该阶段是否可参与竞猜（赛程齐备 + 未截止）。
- *  swiss：16 队齐 + 阶段级 1h 截止；series/bracket：逐场截止（有可猜场次即可）；
+ *  swiss：16 队齐 + 截止（未配 pickOpenRounds = 阶段首场 -1h 旧语义；配置后=延迟截止，见 swissPickDeadline）；
+ *  series/bracket：逐场截止（有可猜场次即可）；
  *  placement：参赛名单齐（标准 8 强；degraded=部分对阵未排期也允许，名次与对阵无关）+ 第一场开赛前 1h 截止。 */
 export function stageOpenForPicks(stage, now) {
   now = now || Date.now();
   if (!stage || stageAllDone(stage)) return false;
   if (stage.type === "swiss") {
     if (stage.teams.length !== PICKEM_SWISS_TEAMS) return false;
+    var dl = swissPickDeadline(stage, now);
+    if (dl !== null) return now < dl; // 延迟截止模式（含阈值未到的「保持可猜」null → 走共享尾部前先短路）
+    if (typeof stage.pickOpenRounds === "number" && stage.pickOpenRounds >= 1) return true; // 配置了延迟截止但阈值未到：保持可猜
+    // 未配置：旧语义（阶段首场 -1h）落共享尾部
   } else if (stage.type === "records") {
     // 战绩桶（1.3.12）：队伍从首轮对阵即可全知——队伍数 ≥ 桶容量即可选，与对阵结构无关
     var capTotal = recordBucketsCapTotal(stage);

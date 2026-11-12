@@ -1540,6 +1540,62 @@ check("⑦ 官方 standings 主证据（2026-11-10）：自采漏采一场致派
   if (!Array.isArray(s.standings) || s.standings.length !== 4) return false;
   return s.results["2:0"][0] === "甲" && s.results["2:1"][0] === "乙" && s.results["1:2"][0] === "丙" && s.results["0:2"][0] === "丁";
 })());
+check("⑨ swiss 延迟截止（2026-11-12，PGL Major Stage 1）：pickOpenRounds 两轮后锁——阈值前保持可猜（含已开赛）、阈值后=下一轮首场-1h、聚合器权威值优先、旧配置走旧语义", (function () {
+  if (!AG || typeof AG.buildEvent !== "function") return true;
+  // 16 队 swiss：R1 8 场全有赛果（阈值 16 未到），R2 8 场（4 场有赛果 + 4 场未赛）
+  function swissMatches() {
+    var arr = [];
+    for (var i = 0; i < 8; i++) {
+      arr.push({ game: "cs2", tournament: "SG赛", stage: "Stage 1", teamA: { name: "队" + (i + 1) }, teamB: { name: "队" + (i + 9) }, startAt: "2026-11-24T0" + (i % 8) + ":00:00.000Z", result: { winner: "A", score: "2:0" } });
+    }
+    for (var j = 0; j < 8; j++) {
+      var done = j < 4;
+      arr.push({ game: "cs2", tournament: "SG赛", stage: "Stage 1", teamA: { name: "队" + (j + 1) }, teamB: { name: "队" + ((j + 1) % 8 + 1) }, startAt: "2026-11-25T0" + j + ":00:00.000Z", result: done ? { winner: "A", score: "2:1" } : null });
+    }
+    // 第 3 轮（阈值后才出现的未赛场次）
+    arr.push({ game: "cs2", tournament: "SG赛", stage: "Stage 1", teamA: { name: "队1" }, teamB: { name: "队2" }, startAt: "2026-11-26T10:00:00.000Z", result: null });
+    return arr;
+  }
+  var cfg = { id: "sg-ev", game: "cs2", name: "SG", tournament: "SG赛", stages: [
+    { id: "s1", type: "swiss", label: "Stage 1", stageNames: ["Stage 1"], pickOpenRounds: 2 }
+  ] };
+  var ev = AG.buildEvent(cfg, swissMatches(), null);
+  var st = ev && ev.stages[0];
+  if (!st || st.type !== "swiss") return false;
+  if (st.pickOpenRounds !== 2) return false;
+  // 阈值 = 16 完赛；当前 12 完赛 → 不下发 pickDeadline（保持可猜）
+  if (st.pickDeadline !== undefined) return false;
+  // 客户端镜像：阈值未到 → null → stageOpenForPicks 返回 true（即使阶段首场-1h 早已过去）
+  if (PK.stageOpenForPicks(st, Date.parse("2026-11-24T20:00:00.000Z")) !== true) return false;
+  // 阈值到达（再造 4 场完赛 = 16）→ 聚合器下发 pickDeadline = 最早未赛 -1h
+  var more = swissMatches();
+  more[8].result = { winner: "B", score: "1:2" }; more[9].result = { winner: "A", score: "2:0" };
+  more[10].result = { winner: "B", score: "0:2" }; more[11].result = { winner: "A", score: "2:0" };
+  var ev2 = AG.buildEvent(cfg, more, null);
+  var st2 = ev2 && ev2.stages[0];
+  // 最早未赛 = 2026-11-26T10:00Z → pickDeadline = 09:00Z
+  if (!st2 || st2.pickDeadline !== Date.parse("2026-11-26T09:00:00.000Z")) return false;
+  if (PK.stageOpenForPicks(st2, Date.parse("2026-11-26T08:00:00.000Z")) !== true) return false;
+  if (PK.stageOpenForPicks(st2, Date.parse("2026-11-26T09:30:00.000Z")) !== false) return false;
+  // 聚合器权威值优先于本地镜像：人为改 stage.matches 完赛数不影响已下发的 pickDeadline
+  if (PK.swissPickDeadline(Object.assign({}, st2, { matches: swissMatches() }), 0) !== Date.parse("2026-11-26T09:00:00.000Z")) return false;
+  // 旧配置（无 pickOpenRounds）走旧语义：pickOpenRounds undefined
+  var ev3 = AG.buildEvent({ id: "x", game: "cs2", name: "x", tournament: "SG赛", stages: [
+    { id: "s1", type: "swiss", label: "S", stageNames: ["Stage 1"] }
+  ] }, swissMatches(), null);
+  if (!ev3 || !ev3.stages[0] || ev3.stages[0].pickOpenRounds !== undefined) return false;
+  if (PK.swissPickDeadline(ev3.stages[0], 0) !== null) return false;
+  return true;
+})());
+check("swiss 延迟截止客户端接线（2026-11-12 静态）：normalize 白名单 + stageOpenForPicks/pickemStageStatus/徽标三处同源", (function () {
+  var pkSrc = rf(path.join(root, "js", "pickem.js"), "utf8");
+  return /export function swissPickDeadline/.test(pkSrc) &&
+    /out\.pickOpenRounds = Math\.round\(raw\.pickOpenRounds\)/.test(pkSrc) &&
+    /out\.pickDeadline = raw\.pickDeadline/.test(pkSrc) &&
+    /var dl = swissPickDeadline\(stage, now\)/.test(pkSrc) &&
+    /var sdl = swissPickDeadline\(stage, Date\.now\(\)\)/.test(appSrc) &&
+    /swissPickDeadline/.test(appSrc.replace(/import[^;]+;/, "")); // app.js 非仅 import（有实际使用）
+})());
 check("⑧ 官方 standings 落桶仍不满（官方与桶结构也不符）→ 仍 null（宁缺勿滥不因新证据放宽）", (function () {
   if (!AG || typeof AG.buildEvent !== "function") return true;
   var cfg = { id: "gsl-ev", game: "cs2", name: "GSL 赛", tournament: "GSL 测试赛", stages: [

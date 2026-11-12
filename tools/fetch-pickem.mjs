@@ -124,9 +124,30 @@ function buildSwissStage(cfg, matches, structure) {
     .sort(function (x, y) { return (y.w - x.w) || (x.l - y.l) || (x.name < y.name ? -1 : 1); });
   var starts = list.length ? list[0].startAt : "";
   var ends = list.length ? list[list.length - 1].startAt : "";
+  // 延迟截止（2026-11-12，PGL Major Stage 1 需求）：pickOpenRounds=N → 竞猜开放到「已完赛 N 轮」后，
+  // 截止 = 届时最早一场未开赛比赛 -1h（Swiss 配对时序保证那就是第 N+1 轮首场：上一轮没打完
+  // 官方不会命名下一轮对阵）。阈值未到不下发 pickDeadline（客户端保持可猜，宁开勿锁）；
+  // 客户端有同构镜像（swissPickDeadline），数据侧延迟时本地兜底。
+  var pickOpenRounds = typeof cfg.pickOpenRounds === "number" && cfg.pickOpenRounds >= 1 && cfg.pickOpenRounds <= 5 ? Math.round(cfg.pickOpenRounds) : 0;
+  var pickDeadline;
+  if (pickOpenRounds && Object.keys(teams).length >= 2) {
+    var per = Math.max(1, Math.round(Object.keys(teams).length / 2));
+    var finished = compact.filter(function (m) { return m.winner || m.canceled; }).length;
+    if (finished >= per * pickOpenRounds) {
+      var minStart = Infinity;
+      compact.forEach(function (m) {
+        if (m.winner || m.canceled || !m.a || !m.b) return;
+        var t = new Date(m.startAt).getTime();
+        if (!isNaN(t) && t < minStart) minStart = t;
+      });
+      if (minStart !== Infinity) pickDeadline = minStart - 3600000; // 开赛前 1 小时（与客户端 PICKEM_DEADLINE_MS 同值）
+    }
+  }
   return {
     id: cfg.id, type: "swiss", label: cfg.label || cfg.id,
     startsAt: starts, endsAt: ends,
+    pickOpenRounds: pickOpenRounds || undefined,
+    pickDeadline: pickDeadline,
     teams: teamList, matches: compact,
     // 官方小组积分切片（2026-11-10，Major 瑞士轮同结构受益）
     standings: structure && Array.isArray(structure.standings) && structure.standings.length ? structure.standings.slice(0, 16) : undefined,

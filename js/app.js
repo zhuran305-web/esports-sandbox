@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 
 (function () {
   "use strict";
@@ -2124,6 +2124,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
     if (stage.type === "swiss") {
       if (stage.teams.length !== PICKEM_SWISS_TEAMS) return "wait";
+      // 延迟截止（2026-11-12）：配置 pickOpenRounds 的 swiss 按两轮后规则判开放/锁定（与 stageOpenForPicks 同源）
+      var sdl = swissPickDeadline(stage, Date.now());
+      if (sdl !== null) return Date.now() < sdl ? "open" : "locked";
+      if (typeof stage.pickOpenRounds === "number" && stage.pickOpenRounds >= 1) return "open"; // 阈值未到：保持可猜
+      // 未配置：旧语义落共享尾部
     } else if (stage.type === "records") {
       var capTotal = (recordBuckets(stage) || []).reduce(function (s, b) { return s + b.cap; }, 0);
       if (!capTotal || stage.teams.length < capTotal) return "wait";
@@ -2212,6 +2217,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (stage.type === "series") {
         var n = pickableSeriesMatches(stage).length;
         return '<span class="pickem-badge is-open">可竞猜 ' + n + " 场 · 各场开赛前 1 小时截止</span>";
+      }
+      if (stage.type === "swiss" && typeof stage.pickOpenRounds === "number" && stage.pickOpenRounds >= 1) {
+        // 延迟截止：阈值未到（聚合器还没下发 pickDeadline）显示规则文案；已下发显示确切时刻
+        var sdl = swissPickDeadline(stage, Date.now());
+        if (sdl !== null) return '<span class="pickem-badge is-open">可竞猜 · ' + esc(fmtTime(new Date(sdl).toISOString())) + " 截止</span>";
+        return '<span class="pickem-badge is-open">可竞猜 · 第 ' + (stage.pickOpenRounds + 1) + " 轮开赛前 1 小时截止</span>";
       }
       var start = new Date(stage.startsAt).getTime();
       var dl = isNaN(start) ? "" : fmtTime(new Date(start - PICKEM_DEADLINE_MS).toISOString());

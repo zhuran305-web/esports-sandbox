@@ -45,9 +45,11 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var STORAGE_KEY = "esports_sandbox_v2";
   var ONBOARD_KEY = "esports_sandbox_onboarded";
   var THEME_KEY = "esports_sandbox_theme";
+  var FX_KEY = "esports_sandbox_fx";
+  var FX_PROMPTED_KEY = "esports_sandbox_fx_prompted";
   /* 清除本地数据会重置的键（storage 空串=读取端回退默认：引导重现/昵称清空/缓存重建） */
   var CLEAR_KEYS = [
-    STORAGE_KEY, ONBOARD_KEY, THEME_KEY,
+    STORAGE_KEY, ONBOARD_KEY, THEME_KEY, FX_KEY, FX_PROMPTED_KEY,
     "esports_sandbox_nick",
     "esports_sandbox_hbprofile",
     "esports_sandbox_remote_v1",
@@ -238,11 +240,101 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
   }
 
+  /* ============================== 动效档位（2026-11-12，四档：off/low/mid/high） ==============================
+   * 机制：theme-boot.js 在样式加载前读 localStorage 镜像设 html[data-fx]（防首绘闪烁）；
+   * 本函数负责 SDK 存储读取（镜像兜底）、校验、设置页 UI 与首启选档弹窗。
+   * 档位语义：关=瞬时无动效 / 低=保快速淡入去循环动画 / 中=微交互与光效（默认） / 高=全效（玻璃/光带/进度环）。 */
+  var FX_LABELS = { off: "关", low: "低", mid: "平衡 · 推荐", high: "全效" };
+
+  function applyFx(tier) {
+    var el = document.documentElement;
+    el.setAttribute("data-fx", tier);
+    var value = $("#fxValue");
+    if (value) value.textContent = FX_LABELS[tier] || tier;
+    document.querySelectorAll("#fxOptions button").forEach(function (b) {
+      b.classList.toggle("is-active", b.dataset.fxOpt === tier);
+    });
+  }
+
+  function persistFx(tier) {
+    try { localStorage.setItem(FX_KEY, tier); } catch (e) { /* ignore */ }
+    storageSet(FX_KEY, tier);
+    try { localStorage.setItem(FX_PROMPTED_KEY, "1"); } catch (e) { /* ignore */ }
+    storageSet(FX_PROMPTED_KEY, "1");
+  }
+
+  function closeFxChooser() {
+    var bd = $("#fxChooseBackdrop");
+    if (bd) bd.hidden = true;
+  }
+
+  function showFxChooser() {
+    var bd = $("#fxChooseBackdrop");
+    if (!bd) return;
+    bd.hidden = false;
+  }
+
+  function wireFxChooser() {
+    var bd = $("#fxChooseBackdrop");
+    if (!bd) return;
+    bd.addEventListener("click", function (e) {
+      var pick = e.target.closest("button[data-fx-pick]");
+      if (pick) {
+        var tier = pick.dataset.fxPick;
+        applyFx(tier);
+        persistFx(tier);
+        closeFxChooser();
+        return;
+      }
+      if (e.target.closest("#fxChooseDefault")) {
+        applyFx("mid");
+        persistFx("mid");
+        closeFxChooser();
+        return;
+      }
+      // 点遮罩空白 = 保持当前默认（中），不再追问
+      if (e.target === bd) {
+        persistFx("mid");
+        closeFxChooser();
+      }
+    });
+  }
+
+  async function initFx() {
+    var stored = null;
+    try {
+      var fromSdk = await storageGet(FX_KEY);
+      if (typeof fromSdk === "string" && fromSdk) stored = fromSdk;
+    } catch (e) { /* ignore */ }
+    if (!stored) {
+      try {
+        var mirror = localStorage.getItem(FX_KEY);
+        if (mirror) stored = mirror;
+      } catch (e) { /* ignore */ }
+    }
+    var tier = stored === "off" || stored === "low" || stored === "mid" || stored === "high" ? stored : "mid";
+    applyFx(tier);
+    var options = $("#fxOptions");
+    if (options) {
+      options.addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-fx-opt]");
+        if (!btn) return;
+        var t = btn.dataset.fxOpt;
+        applyFx(t);
+        persistFx(t);
+      });
+    }
+    wireFxChooser();
+    var prompted = false;
+    try { prompted = localStorage.getItem(FX_PROMPTED_KEY) === "1"; } catch (e) { /* ignore */ }
+    if (!prompted) showFxChooser(); // 首启选档：app.js 落存储前 theme-boot 已用临时「中」，此处默认选中「中」
+  }
+
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
     "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
     "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#pickemGamePopover", "#pickemEvPopover", "#duelDialogBackdrop", "#duelHelpBackdrop",
-    "#pickemSheet", "#playerSheet"
+    "#pickemSheet", "#playerSheet", "#fxChooseBackdrop"
   ];
 
   function closeAllOverlays() {
@@ -257,6 +349,30 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     window.addEventListener("pagehide", closeAllOverlays);
     document.addEventListener("visibilitychange", function () {
       if (document.visibilityState === "hidden") closeAllOverlays();
+    });
+    // 交互涟漪（2026-11-13「沙粒光影」）：点击时在触点生成扩散光斑——中/高档。
+    // 光斑挂在全局涟漪层（#fxRippleLayer，视口坐标）而非元素内：应用侧 click 处理器常
+    // 整表重渲染（首页过滤/竞猜落账），挂在元素内会被重渲染撕掉——层方案与之完全解耦。
+    document.addEventListener("click", function (e) {
+      if (!fxOn()) return;
+      var el = e.target.closest(
+        ".team-row.is-pickable, .pickem-slot, .primary-btn, .codex-cell, .status-tile, .game-tile, " +
+        ".fx-choose-row, .theme-options button, #fxOptions button, .team-main-btn, .dig-btn, .tab"
+      );
+      if (!el) return;
+      var layer = $("#fxRippleLayer");
+      if (!layer) return;
+      var rect = el.getBoundingClientRect();
+      var size = Math.max(rect.width, rect.height) * 2.2;
+      var span = document.createElement("span");
+      span.className = "fx-touch-ripple";
+      span.style.width = size + "px";
+      span.style.height = size + "px";
+      span.style.left = (e.clientX || rect.left + rect.width / 2) + "px";
+      span.style.top = (e.clientY || rect.top + rect.height / 2) + "px";
+      layer.appendChild(span);
+      span.addEventListener("animationend", function () { span.remove(); });
+      setTimeout(function () { if (span.parentNode) span.remove(); }, 700);
     });
     window.addEventListener("pageshow", function (e) {
       if (!e.persisted) return;
@@ -1334,19 +1450,52 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#tournamentSelectBtn").setAttribute("aria-expanded", "false");
   }
 
+  /** 数字滚动（2026-11-12「沙粒光影」）：rAF 500ms ease-out cubic，从上次渲染值滚到新值。
+   *  仅 mid/high 档且未开启系统减动效时生效，其余瞬时（off/low = 直接写终值）。 */
+  var lastBankrollShown = null;
+  function fxAllowsNumberRoll() {
+    var fx = document.documentElement.getAttribute("data-fx");
+    if (fx !== "mid" && fx !== "high") return false;
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+    } catch (e) { /* ignore */ }
+    return true;
+  }
+  function animateNumber(el, from, to) {
+    if (!el) return;
+    if (from === null || from === to || !fxAllowsNumberRoll()) {
+      el.textContent = fmtBalanceText(to);
+      return;
+    }
+    var t0 = performance.now();
+    var dur = 500;
+    function frame(now) {
+      var p = Math.min(1, (now - t0) / dur);
+      var eased = 1 - Math.pow(1 - p, 3);
+      var v = Math.round(from + (to - from) * eased);
+      el.textContent = fmtBalanceText(p < 1 ? v : to);
+      if (p < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  function fmtBalanceText(n) {
+    return n < 0 ? "-" + fmtNum(Math.abs(n)) : fmtNum(n);
+  }
+
   function renderBalance() {
-    var display = state.bankroll < 0
-      ? "-" + fmtNum(Math.abs(state.bankroll))
-      : fmtNum(state.bankroll);
-    $("#balanceValue").textContent = display;
-    $("#profileBalance").textContent = display;
-    $("#sandValue").textContent = display;
+    var prev = lastBankrollShown;
+    lastBankrollShown = state.bankroll;
+    animateNumber($("#balanceValue"), prev, state.bankroll);
+    animateNumber($("#profileBalance"), prev, state.bankroll);
+    animateNumber($("#sandValue"), prev, state.bankroll);
     $("#digCount").textContent = state.digs;
     $("#profileDigCount").textContent = state.digs;
 
     // 负债时余额标红提示
     var pill = $("#balancePill");
     if (pill) pill.classList.toggle("in-debt", state.bankroll < 0);
+    // 数据变化涟漪（2026-11-13）：沙粒变动时余额胶囊扩散一圈（首帧渲染 prev=null 不触发）
+    if (prev !== null && prev !== state.bankroll) fxRing($("#balancePill"));
   }
 
   var matchesDirty = false;
@@ -1401,10 +1550,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }
 
     var html = "";
+    // 精选卡（2026-11-12「沙粒光影」）：首张进行中的 S 级比赛独享光带（高档）——确定性选择，
+    // 每次 renderMatches 重渲染结果一致，不会闪烁换卡
+    var featuredId = groups.live.length && groups.live.some(function (m) { return m.tier === "s"; })
+      ? groups.live.filter(function (m) { return m.tier === "s"; })[0].id
+      : null;
     function groupHTML(label, list) {
       if (!list.length) return "";
       return '<div class="group-label">' + label + "</div>" +
-        list.map(function (m) { return matchCardHTML(m, statusMap.get(m)); }).join("");
+        list.map(function (m) { return matchCardHTML(m, statusMap.get(m), m.id === featuredId); }).join("");
     }
 
     html += groupHTML("正在进行", groups.live);
@@ -1423,7 +1577,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     matchesDirty = false;
   }
 
-  function matchCardHTML(m, st) {
+  function matchCardHTML(m, st, featured) {
     var pred = predictionFor(m.id);
     var gm = gameMeta(m.game);
 
@@ -1496,7 +1650,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (m.note) bottom += '<span class="match-note">' + esc(m.note) + "</span>";
 
     return (
-      '<article class="match-card is-' + st + '">' +
+      '<article class="match-card is-' + st + (featured ? " is-featured" : "") + '" data-match="' + m.id + '">' +
         '<div class="card-top">' +
           '<span class="game-chip" style="background:linear-gradient(135deg,' + gm.c1 + "," + gm.c2 + ");color:" + (gm.dark ? "#1a0e04" : "#0b1220") + '">' + esc(gm.chip) + "</span>" +
           '<span class="tournament">' + esc(m.tournament) + "</span>" +
@@ -3276,6 +3430,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var mlv = state.mainLevels[currentTeamKey] || 0;
     var lv = mainTeamLevel(mlv);
     var lvLine = "";
+    // E2 进度环（2026-11-12「沙粒光影」高档）：--pct = 当前级内升级进度（高档 CSS 用 conic-gradient 画环）
+    var lvPct = 100;
+    if (lv < MAIN_LEVEL_THRESHOLDS.length) {
+      var lo = lv >= 1 ? MAIN_LEVEL_THRESHOLDS[lv - 1] : 0;
+      var hi = MAIN_LEVEL_THRESHOLDS[lv];
+      lvPct = Math.max(0, Math.min(100, Math.round(((mlv - lo) / (hi - lo)) * 100)));
+    }
     if (mlv >= 1) {
       lvLine = (isMain ? "主队" : "曾主队") + " Lv." + lv +
         (lv >= MAIN_LEVEL_THRESHOLDS.length ? " · 满级 🏆" : " · 距 Lv." + (lv + 1) + " 还差 " + (MAIN_LEVEL_THRESHOLDS[lv] - mlv) + " 场");
@@ -3287,7 +3448,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           '<span class="team-hero-sub">' + esc(gameMeta(game).label) + " · 数据窗口 45 天</span>" +
           (lvLine ? '<span class="team-hero-lv">' + esc(lvLine) + "</span>" : "") +
         "</span>" +
-        (lv >= 1 ? '<span class="team-lv-badge">Lv.' + lv + "</span>" : "") +
+        (lv >= 1 ? '<span class="team-lv-badge" style="--pct:' + lvPct + '">Lv.' + lv + "</span>" : "") +
         '<button type="button" class="team-main-btn' + (isMain ? " is-main" : "") + '" id="teamMainBtn">' +
           (isMain ? "❤ 已是主队" : "❤ 设为主队") + "</button>" +
       "</div>";
@@ -3864,6 +4025,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     closeSheet();
     renderAll();
     toast("预测成功 · 投入 " + fmtNum(amount) + " 沙粒");
+    fxRing(document.querySelector('.match-card[data-match="' + m.id + '"]')); // 落账涟漪（2026-11-13）
     attachDuelInvite(m.id); // 应战成立提示放在预测成功之后
     vibrate("light");
   }
@@ -4715,7 +4877,46 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     switchView(fallback);
   }
 
+  /* 涟漪/平滑系统（2026-11-13「沙粒光影」方向修正）：全部由 data-fx 档位门控，
+   * mid/high 生效；关/低回落瞬时切换。fxOn = 当前档位允许装饰性动效。 */
+  function fxOn() {
+    var fx = document.documentElement.getAttribute("data-fx");
+    if (fx !== "mid" && fx !== "high") return false;
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+    } catch (e) { /* ignore */ }
+    return true;
+  }
+
+  /** 数据变化涟漪：对发生变化的元素加 .fx-ring（一圈扩散），750ms 后摘除。
+   *  用于余额变动/比分更新/预测落账等「画面变动」时刻。 */
+  function fxRing(el) {
+    if (!el || !fxOn()) return;
+    el.classList.add("fx-ring");
+    setTimeout(function () { el.classList.remove("fx-ring"); }, 760);
+  }
+
   function switchView(name, options) {
+    // 平滑页面切换（2026-11-13）：中/高档用 View Transitions 做旧/新视图交叉淡入（Chrome 111+，
+    // 不支持的宿主自动回落瞬时切换）；赛程表切换除外——591 行分帧渲染会让过渡快照拍到空列表。
+    var reduce = false;
+    try { reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { /* ignore */ }
+    if (
+      fxOn() && document.startViewTransition && name !== currentView &&
+      !(name === "schedule" && currentView !== "schedule")
+    ) {
+      var rootEl = document.documentElement;
+      rootEl.dataset.vt = "1"; // 快照期间抑制视图入场动画/stagger（否则捕捉到动画起点闪空）
+      var vt = document.startViewTransition(function () { switchViewCore(name, options); });
+      var clearVt = function () { delete rootEl.dataset.vt; };
+      vt.finished.then(clearVt, clearVt); // 过渡完成/被跳过都会落定
+      setTimeout(clearVt, 400); // 双保险：finished 挂起时兜底摘除
+      return;
+    }
+    switchViewCore(name, options);
+  }
+
+  function switchViewCore(name, options) {
     var opts = options || {};
     var prev = currentView;
     var isSubPage = isSubView(name);
@@ -5712,11 +5913,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
   function applyLivePatch(doc) {
     var touched = false, finishedMigration = false;
+    var touchedMids = {}; // 涟漪（2026-11-13）：比分/状态变化的场次，重渲染后对对应卡片做扩散涟漪
     (doc.live || []).forEach(function (r) {
       var m = matchByMid(r.mid);
       if (!m) return; // 不在窗口（新开赛）：等主轮询整包带进来
-      if (r.lsc !== undefined && m.lsc !== r.lsc) { m.lsc = r.lsc; touched = true; }
-      if (r.gs !== undefined && m.gs !== r.gs) { m.gs = r.gs; touched = true; }
+      if (r.lsc !== undefined && m.lsc !== r.lsc) { m.lsc = r.lsc; touched = true; touchedMids[m.id] = 1; }
+      if (r.gs !== undefined && m.gs !== r.gs) { m.gs = r.gs; touched = true; touchedMids[m.id] = 1; }
       if (m.lv !== true) { m.lv = true; touched = true; }
     });
     (doc.finished || []).forEach(function (r) {
@@ -5745,6 +5947,13 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (!$("#view-board").hidden) renderBoard();
       if (!$("#view-pickem").hidden) renderPickem();
       syncBoards();
+    }
+    // 数据变化涟漪（2026-11-13）：对发生比分/状态变化的卡片做一圈扩散（home 卡带 data-match）
+    if (fxOn()) {
+      Object.keys(touchedMids).forEach(function (mid) {
+        var card = document.querySelector('#matchList .match-card[data-match="' + mid + '"]');
+        if (card) fxRing(card);
+      });
     }
   }
 
@@ -6555,6 +6764,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   async function boot() {
     var platformReady = await initPlatform();
     await initTheme();
+    initFx(); // 动效档位：镜像已由 theme-boot 应用，这里读 SDK 存储/弹首启选档（不 await，不阻塞首屏）
     readLaunchExtra(); // SDK 已加载即可同步读取启动链接里的分享 extra
     // 安全区测量最多等 800ms，避免旧宿主阻塞启动
     await Promise.race([

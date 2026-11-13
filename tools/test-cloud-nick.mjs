@@ -558,6 +558,25 @@ check("榜单超大数档位行为级（2026-11-12 夜间自查）：从 app.js 
   })());
 check("demo 注入工具防回归（2026-11-12 夜间自查）：pickem-demo 不得再发已删除的 bracket 类型（1.3.16 normalizeStage 拒收 → 阶段静默不渲染）",
   /type:\s*"bracket"/.test(rf(path.join(root, "tools", "pickem-demo.mjs"), "utf8")) === false);
+check("动效四档体系（2026-11-12「沙粒光影」）：boot 读取/设置页/浮层/CSS 四档块/reduced-motion/CLEAR_KEYS/计数滚动/精选卡 全接线", (function () {
+  var bootSrc = rf(path.join(root, "public", "theme-boot.js"), "utf8");
+  var htmlSrc = rf(path.join(root, "index.html"), "utf8");
+  var cssSrc = rf(path.join(root, "css", "style.css"), "utf8");
+  return /esports_sandbox_fx/.test(bootSrc) && /setAttribute\("data-fx", fx\)/.test(bootSrc) &&
+    /id="fxOptions"/.test(htmlSrc) && /data-fx-opt="mid"/.test(htmlSrc) &&
+    /id="fxChooseBackdrop"/.test(htmlSrc) && /data-fx-pick="high"/.test(htmlSrc) && /id="fxValue"/.test(htmlSrc) &&
+    /id="fxRippleLayer"/.test(htmlSrc) &&
+    /html\[data-fx="off"\] \*/.test(cssSrc) && /prefers-reduced-motion: reduce/.test(cssSrc) &&
+    /html\[data-fx="high"\] \.topbar/.test(cssSrc) && /fxTouch/.test(cssSrc) && /fxRingOne/.test(cssSrc) &&
+    /::view-transition-old\(root\)/.test(cssSrc) && /fx-touch-ripple/.test(cssSrc) &&
+    /html\[data-fx="low"\] \.status-chip\.live::before/.test(cssSrc) && /--ease-spring/.test(cssSrc) &&
+    /FX_KEY, FX_PROMPTED_KEY/.test(appSrc) && /function initFx/.test(appSrc) &&
+    /function applyFx/.test(appSrc) && /function animateNumber/.test(appSrc) &&
+    /is-featured/.test(appSrc) && /initFx\(\)/.test(appSrc) && /lastBankrollShown/.test(appSrc) &&
+    /function fxRing/.test(appSrc) && /function fxOn/.test(appSrc) &&
+    /document\.startViewTransition/.test(appSrc) &&
+    /class="match-card is-' \+ st \+ \(featured \? " is-featured" : ""\) \+ '" data-match="' \+ m\.id \+ '"/.test(appSrc);
+})());
 check("选择器计数与列表同口径（1.3.2）：homeListMatches 收敛 + 两处计数复用",
   /function homeListMatches/.test(appSrc) &&
   /var windowMatches = homeListMatches\(\);/.test(appSrc) &&

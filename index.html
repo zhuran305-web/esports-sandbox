@@ -492,6 +492,23 @@
         </div>
 
         <div class="settings-group">
+          <div class="settings-row">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
+            </span>
+            <span class="settings-row-label">动效</span>
+            <span class="settings-row-value" id="fxValue">平衡 · 推荐</span>
+          </div>
+          <div class="theme-options" id="fxOptions">
+            <button type="button" data-fx-opt="off">关</button>
+            <button type="button" data-fx-opt="low">低</button>
+            <button type="button" data-fx-opt="mid" class="is-active">中</button>
+            <button type="button" data-fx-opt="high">高</button>
+          </div>
+          <p class="settings-hint">高 = 全部光效与玻璃质感 · 中 = 平衡（推荐）· 低 = 省电 · 关 = 无动效</p>
+        </div>
+
+        <div class="settings-group">
           <button class="settings-row" id="openRulesBtn" type="button">
             <span class="settings-row-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h11a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2V4z"/><path d="M6 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2"/><path d="M10 9h5M10 13h5"/></svg>
@@ -927,6 +944,29 @@
   <!-- 鸿蒙进入门/硬阻断已删（2026-11-11 清理）：1.1.x 遗留，网络全平台一致后无平台分支 -->
 
   <div class="scroll-rail" id="scrollRail" aria-hidden="true"><span id="scrollThumb"></span></div>
+
+  <!-- 交互涟漪层（2026-11-13「沙粒光影」）：触点扩散光斑挂这里，与应用重渲染解耦 -->
+  <div id="fxRippleLayer" aria-hidden="true"></div>
+
+  <!-- 动效档位首启选弹窗（仅第一次出现） -->
+  <div class="sheet-backdrop" id="fxChooseBackdrop" hidden>
+    <div class="sheet fx-choose" role="dialog" aria-modal="true" aria-labelledby="fxChooseTitle">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <h2 id="fxChooseTitle">选择动效档位</h2>
+          <p class="sheet-meta">随时可在 设置 → 动效 中更改</p>
+        </div>
+      </div>
+      <div class="fx-choose-list">
+        <button type="button" class="fx-choose-row" data-fx-pick="off"><b>关</b><span>完全无动效，状态即时切换</span></button>
+        <button type="button" class="fx-choose-row" data-fx-pick="low"><b>低</b><span>省电：保留快速淡入，去掉循环动画</span></button>
+        <button type="button" class="fx-choose-row is-recommend" data-fx-pick="mid"><b>中 · 推荐</b><span>平衡：微交互与光效，流畅优先</span></button>
+        <button type="button" class="fx-choose-row" data-fx-pick="high"><b>高</b><span>全效：玻璃质感与光带（老设备可能掉帧）</span></button>
+      </div>
+      <button type="button" class="fx-choose-default" id="fxChooseDefault">使用默认（中）</button>
+    </div>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

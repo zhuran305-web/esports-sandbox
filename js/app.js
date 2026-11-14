@@ -2010,6 +2010,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   // 实验功能入口仍显示全部
   var PICKEM_SCOPED_EVENT = "blast-rivals-fall-2026";
   var pickemScoped = false;
+  var pickemLogMode = false; // 作业记录模式（2026-11-14）：只展示「参与过且已结束」的赛事（竞猜记录+树状图），入口=我的页快捷四联
   var pickemSearchTimer = null;
 
   /** 手工配置赛事占用的 tournament 匹配串（自动收录去重用——手工配置的精细模式优先）。
@@ -2046,11 +2047,26 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return pickemEvents().filter(function (ev) { return ev.status !== "done"; });
   }
 
+  /** 作业记录参与判定（2026-11-14）：事件任一阶段存在竞猜记录即算参与 */
+  function pickemParticipated(ev) {
+    for (var i = 0; i < (ev.stages || []).length; i++) {
+      if (pickemRec(ev.id, ev.stages[i].id)) return true;
+    }
+    return false;
+  }
+
+  /** 作业记录事件集（2026-11-14）：已结束 + 参与过；按结束时间近的在前（树状图/竞猜记录由 renderPickem 常规渲染承载） */
+  function pickemLogEvents() {
+    return pickemEvents().filter(function (ev) {
+      return ev.status === "done" && pickemParticipated(ev);
+    }).sort(function (a, b) { return String(b.endsAt || "").localeCompare(String(a.endsAt || "")); });
+  }
+
   /** 作业页统一口径（1.3.6，假设 75/76）：游戏筛选 + 搜索词过滤后的赛事列表——chips 与主体同源。
    *  公测直入口（1.3.10）锁定 scoped 事件（1.3.14 起=BLAST 香港）：scoped 时其余赛事一律不出现。 */
   function pickemFilteredEvents() {
     var q = pickemQuery.trim().toLowerCase();
-    var base = pickemVisibleEvents();
+    var base = pickemLogMode ? pickemLogEvents() : pickemVisibleEvents(); // 作业记录模式=参与过且已结束（2026-11-14）
     if (pickemScoped) base = base.filter(function (ev) { return ev.id === PICKEM_SCOPED_EVENT; });
     return base.filter(function (ev) {
       if (pickemGame !== "all" && ev.game !== pickemGame) return false;
@@ -2670,7 +2686,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var evList = $("#pickemEvList");
     var body = $("#pickemBody");
     if (!body) return;
-    var all = pickemVisibleEvents(); // 1.3.14：已结束赛事不进列表/计数/空态（与 pickemFilteredEvents 同源）
+    var all = pickemLogMode ? pickemLogEvents() : pickemVisibleEvents(); // 1.3.14：已结束赛事不进列表/计数/空态（与 pickemFilteredEvents 同源）；作业记录模式=参与过且已结束
     if (pickemScoped) {
       // 公测直入口：只显示 scoped 赛事（1.3.14 起=BLAST 香港）——选择器整行隐藏（其他赛事不展示）
       all = all.filter(function (e) { return e.id === PICKEM_SCOPED_EVENT; });
@@ -2715,7 +2731,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var evs = pickemFilteredEvents();
     if (!all.length) {
       if (evList) evList.innerHTML = "";
-      body.innerHTML = '<div class="empty-state"><strong>暂无可竞猜的赛事</strong>S/A 级赛事确认排期后，这里会自动收录作业</div>';
+      body.innerHTML = pickemLogMode
+        ? '<div class="empty-state"><strong>还没有已结束的作业</strong>参与中的赛事结束后会自动归档到这里，含竞猜记录与对阵树</div>'
+        : '<div class="empty-state"><strong>暂无可竞猜的赛事</strong>S/A 级赛事确认排期后，这里会自动收录作业</div>';
       return;
     }
     if (!evs.length) {
@@ -2724,10 +2742,15 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       return;
     }
     if (!pickemEventById(pickemEventId) || !evs.some(function (e) { return e.id === pickemEventId; })) {
-      var first = evs.filter(function (e) { return e.status !== "done"; })[0] || evs[0];
+      var first = (pickemLogMode ? evs[0] : evs.filter(function (e) { return e.status !== "done"; })[0]) || evs[0];
       pickemEventId = first.id;
     }
     var ev = pickemEventById(pickemEventId);
+    // 页头随模式切换（2026-11-14 作业记录）：标题/徽章区分「可竞猜」与「已结束记录」两种口径
+    var titleEl = $("#pickemTitle");
+    if (titleEl) titleEl.textContent = pickemLogMode ? "作业记录" : "赛事竞猜";
+    var badgeEl = $("#pickemBadge");
+    if (badgeEl) badgeEl.textContent = pickemLogMode ? "已结束 · 你的竞猜" : "实验功能 · 公测";
     if (evList) {
       // 赛事浮层列表（主页 tournament-row 同款）：状态标 + 名称 + 场次数；data-pevt 沿用旧委托
       evList.innerHTML = evs.map(function (e) {
@@ -2988,7 +3011,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#labsList").addEventListener("click", function (e) {
       var row = e.target.closest("[data-labs]");
       if (row && row.dataset.labs) {
-        if (row.dataset.labs === "pickem") pickemScoped = false; // 实验功能入口=完整列表（主页「BLAST 作业」才是公测直入口）
+        if (row.dataset.labs === "pickem") { pickemScoped = false; pickemLogMode = false; } // 实验功能入口=完整列表（主页「BLAST 作业」才是公测直入口）
         switchView(row.dataset.labs);
       }
     });
@@ -5133,6 +5156,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#duelEntry").addEventListener("click", function () { switchView("duels"); });
     $("#pickemEntry").addEventListener("click", function () {
       pickemScoped = false; // 作业记录=完整赛事列表（主页「BLAST 作业」才是公测 scoped 直入口）
+      pickemLogMode = true; // 作业记录模式：只看参与过且已结束的赛事（含竞猜记录与树状图）
       switchView("pickem");
     });
     $("#versusShareBtn").addEventListener("click", function () {
@@ -5506,6 +5530,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
     $("#homePickemBtn").addEventListener("click", function () {
       pickemScoped = true; // 公测直入口：锁定 scoped 赛事（1.3.14 起=BLAST 香港），其他赛事不展示
+      pickemLogMode = false; // 公测直入口=可竞猜口径，作业记录模式只从「我的」快捷行进入
       switchView("pickem");
     });
 

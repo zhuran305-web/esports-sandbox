@@ -868,8 +868,8 @@ check("作业页筛选与搜索（1.3.6 统一口径；1.3.12 换主页同款浮
   /function pickemFilteredEvents/.test(appSrc) && // 统一口径：浮层列表与主体都走它
   (appSrc.match(/pickemFilteredEvents\(\)/g) || []).length >= 1 &&
   /function pickemVisibleEvents/.test(appSrc) && // 1.3.14：已结束赛事不进作业页（列表/计数/空态同源）
-  /var base = pickemVisibleEvents\(\)/.test(appSrc) &&
-  /var all = pickemVisibleEvents\(\)/.test(appSrc) &&
+  /var base = pickemLogMode \? pickemLogEvents\(\) : pickemVisibleEvents\(\)/.test(appSrc) && // 2026-11-14 作业记录模式：参与过且已结束
+  /var all = pickemLogMode \? pickemLogEvents\(\) : pickemVisibleEvents\(\)/.test(appSrc) &&
   /pickemEventById\(PICKEM_SCOPED_EVENT\)/.test(appSrc) && // 主页公测入口：scoped 赛事已结束→隐藏按钮
   /scopedWrap\.hidden = !\(scopedEv && scopedEv\.status !== "done"\)/.test(appSrc) &&
   /var pickemGame = "all"/.test(appSrc) && /var pickemQuery = ""/.test(appSrc) &&
@@ -2068,6 +2068,17 @@ check("我的页快捷四联（2026-11-14）：作业记录入口在图鉴/对�
     /pickemEntry"\)\.addEventListener/.test(appSrc) &&
     /pickemScoped = false; \/\/ 作业记录=完整赛事列表/.test(appSrc) &&
     /pickemEntrySub"\)\.textContent = coinTotal > 0/.test(appSrc);
+})());
+check("作业记录模式（2026-11-14）：只看参与过且已结束的赛事——done+participated 过滤、标题/徽章切换、其他入口复位", (function () {
+  var quickIdx2 = { pickemEntrySub: appSrc.indexOf('pickemEntrySub")') };
+  return /var pickemLogMode = false/.test(appSrc) &&
+    /function pickemParticipated/.test(appSrc) && /function pickemLogEvents/.test(appSrc) &&
+    /var base = pickemLogMode \? pickemLogEvents\(\) : pickemVisibleEvents\(\);/.test(appSrc) &&
+    /var all = pickemLogMode \? pickemLogEvents\(\) : pickemVisibleEvents\(\);/.test(appSrc) &&
+    /pickemLogMode = true/.test(appSrc) &&
+    (appSrc.match(/pickemLogMode = false/g) || []).length >= 3 &&
+    /id="pickemTitle"/.test(htmlSrc) && /id="pickemBadge"/.test(htmlSrc) &&
+    /还没有已结束的作业/.test(appSrc) && quickIdx2.pickemEntrySub > -1;
 })());
 
 rmSync(tmp, { recursive: true, force: true });

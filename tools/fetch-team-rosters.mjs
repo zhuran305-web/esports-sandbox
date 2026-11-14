@@ -10,7 +10,7 @@
  *
  * 数据源：PandaScore GET /teams/{id}（需要 PANDASCORE_TOKEN），team 对象内嵌 players[]。
  * 提取：每队前 5 名 active 选手 { n: 职业ID, r: 位置（仅 LoL/Dota2/OW 有值）, l: 国籍 ISO 码,
- *       id: PandaScore player id, img: 头像相对路径（pack-player-avatars 打包 64px WebP）,
+ *       id: PandaScore player id, img: 头像相对路径（2026-11-14 客户端选手头像已移除，字段保留兼容旧缓存）,
  *       fn/ln: 真实姓名 }——2026-11-10 深度接入扩展；age/birthday 是付费档字段，不采集。
  * 缓存：{ "game:name": { pid, players: [...], at } }，LRU 1500 队；同 pid 命中缓存直接跳过
  *       （--force 重抓；旧 schema 条目——首名选手无 id——也会增量重抓补新字段）。
@@ -91,7 +91,7 @@ function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
 /* 抽取花名册：前 5 名 active 选手，压缩键名（n/r/l/id/img/fn/ln）控制体积。
  * 2026-11-10 深度接入扩展：id=PandaScore player id（选手卡身份键）、img=头像相对路径
- * （剥 CDN 前缀，pack-player-avatars 按 djb2 打包 64px WebP，客户端 players/<djb2>.webp 引用）、
+ * （剥 CDN 前缀；2026-11-14 客户端选手头像已整体移除、打包管线已删，字段保留兼容旧缓存）、
  * fn/ln=真实姓名（官方免费字段；部分选手缺失，客户端按有无降级）。 */
 var PLAYER_IMG_PREFIXES = [
   "https://cdn-api.pandascore.co/images/player/image/",

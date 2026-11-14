@@ -1183,7 +1183,7 @@ html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .
   background: var(--surface);
   padding: 4px 14px;
 }
-/* 阵容行（2026-11-10 深度接入改版）：头像 + 主信息列 + 箭头，整行可点开选手卡 */
+/* 阵容行（2026-11-10 深度接入改版；2026-11-14 头像移除）：主信息列 + 箭头，整行可点开选手卡 */
 .roster-row {
   display: flex;
   align-items: center;
@@ -1199,8 +1199,6 @@ html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .
 .roster-meta .roster-nat { flex: 0 0 auto; }
 .player-real-inline { font-size: 10px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--text-faint); }
-.avatar.player-avatar { width: 40px; height: 40px; flex: 0 0 auto; font-size: 15px; }
-.avatar.player-avatar .avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .roster-row:last-child { border-bottom: none; }
 .roster-nat {
   flex: 0 0 auto;
@@ -1990,7 +1988,7 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
 .team-score.is-live { color: var(--accent); animation: live-pulse 2s ease-in-out infinite; }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
-/* 选手卡抽屉（2026-11-10）：playerSheet 复用 .sheet 结构；卡片 = 头像 + 姓名列 + 徽章 */
+/* 选手卡抽屉（2026-11-10；2026-11-14 头像移除）：playerSheet 复用 .sheet 结构；卡片 = 姓名列 + 徽章 */
 .player-sheet .player-card {
   display: flex;
   align-items: center;
@@ -1998,7 +1996,6 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   padding: 4px 2px 10px;
   border-bottom: 1px solid var(--border-soft);
 }
-.player-sheet .player-card .player-avatar { width: 56px; height: 56px; font-size: 20px; }
 .player-card-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .player-name { font-size: 16px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-real { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3612,228 +3609,3 @@ html[data-theme="light"] .cer-quote input {
   white-space: nowrap;
 }
 .pk-evtag.is-done { color: var(--text-faint); }
-
-/* ============================== 沙粒光影：动效分级体系（2026-11-12） ==============================
- * 四档：html[data-fx="off|low|mid|high"]（theme-boot.js 首绘前设置；设置 → 动效 可改）。
- * 纪律：动效只动 transform/opacity（合成属性）；backdrop-filter 只在静态层且永不动画它；
- * 长列表（赛程表 591 行）不参与逐行动效；stagger 只给稳定容器（阵容/榜单，不含每次点击重渲染的 pickem）。
- * 档位语义：关=瞬时无动效 / 低=去循环动画保快速淡入 / 中=微交互与光效（默认） / 高=全效（玻璃/光带/进度环）。 */
-
-:root {
-  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);   /* 单段回弹（back-out），sheet/按钮入场 */
-  --ease-out-soft: cubic-bezier(.2, .8, .25, 1);    /* 软着陆 */
-  --dur-press: 90ms;
-  --dur-micro: 180ms;
-}
-
-/* —— 中档：微交互与光效（默认） —— */
-
-/* A1 按压光晕：重点交互面按下亮起 accent 光圈（box-shadow 小面积重绘，可接受） */
-html[data-fx="mid"] .team-row.is-pickable:active,
-html[data-fx="mid"] .pickem-slot:active,
-html[data-fx="mid"] .codex-cell:active,
-html[data-fx="mid"] .status-tile:active,
-html[data-fx="mid"] .game-tile:active,
-html[data-fx="mid"] .primary-btn:active,
-html[data-fx="mid"] .balance-pill:active,
-html[data-fx="mid"] .theme-options button:active,
-html[data-fx="mid"] #fxOptions button:active,
-html[data-fx="mid"] .fx-choose-row:active {
-  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), .5), 0 0 18px rgba(var(--accent-rgb), .28);
-}
-
-/* A2 sheet 弹性入场：单段回弹曲线套既有 sheetUp（多段弹性需 linear()/@property，老 WebView 兼容放弃） */
-html[data-fx="mid"] .sheet,
-html[data-fx="high"] .sheet {
-  animation-name: sheetUp;
-  animation-duration: .3s;
-  animation-timing-function: var(--ease-spring);
-}
-
-/* C2 toast 弹入 + accent 辉光 */
-html[data-fx="mid"] .toast,
-html[data-fx="high"] .toast {
-  transition: opacity .22s var(--ease-out-soft), transform .3s var(--ease-spring), box-shadow .3s ease;
-}
-html[data-fx="mid"] .toast:not(.show),
-html[data-fx="high"] .toast:not(.show) { transform: translate(-50%, 14px) scale(.96); }
-html[data-fx="mid"] .toast.show,
-html[data-fx="high"] .toast.show {
-  transform: translate(-50%, 0) scale(1);
-  box-shadow: 0 10px 30px rgba(var(--accent-rgb), .22), var(--shadow);
-}
-
-/* D2 入场 stagger：只给稳定容器（阵容/榜单——首页卡与 pickem 会被重渲染，点击即重播） */
-html[data-fx="mid"] .roster-row,
-html[data-fx="mid"] .board-row,
-html[data-fx="high"] .roster-row,
-html[data-fx="high"] .board-row {
-  animation: rowIn .28s var(--ease-out-soft) both;
-}
-@keyframes rowIn {
-  from { opacity: .55; transform: translateY(6px); }  /* .55 起：内容即时可读（审核「内容默认不可见」红线） */
-  to { opacity: 1; transform: none; }
-}
-html[data-fx="mid"] .roster-row:nth-child(2), html[data-fx="mid"] .board-row:nth-child(2),
-html[data-fx="high"] .roster-row:nth-child(2), html[data-fx="high"] .board-row:nth-child(2) { animation-delay: 40ms; }
-html[data-fx="mid"] .roster-row:nth-child(3), html[data-fx="mid"] .board-row:nth-child(3),
-html[data-fx="high"] .roster-row:nth-child(3), html[data-fx="high"] .board-row:nth-child(3) { animation-delay: 80ms; }
-html[data-fx="mid"] .roster-row:nth-child(4), html[data-fx="mid"] .board-row:nth-child(4),
-html[data-fx="high"] .roster-row:nth-child(4), html[data-fx="high"] .board-row:nth-child(4) { animation-delay: 120ms; }
-html[data-fx="mid"] .roster-row:nth-child(5), html[data-fx="mid"] .board-row:nth-child(5),
-html[data-fx="high"] .roster-row:nth-child(5), html[data-fx="high"] .board-row:nth-child(5) { animation-delay: 160ms; }
-html[data-fx="mid"] .roster-row:nth-child(6), html[data-fx="mid"] .board-row:nth-child(6),
-html[data-fx="high"] .roster-row:nth-child(6), html[data-fx="high"] .board-row:nth-child(6) { animation-delay: 200ms; }
-html[data-fx="mid"] .roster-row:nth-child(7), html[data-fx="mid"] .board-row:nth-child(7),
-html[data-fx="high"] .roster-row:nth-child(7), html[data-fx="high"] .board-row:nth-child(7) { animation-delay: 240ms; }
-html[data-fx="mid"] .roster-row:nth-child(8), html[data-fx="mid"] .board-row:nth-child(8),
-html[data-fx="high"] .roster-row:nth-child(8), html[data-fx="high"] .board-row:nth-child(8) { animation-delay: 280ms; }
-html[data-fx="mid"] .roster-row:nth-child(n+9), html[data-fx="mid"] .board-row:nth-child(n+9),
-html[data-fx="high"] .roster-row:nth-child(n+9), html[data-fx="high"] .board-row:nth-child(n+9) { animation-delay: 320ms; }
-
-/* D1 live 双层呼吸：呼吸点外扩光圈 */
-html[data-fx="mid"] .status-chip.live,
-html[data-fx="high"] .status-chip.live { position: relative; }
-html[data-fx="mid"] .status-chip.live::after,
-html[data-fx="high"] .status-chip.live::after {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  border: 1px solid rgba(255, 93, 108, .45);
-  animation: liveRing 1.6s ease-out infinite;
-  pointer-events: none;
-}
-@keyframes liveRing {
-  0% { transform: scale(1); opacity: .7; }
-  100% { transform: scale(1.9); opacity: 0; }
-}
-
-/* —— 高档：玻璃质感 + 光带 + 进度环（backdrop-filter 全部静态层、永不动画它——移动 WebView 头号开销） —— */
-html[data-fx="high"] .topbar {
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-}
-html[data-fx="high"] .tabbar {
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
-}
-html[data-fx="high"] .sheet-backdrop,
-html[data-fx="high"] .onboard-backdrop {
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-}
-
-/* E1 精选卡（首张进行中 S 级卡）：静态柔和辉光（2026-11-13 方向修正——用户不要旋转扫描光带，
- * 改为「涟漪」系：数据变化/交互以扩散涟漪表达，见 fx-ripple / fxRing） */
-html[data-fx="high"] .match-card.is-featured {
-  border-color: rgba(var(--accent-rgb), .5);
-  box-shadow: 0 6px 26px rgba(var(--accent-rgb), .14), var(--shadow);
-}
-
-/* —— 涟漪系（2026-11-13 方向修正）：交互涟漪（触点扩散，全局层承载与应用重渲染解耦）+ 数据变化涟漪 —— */
-#fxRippleLayer {
-  position: fixed;
-  inset: 0;
-  z-index: 75; /* 浮层(60)之上、toast(80)之下：sheet 内按钮的涟漪可见 */
-  pointer-events: none;
-  overflow: hidden;
-}
-.fx-touch-ripple {
-  position: absolute;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(var(--accent-rgb), .3) 0%, rgba(var(--accent-rgb), .16) 55%, transparent 72%);
-  transform: translate(-50%, -50%) scale(0);
-  animation: fxTouch .55s var(--ease-out-soft) both;
-  pointer-events: none;
-}
-@keyframes fxTouch {
-  from { transform: translate(-50%, -50%) scale(0); opacity: .45; }
-  to { transform: translate(-50%, -50%) scale(1); opacity: 0; }
-}
-/* 数据变化涟漪：JS 对发生变化的元素加 .fx-ring，一圈扩散后自动移除 */
-.fx-ring { position: relative; }
-.fx-ring::after {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  border-radius: inherit;
-  border: 2px solid rgba(var(--accent-rgb), .55);
-  animation: fxRingOne .7s var(--ease-out-soft) both;
-  pointer-events: none;
-}
-@keyframes fxRingOne {
-  0% { transform: scale(.92); opacity: .85; }
-  100% { transform: scale(1.3); opacity: 0; }
-}
-
-/* —— 页面切换平滑（View Transitions，2026-11-13）：中/高档 switchView 走 startViewTransition，
- *    旧/新视图交叉淡入淡出 + 轻微位移；不支持/关低档回落瞬时切换。 —— */
-::view-transition-old(root) { animation: vtOut .2s var(--ease-out-soft) both; }
-::view-transition-new(root) { animation: vtIn .26s var(--ease-out-soft) both; }
-@keyframes vtOut {
-  to { opacity: 0; transform: translateY(-6px) scale(.995); }
-}
-@keyframes vtIn {
-  from { opacity: 0; transform: translateY(6px) scale(1.004); }
-  to { opacity: 1; transform: none; }
-}
-/* VT 快照期间抑制视图入场动画/stagger（快照会捕捉动画起点导致闪空），过渡结束由 JS 摘除 */
-html[data-vt="1"] .view,
-html[data-vt="1"] .roster-row,
-html[data-vt="1"] .board-row { animation: none !important; }
-
-/* E2 主队 Lv 进度环：--pct 由 renderTeamPage 按升级进度内联写入 */
-html[data-fx="high"] .team-lv-badge { position: relative; margin: 3px 5px; }
-html[data-fx="high"] .team-lv-badge::before {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: 999px;
-  background: conic-gradient(var(--accent) calc(var(--pct, 100) * 1%), rgba(154, 166, 186, .28) 0);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  pointer-events: none;
-}
-
-/* —— 低档：循环动画转静态（快速淡入与既有按压缩放保留） —— */
-html[data-fx="low"] .status-chip.live::before,
-html[data-fx="low"] .team-score.is-live,
-html[data-fx="off"] .status-chip.live::before,
-html[data-fx="off"] .team-score.is-live { animation: none; opacity: 1; }
-
-/* —— 关档 blanket + 系统减动效：canonical 降级（此处 !important 为单用途降级，业界标准写法） —— */
-html[data-fx="off"] *,
-html[data-fx="off"] *::before,
-html[data-fx="off"] *::after {
-  transition-duration: 1ms !important;
-  animation-duration: 1ms !important;
-  animation-iteration-count: 1 !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    transition-duration: 1ms !important;
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-  }
-}
-
-/* —— 动效选档浮层 + 设置提示 —— */
-.fx-choose-list { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 10px; }
-.fx-choose-row {
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 12px 14px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: var(--bg-soft);
-  color: var(--text); text-align: left;
-  transition: transform var(--dur-press) ease, border-color var(--dur-micro) ease, background var(--dur-micro) ease;
-}
-.fx-choose-row b { flex: 0 0 auto; font-size: 14px; }
-.fx-choose-row span { color: var(--text-dim); font-size: 12px; }
-.fx-choose-row.is-recommend { border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .08); }
-.fx-choose-row:active { transform: scale(.985); }
-.fx-choose-default {
-  width: 100%; padding: 12px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: transparent;
-  color: var(--text-dim); font-size: 13px; font-weight: 600;
-}
-.settings-hint { margin: 8px 2px 0; font-size: 11.5px; color: var(--text-faint); }

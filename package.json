@@ -8,7 +8,7 @@
     "predev": "node tools/pull-data.mjs --if-missing && node tools/trim-embedded.mjs",
     "dev": "hb-sdk dev",
     "dev:vite": "vite",
-    "prebuild": "node tools/pull-data.mjs --if-missing && node tools/trim-embedded.mjs && node tools/pack-team-logos.mjs && node tools/pack-player-avatars.mjs",
+    "prebuild": "node tools/pull-data.mjs --if-missing && node tools/trim-embedded.mjs && node tools/pack-team-logos.mjs",
     "build": "hb-sdk build",
     "data:pull": "node tools/pull-data.mjs --force && node tools/trim-embedded.mjs",
     "runtime:build": "node tools/build-runtime-data.mjs",

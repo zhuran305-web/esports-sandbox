@@ -7,7 +7,7 @@
  *   本地 0 胜 0 负（新用户/清除本地数据后）昵称也能刷上榜单旧条目。
  * 运行：node tools/test-cloud-nick.mjs（或 npm run test:cloud）
  */
-import { mkdirSync, rmSync, copyFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, copyFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
@@ -558,25 +558,6 @@ check("榜单超大数档位行为级（2026-11-12 夜间自查）：从 app.js 
   })());
 check("demo 注入工具防回归（2026-11-12 夜间自查）：pickem-demo 不得再发已删除的 bracket 类型（1.3.16 normalizeStage 拒收 → 阶段静默不渲染）",
   /type:\s*"bracket"/.test(rf(path.join(root, "tools", "pickem-demo.mjs"), "utf8")) === false);
-check("动效四档体系（2026-11-12「沙粒光影」）：boot 读取/设置页/浮层/CSS 四档块/reduced-motion/CLEAR_KEYS/计数滚动/精选卡 全接线", (function () {
-  var bootSrc = rf(path.join(root, "public", "theme-boot.js"), "utf8");
-  var htmlSrc = rf(path.join(root, "index.html"), "utf8");
-  var cssSrc = rf(path.join(root, "css", "style.css"), "utf8");
-  return /esports_sandbox_fx/.test(bootSrc) && /setAttribute\("data-fx", fx\)/.test(bootSrc) &&
-    /id="fxOptions"/.test(htmlSrc) && /data-fx-opt="mid"/.test(htmlSrc) &&
-    /id="fxChooseBackdrop"/.test(htmlSrc) && /data-fx-pick="high"/.test(htmlSrc) && /id="fxValue"/.test(htmlSrc) &&
-    /id="fxRippleLayer"/.test(htmlSrc) &&
-    /html\[data-fx="off"\] \*/.test(cssSrc) && /prefers-reduced-motion: reduce/.test(cssSrc) &&
-    /html\[data-fx="high"\] \.topbar/.test(cssSrc) && /fxTouch/.test(cssSrc) && /fxRingOne/.test(cssSrc) &&
-    /::view-transition-old\(root\)/.test(cssSrc) && /fx-touch-ripple/.test(cssSrc) &&
-    /html\[data-fx="low"\] \.status-chip\.live::before/.test(cssSrc) && /--ease-spring/.test(cssSrc) &&
-    /FX_KEY, FX_PROMPTED_KEY/.test(appSrc) && /function initFx/.test(appSrc) &&
-    /function applyFx/.test(appSrc) && /function animateNumber/.test(appSrc) &&
-    /is-featured/.test(appSrc) && /initFx\(\)/.test(appSrc) && /lastBankrollShown/.test(appSrc) &&
-    /function fxRing/.test(appSrc) && /function fxOn/.test(appSrc) &&
-    /document\.startViewTransition/.test(appSrc) &&
-    /class="match-card is-' \+ st \+ \(featured \? " is-featured" : ""\) \+ '" data-match="' \+ m\.id \+ '"/.test(appSrc);
-})());
 check("选择器计数与列表同口径（1.3.2）：homeListMatches 收敛 + 两处计数复用",
   /function homeListMatches/.test(appSrc) &&
   /var windowMatches = homeListMatches\(\);/.test(appSrc) &&
@@ -2054,14 +2035,15 @@ check("③ 数据链路（静态）：游标资产 + 对账步骤 + 两 workflow
     /incidents-cursor\.json/.test(wfSrc) && /incidents-cursor\.json/.test(bfSrc) &&
     /export function classifyIncidents/.test(rf(path.join(root, "tools", "fetch-incidents.mjs"), "utf8"));
 })());
-check("④ U+ rosters 字段扩展与选手卡链路（静态）", (function () {
+check("④ U+ rosters 字段扩展与选手卡链路（静态；2026-11-14 选手头像整体移除——负断言防回潮）", (function () {
   var dsSrc2 = rf(path.join(root, "js", "data-source.js"), "utf8");
   return /playerImgPath\(p\.image_url\)/.test(rostersTool) &&
     /id: p\.id > 0 \? Math\.floor\(p\.id\) : undefined/.test(rostersTool) &&
     /img: typeof p\.img === "string" && p\.img \? p\.img : undefined/.test(dsSrc2) &&
-    /PLAYER_BASE = "players\/"/.test(appSrc) && /function playerAvatarHTML/.test(appSrc) &&
+    !/PLAYER_BASE/.test(appSrc) && !/playerAvatarHTML/.test(appSrc) &&
+    !/pack-player-avatars/.test(JSON.stringify(pkgJson)) &&
+    !existsSync(path.join(root, "tools", "pack-player-avatars.mjs")) &&
     /function openPlayerSheet/.test(appSrc) && /id="playerSheet"/.test(htmlSrc) &&
-    /pack-player-avatars/.test(JSON.stringify(pkgJson)) &&
     /\.md-games/.test(cssSrc) && /\.player-sheet/.test(cssSrc) && /\.team-score\.is-live/.test(cssSrc);
 })());
 

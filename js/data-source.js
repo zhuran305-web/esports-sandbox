@@ -93,7 +93,7 @@ function normalizeRosters(raw) {
     players = players.filter(function (p) {
       return p && typeof p.n === "string" && p.n;
     }).slice(0, 5).map(function (p) {
-      // 2026-11-10 深度接入：id/img/fn/ln（选手卡 + 打包头像）；缺省 undefined（老缓存无这些字段）
+      // 2026-11-10 深度接入：id/img/fn/ln；缺省 undefined（老缓存无这些字段）。img 字段保留兼容——2026-11-14 客户端选手头像整体移除后不再渲染
       return { n: p.n, r: typeof p.r === "string" ? p.r : "", l: typeof p.l === "string" ? p.l : "",
         id: typeof p.id === "number" && p.id > 0 ? p.id : undefined,
         img: typeof p.img === "string" && p.img ? p.img : undefined,

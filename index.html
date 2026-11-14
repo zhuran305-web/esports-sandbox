@@ -157,60 +157,36 @@
           </button>
         </div>
 
-        <div class="stat-grid">
-          <div class="stat-cell">
-            <span class="stat-value" id="statSettled">0</span>
-            <span class="stat-label">已结算</span>
+        <div class="prof-stats">
+          <div class="prof-head">
+            <div class="prof-profit">
+              <span class="prof-label">累计总盈亏</span>
+              <b class="prof-value" id="statProfit">+0</b>
+            </div>
+            <div class="prof-head-mini">
+              <div class="prof-mini"><b id="statHit">--</b><span>命中率</span></div>
+              <div class="prof-mini"><b id="statSettled">0</b><span>累计场次</span></div>
+            </div>
           </div>
-          <div class="stat-cell">
-            <span class="stat-value" id="statHit">--</span>
-            <span class="stat-label">命中率</span>
+          <div class="prof-grid">
+            <div class="prof-cell"><b id="recWins">0</b><span>猜对</span></div>
+            <div class="prof-cell lose"><b id="recLosses">0</b><span>猜错</span></div>
+            <div class="prof-cell"><b id="statStreak">0</b><span>当前连对</span></div>
+            <div class="prof-cell"><b id="statBest">0</b><span>最高连对</span></div>
           </div>
-          <div class="stat-cell">
-            <span class="stat-value" id="statStreak">0</span>
-            <span class="stat-label">当前连对</span>
+          <div class="prof-detail">
+            <span>单场最多赢 <b id="recBestWin">--</b></span>
+            <span>最多亏 <b id="recWorstLoss">--</b></span>
+            <span id="pnlBreakdown">已结算投入 0 · 累计返还 0</span>
           </div>
-          <div class="stat-cell">
-            <span class="stat-value" id="statBest">0</span>
-            <span class="stat-label">最高连对</span>
-          </div>
+          <p class="prof-note" id="pnlNote">正数为累计盈利，负数为累计亏损 · 理性娱乐</p>
         </div>
 
         <div class="honor-line">
-          <span>封神 <b id="profileGods">0</b> 次</span>
-          <span>破产 <b id="profileBankrupts">0</b> 次</span>
+          <span class="honor-chip">🎖 <b id="profileTitle">未装备</b></span>
+          <span>封神 <b id="profileGods">0</b></span>
+          <span>破产 <b id="profileBankrupts">0</b></span>
           <span>本轮 <b id="profileEpoch">+0</b> 沙粒</span>
-        </div>
-        <div class="honor-line honor-line-title">
-          <span>称号 <b id="profileTitle">未装备</b></span>
-        </div>
-
-        <div class="pnl-card" id="pnlCard">
-          <div class="pnl-head">
-            <span>总盈亏</span>
-            <span class="pnl-breakdown" id="pnlBreakdown">已结算投入 0 · 累计返还 0</span>
-          </div>
-          <strong class="pnl-value" id="statProfit">+0</strong>
-          <p class="pnl-note" id="pnlNote">正数为累计盈利，负数为累计亏损 · 理性娱乐</p>
-        </div>
-
-        <div class="record-grid">
-          <div class="record-cell win">
-            <span class="record-value" id="recWins">0</span>
-            <span class="record-label">猜对</span>
-          </div>
-          <div class="record-cell lose">
-            <span class="record-value" id="recLosses">0</span>
-            <span class="record-label">猜错</span>
-          </div>
-          <div class="record-cell">
-            <span class="record-value" id="recBestWin">--</span>
-            <span class="record-label">单场最多赢</span>
-          </div>
-          <div class="record-cell">
-            <span class="record-value" id="recWorstLoss">--</span>
-            <span class="record-label">单场最多亏</span>
-          </div>
         </div>
 
         <div class="quick-row">

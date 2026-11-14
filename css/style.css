@@ -903,38 +903,49 @@ input { font-family: inherit; }
 .stat-value { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .stat-label { font-size: 10.5px; color: var(--text-faint); }
 
-.pnl-card {
-  margin-top: 12px;
-  padding: 15px 16px;
-  border-radius: 14px;
-  border: 1px solid var(--border-soft);
+/* —— 我的页战绩卡（2026-11-14 紧凑整理）：总盈亏 hero + 4 格 + 明细行，合并原 stat-grid/pnl-card/record-grid；
+ *    stat-grid/stat-cell 保留供战队资料页跟队档案复用 —— */
+.prof-stats {
+  margin-top: 14px;
+  padding: 16px 16px 12px;
+  border-radius: 16px;
   background: var(--surface);
+  border: 1px solid var(--border-soft);
 }
-.pnl-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 12.5px;
-  color: var(--text-dim);
-}
-.pnl-breakdown {
-  font-size: 11px;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.pnl-value {
-  display: block;
-  margin-top: 8px;
+.prof-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
+.prof-label { display: block; font-size: 12px; color: var(--text-faint); margin-bottom: 2px; }
+.prof-value {
   font-size: 30px;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: -.5px;
   font-variant-numeric: tabular-nums;
   color: var(--win);
 }
-.pnl-value.negative { color: var(--lose); }
-.pnl-note { margin: 6px 0 0; font-size: 11px; color: var(--text-faint); }
+.prof-value.negative { color: var(--lose); }
+.prof-head-mini { display: flex; gap: 16px; }
+.prof-mini { text-align: right; }
+.prof-mini b { display: block; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.prof-mini span { font-size: 10.5px; color: var(--text-faint); }
+.prof-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+.prof-cell {
+  text-align: center;
+  padding: 10px 0 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .04);
+}
+.prof-cell b { display: block; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.prof-cell span { font-size: 10px; color: var(--text-faint); }
+.prof-cell.lose b { color: var(--lose); }
+.prof-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.prof-detail b { color: var(--text); font-weight: 750; font-variant-numeric: tabular-nums; }
+.prof-note { margin: 8px 0 0; font-size: 10.5px; color: var(--text-faint); }
 
 .section-head {
   display: flex;
@@ -1017,32 +1028,7 @@ input { font-family: inherit; }
 }
 
 /* ---------- 战绩记录 ---------- */
-.record-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.record-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 12px 4px;
-  border-radius: 12px;
-  border: 1px solid var(--border-soft);
-  background: var(--surface);
-}
-.record-value {
-  font-size: 15px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.record-cell.win .record-value { color: var(--win); }
-.record-cell.lose .record-value { color: var(--lose); }
-.record-label { font-size: 10px; color: var(--text-faint); white-space: nowrap; }
+/* （.record-grid/.record-cell 已删 2026-11-14：并入我的页战绩卡 .prof-grid，见上） */
 
 /* ---------- 战队图鉴（押过的队伍 + 跟队连击） ---------- */
 .codex-card {
@@ -1265,8 +1251,13 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
 .codex-fav { margin-right: 3px; }
 
 /* ---------- 成就殿堂 + 称号（1.2.10；1.2.15 称号改昵称下方小字） ---------- */
-.honor-line-title { margin-top: 6px; }
-.honor-line-title b { color: var(--accent); }
+.honor-line .honor-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb, 255, 138, 61), .12);
+  border: 1px solid rgba(var(--accent-rgb, 255, 138, 61), .3);
+}
+.honor-line .honor-chip b { color: var(--accent); }
 /* 榜单/魔神殿中列：昵称一行 + 称号小字一行（同行 chip 会被 nowrap+ellipsis 截断） */
 .board-nick-wrap {
   min-width: 0;

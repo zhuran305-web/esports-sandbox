@@ -1183,7 +1183,7 @@ html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .
   background: var(--surface);
   padding: 4px 14px;
 }
-/* 阵容行（2026-11-10 深度接入改版；2026-11-14 头像移除）：主信息列 + 箭头，整行可点开选手卡 */
+/* 阵容行（2026-11-10 深度接入改版；2026-11-14 照片移除、首字徽标恢复）：徽标 + 主信息列 + 箭头，整行可点开选手卡 */
 .roster-row {
   display: flex;
   align-items: center;
@@ -1199,6 +1199,7 @@ html[data-theme="light"] .codex-top-cell { background: rgba(var(--accent-rgb), .
 .roster-meta .roster-nat { flex: 0 0 auto; }
 .player-real-inline { font-size: 10px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--text-faint); }
+.avatar.player-avatar { width: 40px; height: 40px; flex: 0 0 auto; font-size: 15px; } /* 首字徽标（非照片；无 avatar-img 子元素） */
 .roster-row:last-child { border-bottom: none; }
 .roster-nat {
   flex: 0 0 auto;
@@ -1988,7 +1989,7 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
 .team-score.is-live { color: var(--accent); animation: live-pulse 2s ease-in-out infinite; }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
-/* 选手卡抽屉（2026-11-10；2026-11-14 头像移除）：playerSheet 复用 .sheet 结构；卡片 = 姓名列 + 徽章 */
+/* 选手卡抽屉（2026-11-10；2026-11-14 照片移除、首字徽标恢复）：playerSheet 复用 .sheet 结构；卡片 = 徽标 + 姓名列 + 徽章 */
 .player-sheet .player-card {
   display: flex;
   align-items: center;
@@ -1996,6 +1997,7 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   padding: 4px 2px 10px;
   border-bottom: 1px solid var(--border-soft);
 }
+.player-sheet .player-card .player-avatar { width: 56px; height: 56px; font-size: 20px; }
 .player-card-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .player-name { font-size: 16px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-real { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

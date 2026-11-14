@@ -2035,12 +2035,13 @@ check("③ 数据链路（静态）：游标资产 + 对账步骤 + 两 workflow
     /incidents-cursor\.json/.test(wfSrc) && /incidents-cursor\.json/.test(bfSrc) &&
     /export function classifyIncidents/.test(rf(path.join(root, "tools", "fetch-incidents.mjs"), "utf8"));
 })());
-check("④ U+ rosters 字段扩展与选手卡链路（静态；2026-11-14 选手头像整体移除——负断言防回潮）", (function () {
+check("④ U+ rosters 字段扩展与选手卡链路（静态；2026-11-14 选手照片移除、首字徽标恢复——负断言防照片回潮）", (function () {
   var dsSrc2 = rf(path.join(root, "js", "data-source.js"), "utf8");
   return /playerImgPath\(p\.image_url\)/.test(rostersTool) &&
     /id: p\.id > 0 \? Math\.floor\(p\.id\) : undefined/.test(rostersTool) &&
     /img: typeof p\.img === "string" && p\.img \? p\.img : undefined/.test(dsSrc2) &&
-    !/PLAYER_BASE/.test(appSrc) && !/playerAvatarHTML/.test(appSrc) &&
+    !/PLAYER_BASE/.test(appSrc) && /function playerAvatarHTML/.test(appSrc) &&
+    /playerAvatarHTML\(p\)/.test(appSrc) &&
     !/pack-player-avatars/.test(JSON.stringify(pkgJson)) &&
     !existsSync(path.join(root, "tools", "pack-player-avatars.mjs")) &&
     /function openPlayerSheet/.test(appSrc) && /id="playerSheet"/.test(htmlSrc) &&

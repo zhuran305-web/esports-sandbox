@@ -55,7 +55,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     "esports_sandbox_duel_locks",
     "esports_sandbox_duel_sent"
   ];
-  var APP_VERSION = "1.3.17";
+  var APP_VERSION = "1.3.18";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -3294,7 +3294,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
     var html = "";
     // 战队选手阵容（1.3.2）：PandaScore 花名册（键 game:name，规避同名不同游戏队）；数组形状，无数据整块隐藏。
-    // 2026-11-14 用户拍板：选手头像整体移除（不留首字回退）——行只留 姓名/国籍/位置/真实姓名，点击仍开选手卡
+    // 2026-11-14 二次修订：选手照片移除（用户拍板），但纯文本行被审核判「展示要求」——
+    // 恢复首字圆形徽标（非照片，avatarStyle 中性色块）保证观感完整；点击仍开选手卡
     var rosterPlayers = ROSTERS[currentTeamKey];
     if (Array.isArray(rosterPlayers) && rosterPlayers.length) {
       html += '<div class="section-head"><h2>阵容</h2><span class="section-sub">点选手看详情 · 公开赛果平台数据</span></div>' +
@@ -3302,6 +3303,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           var role = p.r ? (ROLE_LABELS[p.r.toLowerCase()] || p.r) : "";
           var realName = [p.fn, p.ln].filter(Boolean).join(" ");
           return '<div class="roster-row" data-player="' + pi + '" role="button">' +
+            playerAvatarHTML(p) +
             '<span class="roster-main">' +
               '<b class="roster-name">' + esc(p.n) + "</b>" +
               '<span class="roster-meta">' +
@@ -3368,7 +3370,14 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     $("#teamBody").innerHTML = html;
   }
 
-  /* ---------- 选手卡（2026-11-10 深度接入；2026-11-14 移除选手头像）：阵容行点击 → 底部抽屉 ---------- */
+  /* ---------- 选手卡（2026-11-10 深度接入；2026-11-14 照片移除、首字徽标恢复）：阵容行点击 → 底部抽屉 ---------- */
+
+  function playerAvatarHTML(p) {
+    // 首字徽标（2026-11-14 恢复，非照片）：纯文本行被审核判「展示要求」——中性色圆形色块保证观感完整；
+    // 照片打包管线已移除（照片基址常量与工具均已删除），roster.img 字段保留不消费。
+    var initial = esc((p && p.n || "?").slice(0, 1));
+    return '<span class="avatar player-avatar" style="' + avatarStyle(p ? p.n : "?") + '">' + initial + "</span>";
+  }
 
   var playerSheetCtx = null; // {teamKey, idx}
 
@@ -3412,6 +3421,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
     $("#playerSheetBody").innerHTML =
       '<div class="player-card">' +
+        playerAvatarHTML(p) +
         '<div class="player-card-main"><b class="player-name">' + esc(p.n) + "</b>" +
           (realName ? '<span class="player-real">' + esc(realName) + "</span>" : "") +
           '<span class="player-tags">' +

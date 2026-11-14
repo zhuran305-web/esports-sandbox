@@ -1721,10 +1721,17 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var achvCount = 0;
     Object.keys(state.achv || {}).forEach(function (k) { if (state.achv[k]) achvCount++; });
     $("#achvEntrySub").textContent = "已解锁 " + achvCount + " / " + ACHV_DEFS.length;
-    var ds = duelStats();
+    var duelStatsSub = duelStats();
     $("#duelEntrySub").textContent = DUELS.length
-      ? ds.won + " 胜 " + ds.lost + " 负" + (ds.drawn ? " " + ds.drawn + " 平" : "")
+      ? duelStatsSub.won + " 胜 " + duelStatsSub.lost + " 负" + (duelStatsSub.drawn ? " " + duelStatsSub.drawn + " 平" : "")
       : "还没有对决";
+    // 作业记录摘要（2026-11-14）：已获硬币总数 + 参与竞猜的赛事项数
+    var pkCoins = state.pickemCoins || {};
+    var coinTotal = (pkCoins.c || 0) + (pkCoins.s || 0) + (pkCoins.g || 0) + (pkCoins.d || 0);
+    var pickCount = Object.keys(state.pickem || {}).length;
+    $("#pickemEntrySub").textContent = coinTotal > 0
+      ? "硬币 " + coinTotal + " · " + pickCount + " 项竞猜"
+      : "还没有作业";
     var epoch = 0;
     var since = state.lastCeremonyAt || 0;
     for (var k = 0; k < settled.length; k++) {
@@ -5124,6 +5131,10 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       });
     });
     $("#duelEntry").addEventListener("click", function () { switchView("duels"); });
+    $("#pickemEntry").addEventListener("click", function () {
+      pickemScoped = false; // 作业记录=完整赛事列表（主页「BLAST 作业」才是公测 scoped 直入口）
+      switchView("pickem");
+    });
     $("#versusShareBtn").addEventListener("click", function () {
       var s = recordSummary();
       duelNick().then(function (nick) {

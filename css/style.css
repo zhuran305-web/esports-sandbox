@@ -1293,7 +1293,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
 /* ---------- 我的页快捷三联入口（1.2.12：图鉴/对决/晒战绩收进一行） ---------- */
 .quick-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 7px;
   margin-top: 10px;
 }
@@ -1303,7 +1303,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   align-items: center;
   gap: 3px;
   min-width: 0;
-  padding: 10px 6px 9px;
+  padding: 10px 4px 9px;
   border-radius: var(--radius);
   border: 1px solid var(--border-soft);
   background: var(--surface);
@@ -1311,8 +1311,8 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   font: inherit;
 }
 .quick-btn:active { background: var(--surface-2); border-color: var(--border); }
-.quick-icon { font-size: 22px; line-height: 1.2; }
-.quick-btn b { font-size: 14px; font-weight: 800; white-space: nowrap; }
+.quick-icon { font-size: 20px; line-height: 1.2; }
+.quick-btn b { font-size: 13px; font-weight: 800; white-space: nowrap; }
 .quick-sub {
   max-width: 100%;
   font-size: 11px;

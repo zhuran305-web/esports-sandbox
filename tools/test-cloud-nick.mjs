@@ -2056,6 +2056,19 @@ check("截图分享 DOM 卡（2026-11-14）：screenshotElement 包装+导入+#s
     /saveToAlbum: true/.test(appSrc) && /watermarkTheme: "dark"/.test(appSrc) &&
     /scd-watermark-gap/.test(cssSrc);
 })());
+check("我的页快捷四联（2026-11-14）：作业记录入口在图鉴/对决与晒战绩之间 + pickemScoped=false 完整列表 + 摘要填充", (function () {
+  var quickIdx = {
+    codex: htmlSrc.indexOf('id="codexEntry"'),
+    pickem: htmlSrc.indexOf('id="pickemEntry"'),
+    versus: htmlSrc.indexOf('id="versusShareBtn"')
+  };
+  return /repeat\(4, 1fr\)/.test(cssSrc) &&
+    /id="pickemEntry"/.test(htmlSrc) && /id="pickemEntrySub"/.test(htmlSrc) &&
+    quickIdx.codex > -1 && quickIdx.pickem > quickIdx.codex && quickIdx.versus > quickIdx.pickem &&
+    /pickemEntry"\)\.addEventListener/.test(appSrc) &&
+    /pickemScoped = false; \/\/ 作业记录=完整赛事列表/.test(appSrc) &&
+    /pickemEntrySub"\)\.textContent = coinTotal > 0/.test(appSrc);
+})());
 
 rmSync(tmp, { recursive: true, force: true });
 

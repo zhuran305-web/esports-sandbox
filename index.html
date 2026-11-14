@@ -866,6 +866,16 @@
     </div>
   </div>
 
+  <!-- 截图分享（2026-11-14）：DOM 战绩卡 + share.screenshotElement——普通矩形截图（卡 375×~560 < 窗口，无长图）；
+       底部 57px 为 Runtime 自动水印预留区 -->
+  <div class="sheet-backdrop" id="shotStage" hidden>
+    <div class="shot-stage-inner">
+      <div id="shareCardDom" class="share-card-dom"></div>
+      <p class="shot-hint">已唤起截图分享 · 在宿主面板中保存到相册或转发社区</p>
+      <button class="ghost-btn" id="shotClose" type="button">关闭</button>
+    </div>
+  </div>
+
   <!-- 转生庆祝页（封神/破产，全屏） -->
   <div class="cer-backdrop" id="templeCeremony" hidden>
     <div class="cer-panel" id="cerPanel" data-type="god" role="dialog" aria-modal="true" aria-labelledby="cerTitle">
@@ -936,6 +946,7 @@
       <h2 id="shareTitle" class="share-title">分享竞猜战绩</h2>
       <canvas id="shareCanvas" width="750" height="1000"></canvas>
       <div class="share-actions">
+        <button class="primary-btn" id="shareShot" type="button">截图分享</button>
         <button class="ghost-btn" id="shareCancel" type="button">关闭</button>
         <button class="ghost-btn" id="shareForward" type="button">转发</button>
         <button class="ghost-btn" id="shareCopyLink" type="button">复制链接</button>

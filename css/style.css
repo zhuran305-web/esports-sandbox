@@ -3611,3 +3611,103 @@ html[data-theme="light"] .cer-quote input {
   white-space: nowrap;
 }
 .pk-evtag.is-done { color: var(--text-faint); }
+
+/* —— 截图分享 DOM 战绩卡（2026-11-14）：share.screenshotElement 普通矩形截图（卡 375×~560 < 窗口 956，
+ *    刻意不做长图——OHOS 不支持长图）；底部 57px 为 Runtime 自动水印预留；主队主题色经 --scd-* 内联注入 —— */
+#shotStage { z-index: 88; }
+.shot-stage-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 18px 14px;
+  overflow-y: auto;
+}
+.shot-hint { font-size: 12px; color: var(--text-dim); text-align: center; }
+.share-card-dom {
+  width: min(375px, 100%);
+  border-radius: 22px;
+  overflow: hidden;
+  padding: 20px 20px 0;
+  color: #e9eef7;
+  background:
+    radial-gradient(420px 240px at 88% -50px, var(--scd-glow, rgba(53, 211, 154, .28)), transparent 68%),
+    radial-gradient(320px 220px at -40px 108%, rgba(var(--accent-rgb, 255, 138, 61), .13), transparent 72%),
+    linear-gradient(168deg, #17202f 0%, #0a0d13 100%);
+  border: 1px solid var(--scd-border, rgba(255, 255, 255, .1));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+.share-card-dom .avatar,
+.share-card-dom .person-avatar { width: 40px; height: 40px; flex: 0 0 auto; font-size: 16px; }
+.scd-brand { display: flex; justify-content: space-between; align-items: baseline; }
+.scd-brand-name { font-size: 17px; font-weight: 800; color: var(--scd-accent, #e9eef7); letter-spacing: .5px; }
+.scd-date { font-size: 12px; color: #6c788d; }
+.scd-hero { text-align: center; padding: 16px 0 14px; }
+.scd-verdict {
+  font-size: 44px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 2px;
+  background: linear-gradient(92deg, var(--scd-v1, #35d39a), var(--scd-v2, #7ef0c2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.scd-sub { margin-top: 6px; font-size: 13px; color: #6c788d; }
+.scd-match {
+  border: 1px solid var(--scd-border, rgba(255, 255, 255, .1));
+  background: rgba(255, 255, 255, .04);
+  border-radius: 18px;
+  padding: 12px 16px;
+}
+.scd-tour {
+  font-size: 12px;
+  color: #6c788d;
+  text-align: center;
+  padding-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scd-team-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.scd-team-row .scd-team-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #9aa6ba;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scd-team-row.is-win .scd-team-name { color: #e9eef7; }
+.scd-score { font-size: 22px; font-weight: 900; color: #6c788d; font-variant-numeric: tabular-nums; }
+.scd-team-row.is-win .scd-score { color: #e9eef7; }
+.scd-divider { height: 1px; background: rgba(255, 255, 255, .06); margin: 2px 0; }
+.scd-pick { display: flex; align-items: center; gap: 10px; padding: 14px 2px 10px; }
+.scd-pick-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.scd-pick-label { font-size: 11px; color: #6c788d; }
+.scd-pick-team {
+  font-size: 15px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scd-pick-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.scd-pick-stake { font-size: 11px; color: #6c788d; }
+.scd-profit { font-size: 15px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.scd-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, .04);
+  border-radius: 14px;
+  padding: 12px 16px;
+}
+.scd-total span { font-size: 12px; color: #6c788d; }
+.scd-total b { font-size: 17px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.scd-meta { text-align: center; font-size: 11px; color: #6c788d; padding: 10px 6px 0; }
+.scd-watermark-gap { height: 57px; } /* 官方水印预留区：截图期间 Runtime 自动叠加品牌胶囊，不放业务内容 */

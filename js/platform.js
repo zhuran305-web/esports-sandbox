@@ -427,10 +427,29 @@ export async function copyShareLink(extra) {
   }
 }
 
+/**
+ * 按 DOM 元素截图并唤起客户端分享流程（SDK 0.9.6+「DOM 截图」；2026-11-14 接入）。
+ * options: { element, delay?, saveToAlbum?, watermarkTheme?, post? }——element 须为已挂载可见元素；
+ * 高度 ≤ 窗口走普通矩形截图（OHOS 不支持长图，业务侧不做长图）。返回 null = 已唤起（结果不透明，
+ * 不能据返回值判断分享成败）；字符串 = 错误码（UNSUPPORTED / METHOD_FORBIDDEN / REQUEST_UNSUPPORTED /
+ * INVALID_PARAMS / PERMISSION_* …）。Browser Dev Host 只展示参数确认，必须真机验收。
+ */
+export async function screenshotElement(options) {
+  if (!sdk || !sdk.share || typeof sdk.share.screenshotElement !== "function") return "UNSUPPORTED";
+  try {
+    await sdk.share.screenshotElement(options);
+    return null;
+  } catch (e) {
+    return (e && e.code) || "FAILED";
+  }
+}
+
 /* 宿主截图包装 shareScreenshot 已删（2026-11-11 清理）：1.1.30 实测宿主流程给不出相册入口
  * 且返回值不透明，包装从未被调用——保留只会误导。保存图片定稿=「全屏预览 + 系统截屏」
  * （app.js #cardFullscreen）；未来宿主开放相册入口时从 git 历史恢复本函数（SDK ≥0.9.1
- * 默认水印、底部预留 57 逻辑像素、返回 null=已唤起/字符串=错误码 的语义不变）。 */
+ * 默认水印、底部预留 57 逻辑像素、返回 null=已唤起/字符串=错误码 的语义不变）。
+ * 【2026-11-14】宿主 share.screenshotElement 已把 saveToAlbum 写成一等参数——截图分享走上方
+ * 新包装（DOM 卡片+saveToAlbum+话题预置），canvas 链路降级保留。 */
 
 /** 启动链接携带的 extra（同步、免权限、不依赖握手）；无有效数据返回 undefined。 */
 export function getLaunchExtra() {

@@ -3,7 +3,7 @@ import { Cloud, Sync } from "./cloud.js";
 import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary, teamHistory, pickedTeamOf, mainTeamLevel, MAIN_LEVEL_THRESHOLDS } from "./collection.js";
 import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
-import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
+import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, screenshotElement, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
@@ -237,7 +237,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
 
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
-    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen",
+    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen", "#shotStage",
     "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#pickemGamePopover", "#pickemEvPopover", "#duelDialogBackdrop", "#duelHelpBackdrop",
     "#pickemSheet", "#playerSheet"
   ];
@@ -4268,6 +4268,80 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     return (g && g.label) || "电竞赛事";
   }
 
+  /* ---------- 截图分享（2026-11-14）：DOM 战绩卡 + share.screenshotElement ----------
+   * 普通矩形截图（卡 375×~560 逻辑像素 < 窗口 956——刻意不做长图，OHOS 不支持长图）；
+   * saveToAlbum 请求相册入口（宿主决定是否提供，真机验证点）；水印 dark 由 Runtime 自动叠加；
+   * 失败降级：PC/旧 Host 关闭该能力 → 提示走既有「保存图片」（canvas 链路保留）。 */
+  function renderShareCardDom(pred) {
+    var m = matchById(pred.matchId);
+    if (!m) return;
+    var won = !!pred.won;
+    var theme = shareThemeColors(); // 主队队色（可空）：品牌字/对阵卡描边/光斑跟随
+    var stats = recordStats();
+    var profit = settledInOrder().reduce(function (s, p) { return s + (p.profit || 0); }, 0);
+    var pickTeam = pred.pick === "A" ? m.teamA : m.teamB;
+    var scoreA = String(m.result.score).split(":")[0];
+    var scoreB = String(m.result.score).split(":")[1];
+    var metaLine = "累计猜对 " + stats.wins + " 场 · 猜错 " + stats.losses + " 场";
+    var codex = collectionSummary(state.collection);
+    if (codex.teams) metaLine += " · 押过 " + codex.teams + " 队 · 最长跟队 " + codex.bestStreak + " 连";
+    if (state.gods > 0 || state.bankrupts > 0) metaLine += " · 封神 " + (state.gods || 0) + " · 破产 " + (state.bankrupts || 0);
+    var teamRow = function (team, score, win) {
+      return '<div class="scd-team-row' + (win ? " is-win" : "") + '">' +
+        avatarHTML(team) +
+        '<span class="scd-team-name">' + esc(team.name) + "</span>" +
+        '<b class="scd-score">' + esc(score) + "</b></div>";
+    };
+    var card = $("#shareCardDom");
+    card.innerHTML =
+      '<div class="scd-brand"><span class="scd-brand-name">赛事沙盘</span><span class="scd-date">' + esc(fmtTime(m.startAt)) + "</span></div>" +
+      '<div class="scd-hero"><div class="scd-verdict">' + (won ? "预测正确" : "预测失败") + "</div>" +
+        '<div class="scd-sub">' + (won ? "当前连对 ×" + currentStreak() : "连对中断") + "</div></div>" +
+      '<div class="scd-match"><div class="scd-tour">' + esc(m.tournament + " · " + m.stage) + "</div>" +
+        teamRow(m.teamA, scoreA, m.result.winner === "A") +
+        '<div class="scd-divider"></div>' +
+        teamRow(m.teamB, scoreB, m.result.winner === "B") +
+        "</div>" +
+      '<div class="scd-pick">' + personAvatar(myNickCache || "我", myAvatarCache) +
+        '<div class="scd-pick-main"><span class="scd-pick-label">我的预测</span>' +
+        '<b class="scd-pick-team">' + esc(pickTeam.name) + (won ? " ✓" : " ✗") + "</b></div>" +
+        '<div class="scd-pick-right"><span class="scd-pick-stake">投入 ' + fmtNum(pred.stake) + " 沙粒</span>" +
+        '<b class="scd-profit" style="color:' + (pred.profit >= 0 ? "#35d39a" : "#ff5d6c") + '">' + (pred.profit > 0 ? "+" : "") + fmtNum(pred.profit) + " 沙粒</b></div>" +
+        "</div>" +
+      '<div class="scd-total"><span>累计总盈亏</span><b style="color:' + (profit >= 0 ? "#35d39a" : "#ff5d6c") + '">' + (profit > 0 ? "+" : "") + fmtNum(profit) + " 沙粒</b></div>" +
+      '<div class="scd-meta">' + esc(metaLine) + "</div>" +
+      '<div class="scd-watermark-gap"></div>';
+    // 主题注入：主队队色（品牌字/对阵卡描边/顶部光斑）+ 胜负渐变字
+    card.style.setProperty("--scd-accent", theme ? theme.accent : "#e9eef7");
+    card.style.setProperty("--scd-border", theme ? "rgba(" + theme.rgb + ", .4)" : "rgba(255,255,255,.1)");
+    card.style.setProperty("--scd-glow", won ? "rgba(53,211,154,.3)" : "rgba(255,93,108,.28)");
+    card.style.setProperty("--scd-v1", won ? "#35d39a" : "#ff5d6c");
+    card.style.setProperty("--scd-v2", won ? "#7ef0c2" : "#ff9aa5");
+  }
+
+  async function openShotShare(pred) {
+    var m = matchById(pred.matchId);
+    if (!m) return;
+    renderShareCardDom(pred);
+    $("#shotStage").hidden = false;
+    // 等两帧确保卡片完成布局（screenshotElement 读取 getBoundingClientRect）
+    await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+    var err = await screenshotElement({
+      element: $("#shareCardDom"),
+      delay: 250,
+      saveToAlbum: true,
+      watermarkTheme: "dark",
+      post: { topics: [shareTopicFor(m)] }
+    });
+    if (!err) { toast("已唤起截图分享 · 在宿主面板中保存或转发"); return; }
+    $("#shotStage").hidden = true;
+    if (err === "METHOD_FORBIDDEN" || err === "REQUEST_UNSUPPORTED" || err === "UNSUPPORTED" || err === "METHOD_NOT_FOUND") {
+      toast("当前客户端不支持截图分享 · 可用「保存图片」");
+    } else {
+      toast("截图分享未完成 · 可用「保存图片」");
+    }
+  }
+
   function fallbackCopy(text) {
     var ta = document.createElement("textarea");
     ta.value = text;
@@ -5161,6 +5235,17 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     });
     $("#cardFullscreen").addEventListener("click", function (e) {
       if (e.target === $("#cardFullscreen")) $("#cardFullscreen").hidden = true;
+    });
+
+    $("#shareShot").addEventListener("click", function () {
+      var pred = sharePred;
+      if (pred) openShotShare(pred);
+    });
+    $("#shotClose").addEventListener("click", function () {
+      $("#shotStage").hidden = true;
+    });
+    $("#shotStage").addEventListener("click", function (e) {
+      if (e.target === $("#shotStage")) $("#shotStage").hidden = true;
     });
 
     $("#shareCopyText").addEventListener("click", function () {

@@ -2047,6 +2047,15 @@ check("④ U+ rosters 字段扩展与选手卡链路（静态；2026-11-14 选�
     /function openPlayerSheet/.test(appSrc) && /id="playerSheet"/.test(htmlSrc) &&
     /\.md-games/.test(cssSrc) && /\.player-sheet/.test(cssSrc) && /\.team-score\.is-live/.test(cssSrc);
 })());
+check("截图分享 DOM 卡（2026-11-14）：screenshotElement 包装+导入+#shotStage/#shareCardDom/按钮接线+saveToAlbum/watermark dark（无长图）+水印预留", (function () {
+  var platSrc = rf(path.join(root, "js", "platform.js"), "utf8");
+  return /export async function screenshotElement/.test(platSrc) &&
+    /screenshotElement/.test(appSrc) &&
+    /id="shotStage"/.test(htmlSrc) && /id="shareCardDom"/.test(htmlSrc) && /id="shareShot"/.test(htmlSrc) &&
+    /function renderShareCardDom/.test(appSrc) && /function openShotShare/.test(appSrc) &&
+    /saveToAlbum: true/.test(appSrc) && /watermarkTheme: "dark"/.test(appSrc) &&
+    /scd-watermark-gap/.test(cssSrc);
+})());
 
 rmSync(tmp, { recursive: true, force: true });
 

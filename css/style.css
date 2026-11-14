@@ -766,7 +766,7 @@ input { font-family: inherit; }
 .balance-card {
   position: relative;
   overflow: hidden;
-  padding: 18px;
+  padding: 14px 16px;
   border-radius: 20px;
   border: 1px solid rgba(var(--accent-rgb), .25);
   background:
@@ -796,23 +796,23 @@ input { font-family: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .balance-main-left { flex: 1; min-width: 0; }
 .balance-big {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 30px;
+  font-size: 33px;
   font-weight: 800;
   letter-spacing: -0.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   line-height: 1;
 }
-.balance-big small { font-size: 14px; font-weight: 600; color: #d9b78f; letter-spacing: 0; }
+.balance-big small { font-size: 15px; font-weight: 600; color: #d9b78f; letter-spacing: 0; }
 
-.balance-sub { margin-top: 8px; font-size: 11.5px; color: #b79a78; }
+.balance-sub { margin-top: 6px; font-size: 12.5px; color: #b79a78; }
 .balance-team {
   flex: 0 0 auto;
   display: flex;
@@ -906,46 +906,46 @@ input { font-family: inherit; }
 /* —— 我的页战绩卡（2026-11-14 紧凑整理）：总盈亏 hero + 4 格 + 明细行，合并原 stat-grid/pnl-card/record-grid；
  *    stat-grid/stat-cell 保留供战队资料页跟队档案复用 —— */
 .prof-stats {
-  margin-top: 14px;
-  padding: 16px 16px 12px;
+  margin-top: 10px;
+  padding: 13px 16px 10px;
   border-radius: 16px;
   background: var(--surface);
   border: 1px solid var(--border-soft);
 }
 .prof-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
-.prof-label { display: block; font-size: 12px; color: var(--text-faint); margin-bottom: 2px; }
+.prof-label { display: block; font-size: 13px; color: var(--text-faint); margin-bottom: 2px; }
 .prof-value {
-  font-size: 30px;
+  font-size: 33px;
   font-weight: 900;
   letter-spacing: -.5px;
   font-variant-numeric: tabular-nums;
   color: var(--win);
 }
 .prof-value.negative { color: var(--lose); }
-.prof-head-mini { display: flex; gap: 16px; }
+.prof-head-mini { display: flex; gap: 12px; }
 .prof-mini { text-align: right; }
-.prof-mini b { display: block; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.prof-mini span { font-size: 10.5px; color: var(--text-faint); }
-.prof-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+.prof-mini b { display: block; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.prof-mini span { font-size: 11.5px; color: var(--text-faint); }
+.prof-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 10px; }
 .prof-cell {
   text-align: center;
-  padding: 10px 0 8px;
+  padding: 8px 0 7px;
   border-radius: 12px;
   background: rgba(255, 255, 255, .04);
 }
-.prof-cell b { display: block; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.prof-cell span { font-size: 10px; color: var(--text-faint); }
+.prof-cell b { display: block; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.prof-cell span { font-size: 11px; color: var(--text-faint); }
 .prof-cell.lose b { color: var(--lose); }
 .prof-detail {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
-  margin-top: 10px;
-  font-size: 11.5px;
+  margin-top: 8px;
+  font-size: 12.5px;
   color: var(--text-dim);
 }
 .prof-detail b { color: var(--text); font-weight: 750; font-variant-numeric: tabular-nums; }
-.prof-note { margin: 8px 0 0; font-size: 10.5px; color: var(--text-faint); }
+.prof-note { margin: 6px 0 0; font-size: 11.5px; color: var(--text-faint); }
 
 .section-head {
   display: flex;
@@ -1294,16 +1294,16 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
 .quick-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 12px;
+  gap: 7px;
+  margin-top: 10px;
 }
 .quick-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
-  padding: 12px 6px 10px;
+  padding: 10px 6px 9px;
   border-radius: var(--radius);
   border: 1px solid var(--border-soft);
   background: var(--surface);
@@ -1311,11 +1311,11 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   font: inherit;
 }
 .quick-btn:active { background: var(--surface-2); border-color: var(--border); }
-.quick-icon { font-size: 20px; line-height: 1.2; }
-.quick-btn b { font-size: 13px; font-weight: 800; white-space: nowrap; }
+.quick-icon { font-size: 22px; line-height: 1.2; }
+.quick-btn b { font-size: 14px; font-weight: 800; white-space: nowrap; }
 .quick-sub {
   max-width: 100%;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2728,7 +2728,7 @@ html[data-theme="light"] .game-popover::-webkit-scrollbar-thumb { background: #c
 .temple-cta.danger { background: linear-gradient(135deg, #ff5d6c, #b04dff); color: #fff; box-shadow: 0 8px 22px rgba(255,93,108,.22); }
 .temple-cta:active { filter: brightness(1.06); }
 
-.honor-line { display: flex; gap: 16px; justify-content: center; margin: 12px 0 4px; padding: 10px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-faint); font-size: 12.5px; flex-wrap: wrap; }
+.honor-line { display: flex; gap: 14px; justify-content: center; align-items: center; margin: 10px 0 2px; padding: 8px 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-dim); font-size: 13.5px; flex-wrap: wrap; }
 .honor-line b { color: var(--text); font-weight: 750; }
 
 /* 转生庆祝页（全屏）——[hidden] 必须显式恢复 display:none，否则被下方 display:flex 压制（同 .game-popover 先例） */

@@ -78,6 +78,37 @@ function packName(suffix) {
   return h.toString(16).padStart(8, "0") + ".webp";
 }
 
+// 匿名 HEAD 探测（公共读桶，同 mirror-team-logos 手法）：logos-webp/<hash> 存在性
+async function webpProbe(key) {
+  try {
+    var res = await fetch("https://" + HOST + "/" + key.split("/").map(encodeURIComponent).join("/"), { method: "HEAD", signal: AbortSignal.timeout(10000) });
+    if (res.status === 200 || res.status === 206) return "exists";
+    if (res.status === 404) return "missing";
+    return "unknown";
+  } catch (e) { return "unknown"; }
+}
+
+// 上传 webp 到 OSS logos-webp/<hash>（1.3.23 阀门 2：客户端打包缺失回退 OSS 原图 → 改走预压
+// 96px webp，流量降 20~50 倍——原图 ~100KB/张 vs webp ~5KB。CI 镜像步骤零依赖不装 sharp，
+// 故 webp 压制挂本工具（prebuild 本地有 sharp+凭据，每次发版顺带补传；新队多为窗口内队伍
+// 走打包集，回退场景=休赛老队 webp 早已传过，逻辑自洽）。V1 签名串必须含 Content-Type
+// （pack 自带 sign() 是 GET 版不适用，照 mirror-team-logos 的串法）。
+async function webpUpload(key, buf) {
+  var date = new Date().toUTCString();
+  var sts = ["PUT", "", "image/webp", date, "/" + BUCKET + "/" + key].join("\n");
+  var headers = {
+    "Content-Type": "image/webp",
+    "Content-Length": String(buf.length),
+    Date: date,
+    Authorization: "OSS " + KEY_ID + ":" + createHmac("sha1", KEY_SECRET).update(sts, "utf8").digest("base64")
+  };
+  var res = await fetch("https://" + HOST + "/" + key.split("/").map(encodeURIComponent).join("/"), { method: "PUT", headers: headers, body: buf });
+  if (!res.ok) {
+    var text = await res.text().catch(function () { return ""; });
+    throw new Error("HTTP " + res.status + " " + text.replace(/\s+/g, " ").slice(0, 160));
+  }
+}
+
 async function packOne(key) {
   var suffix = key.replace(/^logos\//, "");
   var target = path.join(OUT_ROOT, packName(suffix));
@@ -127,3 +158,27 @@ log("完成：打包 " + packed + " · 跳过（已存在）" + skipped + " · �
 if (failed.length) log("失败清单（前 5）：" + failed.slice(0, 5).join(" | "));
 log("public/logos/ 体积：" + (size.bytes / 1048576).toFixed(2) + " MiB · " + size.count + " 文件");
 if (!size.count) fail("没有产出任何打包文件——检查 OSS 凭据与 logos/ 前缀");
+
+/* ---------- 3.5 webp 镜像（logos-webp/<hash>，1.3.23：客户端窗口外队伍队标回退源） ----------
+ * 全量探测（pack 阶段 skip 的存量也要查 OSS 是否缺 webp）——exists 跳过，missing/unknown
+ * 都 PUT（幂等覆盖无害），失败计数下一轮自愈。 */
+var wPacked = 0, wSkipped = 0, wFailed = [];
+var wIndex = 0;
+async function wLane() {
+  while (wIndex < keys.length) {
+    var key = keys[wIndex++];
+    var suffix = key.replace(/^logos\//, "");
+    var webpKey = "logos-webp/" + packName(suffix);
+    try {
+      var state = await webpProbe(webpKey);
+      if (state === "exists") { wSkipped++; continue; }
+      await webpUpload(webpKey, readFileSync(path.join(OUT_ROOT, packName(suffix))));
+      wPacked++;
+    } catch (e) {
+      wFailed.push(suffix + "（" + String(e && e.message).slice(0, 100) + "）");
+    }
+  }
+}
+await Promise.all(Array.from({ length: CONC }, wLane));
+log("webp 镜像：上传 " + wPacked + " · 已存在 " + wSkipped + " · 失败 " + wFailed.length);
+if (wFailed.length) log("webp 失败清单（前 5）：" + wFailed.slice(0, 5).join(" | "));

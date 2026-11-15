@@ -115,18 +115,49 @@ function baseUrl() {
  * 窗口切片（过去4天+未来16天）只保活跃队伍——主队/图鉴押过的队伍休赛期掉窗后
  * 资料页阵容消失+队标回退首字（天禄 11-15 用户实测：最近一场 11-07 掉窗）。
  * team-rosters.json 是采集器每小时同步的全量资产（970+ 队 ~300KB）——启动后台拉一次
- * 合并进 ROSTERS。内存缓存不落盘（300KB 超本地 storage 单键保守线；每启动一次流量可忽略）；
- * 失败静默（窗口切片兜底），绝不 toast——与 live.json 同族的辅助数据源。 */
+ * 合并进 ROSTERS。1.3.23 阀门 1：12h 本地缓存（storage 落盘）——每次启动拉 305KB 降为
+ * 每半天一次；单键 305KB 可能超部分宿主 storage 限额 → 自适应降级（写入失败标记
+ * rostersStorageOk=false，回退每次启动拉），失败静默（窗口切片兜底），绝不 toast。 */
+var ROSTERS_CACHE_KEY = "esports_sandbox_rosters_all_v1";
+var ROSTERS_CACHE_TTL = 12 * 3600000;
 var allRostersCache = null;
+var allRostersAt = 0;
+var rostersStorageOk = null; // null=未知 true=可落盘 false=超限（读写都跳过）
 export async function fetchAllRosters() {
-  if (allRostersCache) return allRostersCache;
+  if (allRostersCache && Date.now() - allRostersAt < ROSTERS_CACHE_TTL) return allRostersCache;
   if (!isRuntimeEnabled()) return null;
+  if (rostersStorageOk !== false) {
+    try {
+      var cachedRaw = await storageGet(ROSTERS_CACHE_KEY);
+      if (cachedRaw) {
+        var rec = typeof cachedRaw === "string" ? JSON.parse(cachedRaw) : cachedRaw;
+        if (rec && typeof rec.at === "number" && rec.at > 0 &&
+            Date.now() - rec.at < ROSTERS_CACHE_TTL && rec.data && typeof rec.data === "object") {
+          var norm = normalizeRosters({ rosters: rec.data });
+          if (Object.keys(norm).length) {
+            allRostersCache = norm;
+            allRostersAt = rec.at;
+            return norm;
+          }
+        }
+      }
+    } catch (e) { /* 脏缓存/超限 → 走网络 */ }
+  }
   try {
     var raw = await networkGetJson(baseUrl() + "team-rosters.json?t=" + Date.now(), 20000);
-    var norm = normalizeRosters({ rosters: raw });
-    if (!Object.keys(norm).length) return null;
-    allRostersCache = norm;
-    return norm;
+    var fresh = normalizeRosters({ rosters: raw });
+    if (!Object.keys(fresh).length) return null;
+    allRostersCache = fresh;
+    allRostersAt = Date.now();
+    if (rostersStorageOk !== false) {
+      try {
+        await storageSet(ROSTERS_CACHE_KEY, JSON.stringify({ at: allRostersAt, data: raw }));
+        rostersStorageOk = true;
+      } catch (e2) {
+        rostersStorageOk = false; // 单键超限宿主：本次会话起不再读写缓存（每次启动拉）
+      }
+    }
+    return fresh;
   } catch (e) {
     return null; // 静默：窗口切片兜底
   }

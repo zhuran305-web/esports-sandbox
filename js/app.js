@@ -7,7 +7,7 @@ import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, 
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
-import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, VOTE_LEDGER_CAP } from "./like-rank.js";
+import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, distinctPlayerIds, VOTE_LEDGER_CAP, VOTES_EXTRA_CAP } from "./like-rank.js";
 
 (function () {
   "use strict";
@@ -3513,7 +3513,8 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     return '<div class="section-head"><h2>喜爱投币</h2><span class="section-sub">实验功能 · 投出不可撤回</span></div>' +
       '<div class="vote-box">' +
         '<div class="vote-meta">我已投给TA ' + PICKEM_COINS.g.icon + "×" + mine.g + " " + PICKEM_COINS.d.icon + "×" + mine.d +
-          " · 可投 " + PICKEM_COINS.g.icon + "×" + bal.g + " " + PICKEM_COINS.d.icon + "×" + bal.d + "</div>" +
+          " · 可投 " + PICKEM_COINS.g.icon + "×" + bal.g + " " + PICKEM_COINS.d.icon + "×" + bal.d +
+          " · 最多 " + VOTES_EXTRA_CAP + " 名选手</div>" +
         '<div class="vote-btns">' + btn("g") + btn("d") + "</div>" +
         (bal.g + bal.d === 0 ? '<div class="vote-hint">金/钻石币来自赛事竞猜 · Major 瑞士轮与名次竞猜可得</div>' : "") +
       "</div>";
@@ -3526,6 +3527,13 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var p = roster && roster[ctx.idx];
     if (!p || typeof p.id !== "number") return;
     if ((state.pickemVotes || []).length >= VOTE_LEDGER_CAP) { toast("投币明细已满，无法继续投"); return; }
+    // 可投不同选手数硬限 = VOTES_EXTRA_CAP（与榜上携带条数同常量）：保证 extra.v 完整携带全部投票、
+    // 聚合榜零丢失；同一名选手追加票不受此限（聚合后仍是一条）
+    var seenIds = distinctPlayerIds(state.pickemVotes);
+    if (seenIds[p.id] !== 1 && Object.keys(seenIds).length >= VOTES_EXTRA_CAP) {
+      toast("最多投 " + VOTES_EXTRA_CAP + " 名选手（榜单携带上限），同一名选手可继续追加");
+      return;
+    }
     var bal = availableCoins(state.pickemCoins, state.pickemVotes);
     if (!(bal[coin] > 0)) { toast("没有可投的" + PICKEM_COINS[coin].name + "了"); return; }
     var sep = ctx.teamKey.indexOf(":");

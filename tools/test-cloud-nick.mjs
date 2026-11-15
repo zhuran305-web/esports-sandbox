@@ -2258,6 +2258,24 @@ check("HTML/CSS：喜爱榜视图容器 + 返回键 + 投票块样式",
   /id="view-playerlove"/.test(htmlSrc) && /id="playerloveBackBtn"/.test(htmlSrc) && /id="playerloveBody"/.test(htmlSrc) &&
   /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc));
 
+/* ---- AJ5a：可投选手数上限（1.3.21：Major 全对单届可攒 🥇×12+💎×1 > 旧上限 8——
+   cap 提到 16 且人数硬限同常量，保证 extra.v 完整携带全部投票、聚合榜零丢失） ---- */
+console.log("AJ5a. 可投选手数上限 16（字节账：16 条最坏全汉字 1249B+578B=1827B<1900B）：");
+var manyVotes = [];
+for (var vi2 = 0; vi2 < 20; vi2++) manyVotes.push({ vid: "v" + vi2, id: 10000 + vi2, n: "十二字选手名啊十二字", t: "十六字队伍名十六字队伍", coin: vi2 % 2 ? "g" : "d", at: vi2 });
+var enc16 = L.encodeVotesExtra(manyVotes);
+check("encodeVotesExtra：输入 20 条 → 输出 16 条（VOTES_EXTRA_CAP=16）", enc16.length === 16, String(enc16.length));
+check("16 条最坏全汉字 + 其他字段最坏 → trim 后落 1900B 预算内",
+  (function () {
+    var extra = { first: 9, second: 999999999, nick: "十二字中文昵称十二字中文昵称", avatar: "https://a.example/" + "x".repeat(280), title: "streak_5", mt: "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", ml: 8, v: enc16 };
+    L.trimExtraForBudget(extra, 1900);
+    return L.utf8Len(JSON.stringify(extra)) <= 1900 && extra.v.length >= 16 - 2; // 极端叠加也几乎不截
+  })(),
+  "v.length=" + (function () { var extra = { first: 9, second: 999999999, nick: "十二字中文昵称十二字中文昵称", avatar: "https://a.example/" + "x".repeat(280), title: "streak_5", mt: "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", ml: 8, v: enc16 }; L.trimExtraForBudget(extra, 1900); return extra.v.length; })());
+var seenA = L.distinctPlayerIds([{ vid: "1", id: 5, coin: "g" }, { vid: "2", id: 5, coin: "g" }, { vid: "3", id: 7, coin: "d" }]);
+check("distinctPlayerIds：同选手多枚票合并计数", seenA[5] === 1 && seenA[7] === 1 && Object.keys(seenA).length === 2,
+  JSON.stringify(seenA));
+
 /* ---- AJ5：调试会话门禁（Browser Fake runtime.mode=development 禁写投票 extra——防测试票污染真实聚合榜） ---- */
 console.log("AJ5. 调试会话门禁：");
 var submitsAJ5 = makeSdk({ [WIN]: { uid: "u1", score: 5e9 + 300, extra: { first: 5, second: 300 } } });

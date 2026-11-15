@@ -19,7 +19,11 @@
  */
 
 export var VOTE_LEDGER_CAP = 40;    // 投票明细条数上限（=生涯金/钻总枚数量级，实际不可达；兜 Sync 16KB 体积）
-export var VOTES_EXTRA_CAP = 8;     // extra.v 携带的选手聚合条数上限（按 d/g 取最靠前的）
+/* extra.v 携带的选手聚合条数上限，同时是「可投不同选手数」的硬上限（castPlayerVote 校验）——
+ * 单常量保证不变式：投过的不同选手数 ≤ 条数上限 → extra.v 完整携带全部投票，聚合榜零丢失。
+ * 16 的依据：单届 Major 全对 = 🥇×12（Stage3 瑞士轮 10 + placement 亚/败者 2）+ 💎×1，跨届才可能触达；
+ * 字节账：16 条最坏（全汉字名/队名）1249B + 其他字段最坏 578B = 1827B < 1900B 预算（20 条会爆 2048 硬顶）。 */
+export var VOTES_EXTRA_CAP = 16;
 export var EXTRA_BYTE_BUDGET = 1900; // extra JSON 字节预算（平台硬顶 2048，留缓冲）
 
 var VOTE_COIN_KEYS = { g: 1, d: 1 }; // 仅金/钻石币可投（用户拍板：铜/银不参与）
@@ -105,6 +109,15 @@ export function availableCoins(earned, votes) {
 
 function votesSort(a, b) {
   return b.d - a.d || b.g - a.g || a.id - b.id; // 钻优先 → 金次之 → id 定序（确定性并列）
+}
+
+/** 已投过的不同选手 id 集合（{id:1}）——人数硬限校验用（≤ VOTES_EXTRA_CAP，同选手追加票不受限） */
+export function distinctPlayerIds(votes) {
+  var seen = {};
+  (Array.isArray(votes) ? votes : []).forEach(function (v) {
+    if (v && typeof v.id === "number") seen[v.id] = 1;
+  });
+  return seen;
 }
 
 /** 我方投票按选手聚合 → 排序取前 VOTES_EXTRA_CAP 条 → [id, n, t, g, d] 元组数组 */

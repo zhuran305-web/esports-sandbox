@@ -2284,9 +2284,17 @@ check("全量阵容补拉：fetchAllRosters（内存缓存+静默失败）+ ensu
   /export async function fetchAllRosters/.test(readIfDs()) && /allRostersCache/.test(readIfDs()) &&
   /function ensureAllRosters/.test(appSrc) && /allRostersMerged/.test(appSrc) &&
   /ROSTERS\[k\] = norm\[k\]/.test(appSrc) && /ensureAllRosters\(\);/.test(appSrc));
-check("队标回退：打包集缺失但数据有 logo 路径 → OSS 原图 URL（encodeURIComponent 逐段 + 键含+%2B 注释在案）",
-  /!packed && RUNTIME_DATA_BASE/.test(appSrc) && /\/logos\/" \+/.test(appSrc) &&
-  /encodeURIComponent\)\.join\("\/"\)/.test(appSrc));
+check("队标回退：打包集缺失但数据有 logo 路径 → OSS 预压 webp 库（logos-webp/<djb2>，1.3.23 阀门 2）",
+  /!packed && RUNTIME_DATA_BASE/.test(appSrc) && /\/logos-webp\/" \+ logoPackName/.test(appSrc) &&
+  !/\/logos\/" \+\s*$/.test(appSrc.slice(appSrc.indexOf("!packed && RUNTIME_DATA_BASE"), appSrc.indexOf("!packed && RUNTIME_DATA_BASE") + 400)));
+check("阀门 1（1.3.23）：rosters 12h 本地缓存（storage 自适应降级）+ TTL + CLEAR_KEYS 同步",
+  /ROSTERS_CACHE_KEY/.test(readIfDs()) && /ROSTERS_CACHE_TTL = 12 \* 3600000/.test(readIfDs()) &&
+  /rostersStorageOk/.test(readIfDs()) && /rostersStorageOk = false/.test(readIfDs()) &&
+  /esports_sandbox_rosters_all_v1/.test(appSrc));
+check("阀门 2 数据侧：pack 工具 webp 镜像（logos-webp/ + PUT 幂等探测）",
+  /logos-webp\//.test(rf(path.join(root, "tools", "pack-team-logos.mjs"), "utf8")) &&
+  /function webpProbe/.test(rf(path.join(root, "tools", "pack-team-logos.mjs"), "utf8")) &&
+  /function webpUpload/.test(rf(path.join(root, "tools", "pack-team-logos.mjs"), "utf8")));
 
 /* ---- AJ5：调试会话门禁（Browser Fake runtime.mode=development 禁写投票 extra——防测试票污染真实聚合榜） ---- */
 console.log("AJ5. 调试会话门禁：");

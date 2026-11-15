@@ -54,7 +54,8 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     "esports_sandbox_duels_v1",
     "esports_sandbox_duel_invite",
     "esports_sandbox_duel_locks",
-    "esports_sandbox_duel_sent"
+    "esports_sandbox_duel_sent",
+    "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
   var APP_VERSION = "1.3.22";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
@@ -682,11 +683,11 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
       var legacy = path.match(/^https?:\/\/(?:cdn-api|cdn)\.pandascore\.co\/images\/(?:team|player)\/image\/(.+)$/i);
       return legacy ? LOGO_BASE + logoPackName(legacy[1]) : path;
     }
-    // 打包集缺失（窗口外休赛队伍，TEAM_LOGOS 无键）但数据 logo 路径存在 → OSS 全量队标库
-    // 原图回退（采集器维护，键=原相对路径）。CSP 拦/404/断网都走首字兜底——不劣于现状。
+    // 打包集缺失（窗口外休赛队伍，TEAM_LOGOS 无键）但数据 logo 路径存在 → OSS 预压 webp 库
+    // 回退（1.3.23：logos-webp/<djb2 hash>.webp 96px ~5KB，pack-team-logos 构建时镜像；比原图
+    // 降 20~50 倍流量）。CSP 拦/404/断网都走首字兜底——不劣于现状。
     if (!packed && RUNTIME_DATA_BASE) {
-      return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/logos/" +
-        String(path).split("/").map(encodeURIComponent).join("/"); // 键含 + 须 %2B（同 OSS 坑）
+      return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/logos-webp/" + logoPackName(String(path));
     }
     return LOGO_BASE + logoPackName(path);
   }

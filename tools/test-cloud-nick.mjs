@@ -17,6 +17,7 @@ var tmp = path.join(root, ".tmp-cloud-test");
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
 copyFileSync(path.join(root, "js", "cloud.js"), path.join(tmp, "cloud.js"));
+copyFileSync(path.join(root, "js", "like-rank.js"), path.join(tmp, "like-rank.js")); // cloud.js 依赖（1.3.20 选手喜爱榜）
 writeFileSync(path.join(tmp, "platform.js"), [
   "export function isMiniProgram() { return !!globalThis.__TEST_SDK; }",
   "export function getSDK() { return globalThis.__TEST_SDK || null; }"
@@ -472,7 +473,7 @@ check("分享卡跟队色：shareThemeColors 提亮防线 + 三处应用",
   /theme \? "rgba\(" \+ theme\.rgb \+ ", \.3\)" : "rgba\(255,255,255,\.07\)"/.test(appSrc));
 check("全部竞猜记录页：DOM + 视图接线 + 渲染与分享委托",
   /id="view-history"/.test(htmlSrc) && /id="historyAllBtn"/.test(htmlSrc) && /id="historyBackBtn"/.test(htmlSrc) &&
-  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) && /"match", "labs", "pickem", "coinboard"\]\.forEach/.test(appSrc) &&
+  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) && /"match", "labs", "pickem", "coinboard", "playerlove"\]\.forEach/.test(appSrc) &&
   /function renderHistoryFull/.test(appSrc) && /name === "history"\) renderHistoryFull/.test(appSrc) &&
   /historySettledList"\)\.addEventListener/.test(appSrc));
 check("竞猜快照：下注落账冗余存队名/赛事 + 归档降级渲染",
@@ -490,7 +491,7 @@ check("采集器：location→region + end_at 采集 + normalize 白名单放行
 check("比赛详情页：DOM + 视图接线 + 渲染与操作委托",
   /id="view-match"/.test(htmlSrc) && /id="matchBackBtn"/.test(htmlSrc) && /id="matchDetailBody"/.test(htmlSrc) &&
   /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) &&
-  /"match", "labs", "pickem", "coinboard"\]\.forEach/.test(appSrc) &&
+  /"match", "labs", "pickem", "coinboard", "playerlove"\]\.forEach/.test(appSrc) &&
   /function renderMatchDetail/.test(appSrc) && /name === "match"\) renderMatchDetail/.test(appSrc) &&
   /scheduleList"\)\.addEventListener/.test(appSrc) && /view-match"\)\.addEventListener/.test(appSrc) &&
   /matchBackBtn"\)\.addEventListener/.test(appSrc) && /goBack\("schedule"\)/.test(appSrc));
@@ -857,7 +858,7 @@ check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册
   /id="pickemSheet"/.test(htmlSrc) && /id="pickemSheetList"/.test(htmlSrc) &&
   /id="openLabsBtn"/.test(htmlSrc) && /id="labsBackBtn"/.test(htmlSrc) && /id="pickemBackBtn"/.test(htmlSrc) &&
   /name === "labs" \|\| name === "pickem"/.test(appSrc) &&
-  /"match", "labs", "pickem", "coinboard"\]\.forEach/.test(appSrc) &&
+  /"match", "labs", "pickem", "coinboard", "playerlove"\]\.forEach/.test(appSrc) &&
   /name === "labs"\) renderLabs/.test(appSrc) && /name === "pickem"\) renderPickem/.test(appSrc) &&
   /function bindPickem/.test(appSrc) && /bindPickem\(\);/.test(appSrc) &&
   /"#pickemSheet"/.test(appSrc));
@@ -885,10 +886,10 @@ check("桶体奖励展示与结算同源（1.3.15）：records/swiss 桶体币�
   /coinKeyForTier\(\(recStage0 && recStage0\.coinTier\) \|\| 1\)/.test(appSrc) && // 规则文案同源
   /export function coinKeyForTier/.test(pickemJsSrc)); // helper 从 pickem.js 导出
 check("状态与结算：state.pickem 全链（init/load/快照/校验/云合并）+ settlePickem 四挂点 + Sync.pack 白名单",
-  /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}/.test(appSrc) &&
+  /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}, pickemVotes: \[\]/.test(appSrc) &&
   /pickem: normalizePickemState\(parsed\.pickem\)/.test(appSrc) &&
   /mergePickemCoins\(\{ c: 0, s: 0, g: 0, d: 0 \}, parsed\.pickemCoins\)/.test(appSrc) &&
-  /state\.mainLevels, state\.pickem, state\.pickemCoins\]/.test(appSrc) &&
+  /state\.mainLevels, state\.pickem, state\.pickemCoins, state\.pickemVotes\]/.test(appSrc) &&
   /state\.pickem = normalizePickemState\(state\.pickem\)/.test(appSrc) &&
   /pickem: mergePickem\(localPickem, s\.pickem\)/.test(appSrc) &&
   /pickemCoins: mergePickemCoins\(localPickemCoins, s\.pickemCoins\)/.test(appSrc) &&
@@ -2155,6 +2156,119 @@ check("④ buildAutoEvents：无 structures 时行为不变（分布比对兜底
   return rec.results["2:0"][0] === "甲" && rec.results["2:1"][0] === "乙" &&
     rec.results["1:2"][0] === "丙" && rec.results["0:2"][0] === "丁";
 })());
+
+/* ============================== 场景 AJ：选手喜爱榜（1.3.20 实验功能） ============================== */
+/* 投票清单随胜榜 extra.v 携带（第五连门控字段）；扣减走独立 union 账本（pickemCoins 不动）。 */
+console.log("AJ. 选手喜爱榜（投币账本 + extra.v 门控 + 全榜聚合）：");
+var L = await import(pathToFileURL(path.join(root, "js", "like-rank.js")).href);
+
+// ---- 纯函数：账本归一 / union 合并 / 余额派生 ----
+var nvA = L.normalizeVotes([
+  { vid: "v1", id: 35905, n: "donk", t: "TYLOO", coin: "g", at: 2 },
+  { vid: "v1", id: 99999, n: "重复vid", t: "X", coin: "g", at: 3 },   // vid 重复 → 丢弃
+  { vid: "v2", id: "abc", n: "坏id", t: "X", coin: "g", at: 4 },       // id 非数字 → 丢弃
+  { vid: "v3", id: 23237, n: "sh1ro", t: "C9", coin: "c", at: 5 },    // 铜币不可投 → 丢弃
+  { vid: "v4", id: 100, n: "ok", t: "T", coin: "d", at: 1 }
+]);
+check("normalizeVotes：脏条目丢弃 + vid 去重 + 按 at 排序",
+  nvA.length === 2 && nvA[0].vid === "v4" && nvA[1].vid === "v1",
+  JSON.stringify(nvA));
+var mvA = L.mergeVotes(
+  [{ vid: "v1", id: 1, n: "a", t: "T", coin: "g", at: 1 }, { vid: "v2", id: 2, n: "b", t: "T", coin: "d", at: 2 }],
+  [{ vid: "v2", id: 2, n: "b", t: "T", coin: "d", at: 2 }, { vid: "v3", id: 3, n: "c", t: "T", coin: "g", at: 3 }]
+);
+check("mergeVotes：union by vid（两设备并发投票全保留）", mvA.length === 3 && mvA.map(function (v) { return v.vid; }).join(",") === "v1,v2,v3",
+  JSON.stringify(mvA.map(function (v) { return v.vid; })));
+var balA = L.availableCoins({ g: 5, d: 2 },
+  [{ vid: "1", id: 1, coin: "g" }, { vid: "2", id: 1, coin: "g" }, { vid: "3", id: 1, coin: "g" }, { vid: "4", id: 1, coin: "d" }]);
+check("availableCoins：余额=生涯累计−已投派生", balA.g === 2 && balA.d === 1, JSON.stringify(balA));
+check("availableCoins：负数钳 0（脏数据防御）",
+  L.availableCoins({ g: 0, d: 0 }, [{ vid: "1", id: 1, coin: "g" }]).g === 0);
+
+// ---- 纯函数：extra.v 编码 / 解码 / 字节守卫 ----
+var encA = L.encodeVotesExtra([
+  { vid: "v1", id: 35905, n: "donk", t: "TYLOO", coin: "g", at: 1 },
+  { vid: "v2", id: 35905, n: "donk", t: "TYLOO", coin: "d", at: 2 },
+  { vid: "v3", id: 23237, n: "sh1ro", t: "C9", coin: "g", at: 3 }
+]);
+check("encodeVotesExtra：按选手聚合 + 钻优先排序",
+  JSON.stringify(encA) === JSON.stringify([[35905, "donk", "TYLOO", 1, 1], [23237, "sh1ro", "C9", 1, 0]]),
+  JSON.stringify(encA));
+check("decodeVotesExtra：坏条目跳过（extra 可伪造不崩聚合）",
+  L.decodeVotesExtra([[1, "a", "T", 2, 0], "垃圾", [2, "b", "T"], [3, "c", "T", "x", 1], [4, "d", "T", 1, 5]]).length === 3 &&
+  L.decodeVotesExtra(undefined).length === 0 && L.decodeVotesExtra([[1, "a", "T", "x", 1]])[0].g === 0);
+var bigExtra = { first: 5, second: 300, avatar: "https://a.example/" + "x".repeat(280), nick: "很长很长的中文昵称很长很长的中文昵称", mt: "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", v: [] };
+for (var vi = 0; vi < 30; vi++) bigExtra.v.push([9999999999, "十二字选手名啊十二字选手名啊", "十六字队伍名十六字队伍名十六字队伍", 9999999, 9999999]);
+L.trimExtraForBudget(bigExtra, 1900);
+check("trimExtraForBudget：超预算从投票清单尾部逐条丢弃且落回预算内",
+  bigExtra.v.length < 30 && L.utf8Len(JSON.stringify(bigExtra)) <= 1900,
+  "v.length=" + bigExtra.v.length + " bytes=" + L.utf8Len(JSON.stringify(bigExtra)));
+check("votesExtraEqual：数组同构比较 + undefined 视为空",
+  L.votesExtraEqual([[1, "a", "T", 1, 0]], [[1, "a", "T", 1, 0]]) && !L.votesExtraEqual([[1, "a", "T", 1, 0]], [[1, "a", "T", 0, 1]]) &&
+  L.votesExtraEqual(undefined, []) && !L.votesExtraEqual([[1, "a", "T", 1, 0]], undefined));
+
+// ---- 纯函数：全榜聚合 ----
+var aggA = L.aggregateBoardVotes([
+  { uid: "u1", extra: { v: [[35905, "donk", "TYLOO", 1, 2], [23237, "sh1ro", "C9", 1, 0]] } },
+  { uid: "u2", extra: { v: [[35905, "donk", "TYLOO", 0, 1]] } },
+  { uid: "u3", extra: { v: "伪造字符串" } },            // 伪造 extra → 跳过
+  { uid: "u4", extra: {} }                              // 无投票 → 零贡献
+]);
+check("aggregateBoardVotes：跨用户累加 + 钻优先排序 + voters 计数 + 伪造跳过",
+  aggA.length === 2 && aggA[0].id === 35905 && aggA[0].d === 3 && aggA[0].g === 1 && aggA[0].voters === 2 &&
+  aggA[1].id === 23237 && aggA[1].d === 0 && aggA[1].voters === 1,
+  JSON.stringify(aggA));
+
+// ---- 行为级：submitVotes 走 votesChanged 门控（second+1 刷 extra） ----
+console.log("AJ2. submitVotes 门控行为：");
+var votesEnc = [[35905, "donk", "TYLOO", 1, 2]];
+var submitsAJ = makeSdk({ [WIN]: { uid: "u1", score: 5e9 + 300, extra: { first: 5, second: 300, nick: "旧名" } } });
+await Cloud.submitVotes(votesEnc, "旧名");
+check("投票后提交恰好一次", submitsAJ.length === 1 && submitsAJ[0].key === WIN, JSON.stringify(submitsAJ.map(function (s) { return s.key; })));
+check("分数 = 榜上 second+1（5胜/301）", submitsAJ[0].score === 5e9 + 301, String(submitsAJ[0].score));
+check("extra.v 已带上", L.votesExtraEqual(submitsAJ[0].extra.v, votesEnc), JSON.stringify(submitsAJ[0].extra.v));
+check("昵称沿用榜上旧值", submitsAJ[0].extra.nick === "旧名");
+await Cloud.submitVotes(votesEnc, "旧名"); // 榜上已是同清单 → 不重复提交
+check("投票清单未变 → 不重复提交（防 second+1 漂移）", submitsAJ.length === 1, String(submitsAJ.length));
+
+// ---- 行为级：submitStats 带投票清单（分数更优路径 + undefined 沿用） ----
+console.log("AJ3. submitStats 投票联动：");
+var oldVotes = [[7, "旧人", "旧队", 1, 0]];
+var submitsAJ3 = makeSdk({ [WIN]: { uid: "u1", score: 2e9 + 100, extra: { first: 2, second: 100, v: oldVotes } } });
+await Cloud.submitStats({ wins: 3, winProfit: 200, losses: 0, loseAmount: 0 }, "名", "", undefined, undefined, undefined);
+check("本地清单为空（undefined）→ 分数更优时沿用榜上旧票（防旧设备清票）",
+  submitsAJ3.length === 1 && L.votesExtraEqual(submitsAJ3[0].extra.v, oldVotes),
+  JSON.stringify(submitsAJ3[0] && submitsAJ3[0].extra.v));
+var myVotesEnc = [[35905, "donk", "TYLOO", 0, 1]];
+await Cloud.submitStats({ wins: 3, winProfit: 300, losses: 0, loseAmount: 0 }, "名", "", undefined, undefined, undefined, myVotesEnc);
+check("本地清单非空 → 正常提交携带新票（权威刷新）",
+  L.votesExtraEqual(submitsAJ3[submitsAJ3.length - 1].extra.v, myVotesEnc) && submitsAJ3[submitsAJ3.length - 1].score === 3e9 + 300,
+  JSON.stringify(submitsAJ3[submitsAJ3.length - 1].extra.v));
+
+// ---- 静态接线：第五连门控 + UI 三件套 ----
+console.log("AJ4. 喜爱榜静态接线：");
+check("云链路静态：votesChanged 门控 + extra.v + trim 守卫 + 分页读榜 + 调试门禁",
+  /votesChanged/.test(cloudSrc) && /extra\.v/.test(cloudSrc) && /trimExtraForBudget\(extra/.test(cloudSrc) &&
+  /realListPaged/.test(cloudSrc) && /getVoteBoard/.test(cloudSrc) &&
+  /if \(isDebugRuntime\(\)\) votes = undefined/.test(cloudSrc));
+check("app 接线：投票动作 + 提交链 + 聚合页 + labs 入口",
+  /function castPlayerVote/.test(appSrc) && /scheduleVoteSync/.test(appSrc) && /function renderPlayerLove/.test(appSrc) &&
+  /data-pvote/.test(appSrc) && /data-labs="playerlove"/.test(appSrc) && /name === "playerlove"\) renderPlayerLove/.test(appSrc));
+check("HTML/CSS：喜爱榜视图容器 + 返回键 + 投票块样式",
+  /id="view-playerlove"/.test(htmlSrc) && /id="playerloveBackBtn"/.test(htmlSrc) && /id="playerloveBody"/.test(htmlSrc) &&
+  /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc));
+
+/* ---- AJ5：调试会话门禁（Browser Fake runtime.mode=development 禁写投票 extra——防测试票污染真实聚合榜） ---- */
+console.log("AJ5. 调试会话门禁：");
+var submitsAJ5 = makeSdk({ [WIN]: { uid: "u1", score: 5e9 + 300, extra: { first: 5, second: 300 } } });
+globalThis.__TEST_SDK.environment = { getInfoSync: function () { return { runtime: { mode: "development" } }; } };
+await Cloud.submitVotes([[35905, "donk", "TYLOO", 0, 1]], "名");
+check("调试会话 submitVotes 不提交", submitsAJ5.length === 0, JSON.stringify(submitsAJ5));
+await Cloud.submitStats({ wins: 6, winProfit: 400, losses: 0, loseAmount: 0 }, "名", "", undefined, undefined, undefined, [[35905, "donk", "TYLOO", 0, 1]]);
+check("调试会话分数更优提交也不携带投票 extra（submitBoardWithNick 兜底）",
+  submitsAJ5.length === 1 && submitsAJ5[0].extra.v === undefined,
+  JSON.stringify(submitsAJ5[0] && submitsAJ5[0].extra));
+delete globalThis.__TEST_SDK.environment;
 
 console.log("");
 if (failures) {

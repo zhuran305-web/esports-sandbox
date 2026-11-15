@@ -8,6 +8,7 @@
  * boot 时 registerIdentity 保证条目存在）+ 自选/黑盒昵称（随榜单 extra 提交）。
  */
 import { isMiniProgram, getSDK } from "./platform.js";
+import { decodeVotesExtra, votesExtraEqual, trimExtraForBudget, EXTRA_BYTE_BUDGET } from "./like-rank.js"; // 选手喜爱榜（1.3.20）
 
 var BOARD_KEYS = {
   win: "sha_board_win",
@@ -165,15 +166,18 @@ var myUid = null;
  * 1.1.17+ 真实昵称头像由授权换票获得（app.js#syncHbProfile，须用户手势）。
  */
 
-async function realSubmit(board, first, second, displayNick, avatar, title, mainTeam, mtLevel) {
+async function realSubmit(board, first, second, displayNick, avatar, title, mainTeam, mtLevel, votes) {
   var sdk = getSDK();
   if (!sdk || !sdk.cloud) return;
   var extra = { first: first, second: second };
   if (displayNick) extra.nick = displayNick; // 自选/黑盒昵称（跨设备经 extra.nick 读回）
   if (avatar) extra.avatar = String(avatar).slice(0, 300); // 公开展示头像（extra 上限 2048 字节，实测余量充足）
-  if (title) extra.title = String(title).slice(0, 24); // 装备称号的成就 id（客户端字典还原，未知 id 不渲染）
+  if (title) extra.title = String(title).slice(0, 24); // 装备称号的成就 id（客户端字典解码还原，未知 id 不渲染）
   if (mainTeam) extra.mt = String(mainTeam).slice(0, 48); // 主队队名（看榜端用自己的队标映射渲染，缺失回退首字）
   if (mtLevel) extra.ml = Math.min(8, Math.max(1, Math.round(mtLevel))); // 主队等级 1-8（0=清空：整包替换后自然消失）
+  if (votes && votes.length) extra.v = votes; // 选手喜爱榜投票清单（1.3.20）：[id, n, t, g, d] 元组，聚合端解码
+  // extra 平台硬顶 2048B：超预算从投票清单尾部逐条丢弃（聚合端少计尾部队列，不崩）
+  trimExtraForBudget(extra, EXTRA_BYTE_BUDGET);
   await sdk.cloud.leaderboard.submit({
     key: BOARD_KEYS[board],
     score: encode(first, second),
@@ -188,35 +192,44 @@ async function realSubmit(board, first, second, displayNick, avatar, title, main
  * 本地 0 胜 0 负（新用户/清除本地数据后榜上还有旧条目）同样要能刷昵称；
  * 榜上无条目且无分数时不新建（win 榜条目由 registerIdentity 保证，败榜输过才出现）。
  */
-async function submitBoardWithNick(board, first, second, displayNick, avatar, title, mainTeam, mtLevel) {
+async function submitBoardWithNick(board, first, second, displayNick, avatar, title, mainTeam, mtLevel, votes) {
+  // 调试会话（Browser Fake runtime.mode=development）禁写投票 extra——测试票会进真实聚合榜
+  // （1.3.20 新增污染面，与 Sync 门禁同哲学：调试状态不落真实云端；读不受限，getVoteBoard 走本地回显）
+  if (isDebugRuntime()) votes = undefined;
   var cur = await realMy(board).catch(function () { return null; });
   var curFirst = cur ? cur.first : 0;
   var curSecond = cur ? cur.second : 0;
-  var curNick = (cur && cur.extra && cur.extra.nick) || "";
-  var curAvatar = (cur && cur.extra && cur.extra.avatar) || "";
-  var curTitle = (cur && cur.extra && cur.extra.title) || "";
-  var curMt = (cur && cur.extra && cur.extra.mt) || "";
-  var curMl = cur && cur.extra && typeof cur.extra.ml === "number" ? cur.extra.ml : 0;
+  var curExtra = (cur && cur.extra) || {};
+  var curNick = curExtra.nick || "";
+  var curAvatar = curExtra.avatar || "";
+  var curTitle = curExtra.title || "";
+  var curMt = curExtra.mt || "";
+  var curMl = typeof curExtra.ml === "number" ? curExtra.ml : 0;
+  var curVotes = Array.isArray(curExtra.v) ? curExtra.v : undefined;
   if (first > curFirst || (first === curFirst && second > curSecond)) {
-    await realSubmit(board, first, second, displayNick, avatar, title, mainTeam, mtLevel);
+    // 分数更优走正常提交：本地投票清单为空（undefined）时沿用榜上旧值，防旧设备把其他设备刚投的票清掉
+    await realSubmit(board, first, second, displayNick, avatar, title, mainTeam, mtLevel, votes !== undefined ? votes : curVotes);
     return;
   }
-  // 昵称/头像/称号/主队/主队等级变化但分数未变优：用「榜上 second+1」触发一次 extra 更新。
-  // avatar/title/mt/ml 必须参与判定——否则旧条目在昵称已对、分数未变时永远补不上新字段（1.2.4 头像同款坑）。
+  // 昵称/头像/称号/主队/主队等级/投票清单变化但分数未变优：用「榜上 second+1」触发一次 extra 更新。
+  // avatar/title/mt/ml/v 必须参与判定——否则旧条目在昵称已对、分数未变时永远补不上新字段（1.2.4 头像同款坑，
+  // 1.3.20 投票清单为第五连）。
   // 各字段语义：undefined=沿用榜上旧值；字符串/数字（含空串/0）=权威值，与榜上不同即刷新。
   var nickChanged = !!(displayNick && displayNick !== curNick);
   var avatarChanged = avatar !== undefined && avatar !== curAvatar;
   var titleChanged = title !== undefined && title !== curTitle;
   var mtChanged = mainTeam !== undefined && mainTeam !== curMt;
   var mlChanged = mtLevel !== undefined && mtLevel !== curMl;
-  if (cur && (nickChanged || avatarChanged || titleChanged || mtChanged || mlChanged)) {
+  var votesChanged = votes !== undefined && !votesExtraEqual(votes, curVotes);
+  if (cur && (nickChanged || avatarChanged || titleChanged || mtChanged || mlChanged || votesChanged)) {
     await realSubmit(
       board, curFirst, curSecond + 1,
       displayNick || curNick,
       avatar !== undefined ? avatar : curAvatar,
       title !== undefined ? title : curTitle,
       mainTeam !== undefined ? mainTeam : curMt,
-      mtLevel !== undefined ? mtLevel : curMl
+      mtLevel !== undefined ? mtLevel : curMl,
+      votes !== undefined ? votes : curVotes
     );
   }
 }
@@ -245,6 +258,25 @@ async function realList(board, limit) {
       };
     })
   };
+}
+
+/** 分页读榜：getList 合同 limit 1-100（ensureDuelAvatars 的 200 超合同属历史遗留，新代码走这里），
+ *  cursor+hasMore 翻页到 cap（胜败榜 rankLimit=500，超出读不到——投票者 >500 之外票数缺失，实验期接受） */
+async function realListPaged(board, cap) {
+  var sdk = getSDK();
+  if (!sdk || !sdk.cloud) return { entries: [] };
+  var out = [];
+  var cursor;
+  var guard = 0;
+  do {
+    var params = { key: BOARD_KEYS[board], limit: 100 };
+    if (cursor) params.cursor = cursor;
+    var page = await sdk.cloud.leaderboard.getList(params);
+    out = out.concat((page && page.entries) || []);
+    cursor = page && page.cursor;
+    guard++;
+  } while (cursor && out.length < (cap || 500) && guard < 8);
+  return { entries: out };
 }
 
 async function realMy(board) {
@@ -417,16 +449,16 @@ export var Cloud = {
     return !isMiniProgram();
   },
 
-  submitStats: async function (stats, displayNick, avatar, title, mainTeam, mtLevel) {
+  submitStats: async function (stats, displayNick, avatar, title, mainTeam, mtLevel, votes) {
     if (!isMiniProgram()) {
       var mockNick = displayNick || "我";
       var mockAvatar = avatar || "";
-      if (stats.wins > 0 || displayNick) mockUpsert("win", { uid: "me", nick: mockNick, score: encode(stats.wins, Math.max(0, stats.winProfit)), extra: { first: stats.wins, second: Math.max(0, stats.winProfit), avatar: mockAvatar } });
+      if (stats.wins > 0 || displayNick) mockUpsert("win", { uid: "me", nick: mockNick, score: encode(stats.wins, Math.max(0, stats.winProfit)), extra: { first: stats.wins, second: Math.max(0, stats.winProfit), avatar: mockAvatar, v: votes && votes.length ? votes : undefined } });
       if (stats.losses > 0) mockUpsert("lose", { uid: "me", nick: mockNick, score: encode(stats.losses, Math.max(0, stats.loseAmount)), extra: { first: stats.losses, second: Math.max(0, stats.loseAmount), avatar: mockAvatar } });
       return;
     }
     // 0 胜/0 负也带昵称提交：新用户与「清除本地数据」后的用户，榜上旧条目才刷得出昵称
-    if (stats.wins > 0 || displayNick) await submitBoardWithNick("win", stats.wins, Math.max(0, stats.winProfit), displayNick, avatar, title, mainTeam, mtLevel);
+    if (stats.wins > 0 || displayNick) await submitBoardWithNick("win", stats.wins, Math.max(0, stats.winProfit), displayNick, avatar, title, mainTeam, mtLevel, votes);
     if (stats.losses > 0 || displayNick) await submitBoardWithNick("lose", stats.losses, Math.max(0, stats.loseAmount), displayNick, avatar, title, mainTeam, mtLevel);
   },
 
@@ -470,6 +502,48 @@ export var Cloud = {
   getCoinBoard: async function (limit) {
     if (!isMiniProgram()) return { entries: [] };
     return realCoinList(limit || 100);
+  },
+
+  /** 选手喜爱榜（1.3.20 实验功能）：投票清单随胜榜条目 extra.v 携带。
+   *  votes=已编码元组数组（app 端 encodeVotesExtra 产物）；空清单不提交（无「权威清空」场景——投出不可撤回）。
+   *  复用 submitBoardWithNick 的 votesChanged 门控：传 (0, -1) 保证不走分数更优分支，走「second+1 刷 extra」。 */
+  submitVotes: async function (votes, displayNick, avatar, title, mainTeam, mtLevel) {
+    if (!votes || !votes.length) return;
+    if (isDebugRuntime()) return; // 调试会话禁写真实榜（submitBoardWithNick 已兜底，这里提前返回省一次读榜）
+    if (!isMiniProgram()) {
+      // mock 层直接写 me 条目的 extra.v（只存不校验——实验功能，真实验证走 Browser Fake/真机）
+      var data = mockEnsure();
+      var me = data.win["me"] || { uid: "me", nick: displayNick || "我", score: 0, extra: { first: 0, second: 0 } };
+      me.extra = me.extra || {};
+      me.extra.v = votes;
+      data.win["me"] = me;
+      mockWrite(data);
+      return;
+    }
+    await submitBoardWithNick("win", 0, -1, displayNick, avatar, title, mainTeam, mtLevel, votes);
+  },
+
+  /** 全榜投票清单读取（聚合端）：分页拉满 rankLimit 500；返回 [{uid, votes:[{id,n,t,g,d}]}]。
+   *  devVotes=调试会话本地回显（Browser Fake 禁写真实榜——用本地账本合成「我」条目走完整 UI 闭环）。 */
+  getVoteBoard: async function (devVotes) {
+    if (isDebugRuntime()) {
+      return { entries: [{ uid: "me-debug", extra: { v: Array.isArray(devVotes) ? devVotes : [] } }] };
+    }
+    if (!isMiniProgram()) {
+      var data = mockEnsure();
+      return {
+        entries: Object.keys(data.win).map(function (uid) {
+          var e = data.win[uid];
+          return { uid: e.uid, extra: e.extra || {} };
+        })
+      };
+    }
+    var res = await realListPaged("win", 500);
+    return {
+      entries: (res.entries || []).map(function (e) {
+        return { uid: e.appUserId, extra: e.extra || {} };
+      })
+    };
   },
 
   /** 与沙粒数封顶同源的转生阈值（10 亿）：余额≥CAP 可封神、≤-CAP 可破产 */
@@ -618,7 +692,9 @@ export var Sync = {
           mainTeam: typeof state.mainTeam === "string" ? state.mainTeam : undefined, // 主队三态：undefined=从未设置（不碰榜上旧值）、""=已取消（权威清空）
           mainLevels: state.mainLevels || {}, // 主队等级累计（1.2.12，{键: 押过场次}，逐键 max 合并）
           pickem: state.pickem || {},          // Pick'Em 竞猜记录（1.4.0，选择极小；冲突合并见 app.js#applyCloudRecord）
-          pickemCoins: state.pickemCoins || {} // Pick'Em 硬币（1.3.5，逐键 max 合并；纯荣誉货币）
+          pickemCoins: state.pickemCoins || {}, // Pick'Em 硬币（1.3.5，逐键 max 合并；纯荣誉货币）
+          pickemVotes: state.pickemVotes || [] // 选手喜爱榜投币明细（1.3.20，union by vid 合并；append-only 投出不可撤回；
+                                               // 条数 ≤ VOTE_LEDGER_CAP=40，生涯金/钻枚数量级，实际远小于 15KB 预算）
         }
       });
     }

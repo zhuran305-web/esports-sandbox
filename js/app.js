@@ -7,6 +7,7 @@ import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, 
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, VOTE_LEDGER_CAP } from "./like-rank.js";
 
 (function () {
   "use strict";
@@ -130,7 +131,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   ];
 
   /* ============================== 状态 ============================== */
-  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 } };
+  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 }, pickemVotes: [] };
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
@@ -268,7 +269,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 } };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 }, pickemVotes: [] };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -291,6 +292,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         mainLevels: normalizeAchv(parsed.mainLevels), // {键: 累计押过场次}——复用同构校验（正数、取整、上限）
         pickem: normalizePickemState(parsed.pickem), // Pick'Em 竞猜记录（键 eventId:stageId）
         pickemCoins: mergePickemCoins({ c: 0, s: 0, g: 0, d: 0 }, parsed.pickemCoins), // Pick'Em 硬币（1.3.5，逐键 max）
+        pickemVotes: normalizeVotes(parsed.pickemVotes), // 选手喜爱榜投币明细（1.3.20，union 合并账本）
         updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
@@ -303,7 +305,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var achvChecking = false; // 成就检测重入防护（checkAchievements 在 saveState 内执行）
 
   function stateSnapshot() {
-    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam, state.mainLevels, state.pickem, state.pickemCoins]);
+    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam, state.mainLevels, state.pickem, state.pickemCoins, state.pickemVotes]);
   }
 
   function saveState() {
@@ -496,6 +498,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var localMainLevels = state.mainLevels;
     var localPickem = state.pickem;
     var localPickemCoins = state.pickemCoins;
+    var localPickemVotes = state.pickemVotes;
     state = {
       bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
       predictions: Array.isArray(s.predictions) ? s.predictions : [],
@@ -513,6 +516,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       mainLevels: mergeAchv(localMainLevels, s.mainLevels),
       pickem: mergePickem(localPickem, s.pickem), // Pick'Em：pickedAt 较新者胜、settled 取 OR（js/pickem.js#mergePickem）
       pickemCoins: mergePickemCoins(localPickemCoins, s.pickemCoins), // 硬币逐键 max（只增不减）
+      pickemVotes: mergeVotes(localPickemVotes, s.pickemVotes), // 投币明细 union by vid（1.3.20，append-only 只增；js/like-rank.js）
       updatedAt: rec.updatedAt
     };
     validateLoadedState();
@@ -1547,6 +1551,9 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         losses: s.losses,
         loseAmount: s.loseAmount
       }, nick, avatar, state.title,
+      // 选手喜爱榜投票清单（1.3.20）：本地账本非空时随每次战绩提交顺路刷新 extra.v；
+      // 空清单传 undefined=沿用榜上旧值（防旧设备在同步到账本前把其他设备刚投的票清掉）
+      (state.pickemVotes && state.pickemVotes.length) ? encodeVotesExtra(state.pickemVotes) : undefined,
       // extra.mt 必须是纯队名（看榜端按名字查队标映射）——不能传图鉴键 "game:名字"，
       // 否则队标查找落空回退首字，还会渲染出 "CS2T" 这类键名截断（1.2.13 用户实测抓到）
       state.mainTeam === undefined ? undefined : state.mainTeam === "" ? "" : mainTeamName(),
@@ -2774,6 +2781,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     var active = evs.filter(function (e) { return e.status !== "done"; }).length;
     var coins = state.pickemCoins || { c: 0, s: 0, g: 0, d: 0 };
     var coinTotal = (coins.c || 0) + (coins.s || 0) + (coins.g || 0) + (coins.d || 0);
+    // 选手喜爱榜行值：可投金/钻枚数；无可投但有投币记录显示已投数（1.3.20）
+    var myBal = availableCoins(state.pickemCoins, state.pickemVotes);
+    var voteCount = (state.pickemVotes || []).length;
+    var loveValue = myBal.g + myBal.d > 0
+      ? PICKEM_COINS.g.icon + myBal.g + " " + PICKEM_COINS.d.icon + myBal.d + " 可投"
+      : voteCount ? "已投 " + voteCount + " 枚" : "实验 · 给选手投币";
     box.innerHTML =
       '<button type="button" class="settings-row" data-labs="pickem">' +
         '<span class="settings-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/></svg></span>' +
@@ -2785,6 +2798,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
         '<span class="settings-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M9.5 10h5M9.5 14h5"/></svg></span>' +
         '<span class="settings-row-label">硬币排行榜</span>' +
         '<span class="settings-row-value">' + (coinTotal ? pickemCoinsHTML() : "荣誉货币 · 暂无硬币") + "</span>" +
+        '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' +
+      "</button>" +
+      '<button type="button" class="settings-row" data-labs="playerlove">' +
+        '<span class="settings-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C7 16.5 3 13 3 9.3 3 6.9 4.9 5 7.3 5c1.7 0 3.4.9 4.7 2.6C13.3 5.9 15 5 16.7 5 19.1 5 21 6.9 21 9.3c0 3.7-4 7.2-9 11.7z"/></svg></span>' +
+        '<span class="settings-row-label">选手喜爱榜</span>' +
+        '<span class="settings-row-value">' + loveValue + "</span>" +
         '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' +
       "</button>";
   }
@@ -3017,6 +3036,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     });
     $("#labsBackBtn").addEventListener("click", function () { goBack("about"); });
     $("#coinboardBackBtn").addEventListener("click", function () { goBack("labs"); });
+    $("#playerloveBackBtn").addEventListener("click", function () { goBack("labs"); });
     $("#pickemBackBtn").addEventListener("click", function () { goBack("labs"); });
     // 作业页筛选与搜索（1.3.6，仿主页）：搜索防抖 + 游戏 tiles + 清空
     $("#pickemSearch").addEventListener("input", function () {
@@ -3215,6 +3235,63 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     }).catch(function () {
       coinBoardLoading = false;
       body.innerHTML = '<div class="empty-state"><strong>暂时读不到硬币排行榜</strong>稍后再试（未登录/宿主不支持时不可用）</div>';
+    });
+  }
+
+  /* ---------- 选手喜爱榜（1.3.20 实验功能：胜榜 extra.v 全榜聚合，不占新榜位） ---------- */
+  var loveCache = null;
+  var loveLoading = false;
+
+  function loveRowHTML(r, i, myIds) {
+    return '<div class="board-row' + (myIds[r.id] ? " is-me" : "") + '">' +
+      '<span class="board-rank">' + (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1) + "</span>" +
+      playerAvatarHTML({ n: r.n }) +
+      '<span class="board-nick-wrap">' +
+        '<span class="board-nick">' + esc(r.n || "未知选手") + (myIds[r.id] ? '<span class="me-tag">我投</span>' : "") + "</span>" +
+        '<span class="board-sub">' + esc(r.t || "") + (r.voters > 1 ? " · " + r.voters + " 人投过" : "") + "</span>" +
+      "</span>" +
+      '<span class="board-detail"><span class="board-coins">' +
+        PICKEM_COINS.d.icon + " " + r.d + " · " + PICKEM_COINS.g.icon + " " + r.g +
+      "</span></span>" +
+    "</div>";
+  }
+
+  function paintPlayerLove(res) {
+    var body = $("#playerloveBody");
+    if (!body) return;
+    var rows = aggregateBoardVotes((res && res.entries) || []);
+    var myIds = {};
+    (state.pickemVotes || []).forEach(function (v) { myIds[v.id] = 1; });
+    var bal = availableCoins(state.pickemCoins, state.pickemVotes);
+    var head = '<div class="settings-group"><div class="pickem-coin has" style="margin:0 0 10px">可投 ' +
+      PICKEM_COINS.g.icon + "×" + bal.g + " " + PICKEM_COINS.d.icon + "×" + bal.d +
+      " · 已投 " + (state.pickemVotes || []).length + " 枚 · 投票入口在战队资料页选手卡</div></div>";
+    if (!rows.length) {
+      body.innerHTML = head +
+        '<div class="empty-state"><strong>还没有人投币</strong>去战队资料页打开选手卡，给喜欢的选手投一枚金币或钻石币</div>';
+      return;
+    }
+    body.innerHTML = head +
+      rows.map(function (r, i) { return loveRowHTML(r, i, myIds); }).join("") +
+      '<p class="data-note">票数来自榜上玩家条目聚合 · 金/钻币投出不可撤回 · 实验功能</p>';
+  }
+
+  function renderPlayerLove() {
+    var body = $("#playerloveBody");
+    if (!body) return;
+    if (loveCache) paintPlayerLove(loveCache);
+    else body.innerHTML = '<div class="empty-state"><strong>加载中…</strong></div>';
+    if (loveLoading) return;
+    loveLoading = true;
+    voteSyncNow(); // 进入页面顺路刷一次投票 extra（免 4s 防抖，与硬币榜 syncCoinBoard 同构）
+    // 调试会话传本地账本供回显（Browser Fake 禁写真实榜）；生产端该参数被忽略
+    Cloud.getVoteBoard((state.pickemVotes || []).length ? encodeVotesExtra(state.pickemVotes) : []).then(function (res) {
+      loveCache = res;
+      loveLoading = false;
+      paintPlayerLove(res);
+    }).catch(function () {
+      loveLoading = false;
+      body.innerHTML = '<div class="empty-state"><strong>暂时读不到选手喜爱榜</strong>稍后再试（未登录/宿主不支持时不可用）</div>';
     });
   }
 
@@ -3418,6 +3495,84 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     document.body.style.overflow = "";
   }
 
+  /* ---------- 喜爱投币（1.3.20 实验功能）：选手卡内投金币/钻石币，明细走 union 账本 ---------- */
+
+  function playerVoteHTML(p) {
+    var votes = state.pickemVotes || [];
+    var bal = availableCoins(state.pickemCoins, votes);
+    var mine = { g: 0, d: 0 };
+    votes.forEach(function (v) { if (v.id === p.id) mine[v.coin]++; });
+    var full = votes.length >= VOTE_LEDGER_CAP;
+    function btn(k) {
+      var none = !(bal[k] > 0) || full;
+      return '<button type="button" class="vote-btn" data-pvote="' + k + '"' + (none ? " disabled" : "") + ">" +
+        PICKEM_COINS[k].icon + " 投" + PICKEM_COINS[k].name + (bal[k] > 0 ? " ×" + bal[k] : "") + "</button>";
+    }
+    return '<div class="section-head"><h2>喜爱投币</h2><span class="section-sub">实验功能 · 投出不可撤回</span></div>' +
+      '<div class="vote-box">' +
+        '<div class="vote-meta">我已投给TA ' + PICKEM_COINS.g.icon + "×" + mine.g + " " + PICKEM_COINS.d.icon + "×" + mine.d +
+          " · 可投 " + PICKEM_COINS.g.icon + "×" + bal.g + " " + PICKEM_COINS.d.icon + "×" + bal.d + "</div>" +
+        '<div class="vote-btns">' + btn("g") + btn("d") + "</div>" +
+        (bal.g + bal.d === 0 ? '<div class="vote-hint">金/钻石币来自赛事竞猜 · Major 瑞士轮与名次竞猜可得</div>' : "") +
+      "</div>";
+  }
+
+  function castPlayerVote(coin) {
+    var ctx = playerSheetCtx;
+    if (!ctx || (coin !== "g" && coin !== "d")) return;
+    var roster = ROSTERS[ctx.teamKey];
+    var p = roster && roster[ctx.idx];
+    if (!p || typeof p.id !== "number") return;
+    if ((state.pickemVotes || []).length >= VOTE_LEDGER_CAP) { toast("投币明细已满，无法继续投"); return; }
+    var bal = availableCoins(state.pickemCoins, state.pickemVotes);
+    if (!(bal[coin] > 0)) { toast("没有可投的" + PICKEM_COINS[coin].name + "了"); return; }
+    var sep = ctx.teamKey.indexOf(":");
+    state.pickemVotes.push({ vid: makeVoteId(), id: p.id, n: String(p.n || "").slice(0, 12), t: ctx.teamKey.slice(sep + 1), coin: coin, at: Date.now() });
+    saveState();
+    scheduleVoteSync();
+    vibrate("light");
+    toast("已投出 1 枚" + PICKEM_COINS[coin].name + "给 " + (p.n || "TA"));
+    openPlayerSheet(ctx.teamKey, ctx.idx); // 重渲染抽屉：余额/已投即时更新
+  }
+
+  /** 投票 extra.v 提交（防抖合并连点）；进喜爱榜页时直接调 voteSyncNow 免等防抖 */
+  var voteSyncTimer = 0;
+  var voteSyncBusy = false;
+  function voteSyncNow() {
+    if (voteSyncBusy) return Promise.resolve();
+    var votes = state.pickemVotes || [];
+    if (!votes.length) return Promise.resolve();
+    voteSyncBusy = true;
+    var encoded = encodeVotesExtra(votes);
+    function displayArgs(nick, avatar) {
+      return [nick, avatar, state.title,
+        state.mainTeam === undefined ? undefined : state.mainTeam === "" ? "" : mainTeamName(),
+        state.mainTeam === undefined ? undefined : mainTeamLevel(state.mainLevels[state.mainTeam] || 0)];
+    }
+    return Promise.all([loadHbProfile().catch(function () { return null; }), loadNick()]).then(function (r) {
+      var hb = r[0];
+      var nick = (hb && hb.nick) || r[1] || "";
+      var avatar = (hb && hb.avatar) || "";
+      return Cloud.submitVotes.apply(null, [encoded].concat(displayArgs(nick, avatar)));
+    }).then(function () {
+      // 回读校验：并发 second+1 撞车（另一设备同分提交）会静默丢 extra → 用新榜值重试一次
+      return Cloud.getMyEntry("win").then(function (cur) {
+        var curV = cur && cur.extra && Array.isArray(cur.extra.v) ? cur.extra.v : [];
+        if (!votesExtraEqual(encoded, curV)) {
+          return loadHbProfile().catch(function () { return null; }).then(function (hb) {
+            return Cloud.submitVotes.apply(null, [encoded].concat(displayArgs((hb && hb.nick) || "", (hb && hb.avatar) || "")));
+          });
+        }
+      });
+    }).catch(function () { /* 实验功能：静默失败，下次投票/进页/战绩提交再推 */ }).finally(function () {
+      voteSyncBusy = false;
+    });
+  }
+  function scheduleVoteSync() {
+    clearTimeout(voteSyncTimer);
+    voteSyncTimer = setTimeout(voteSyncNow, 4000);
+  }
+
   function openPlayerSheet(teamKey, idx) {
     var roster = ROSTERS[teamKey];
     if (!roster || !roster[idx]) return;
@@ -3460,6 +3615,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
           "</span>" +
         "</div>" +
       "</div>" +
+      // 喜爱投币（1.3.20 实验）：老缓存无 PandaScore 选手 id 时不出投票块（投票键=id，禁用下标）
+      (typeof p.id === "number" ? playerVoteHTML(p) : "") +
       '<div class="section-head"><h2>所属队伍</h2></div>' +
       '<div class="player-team-row">' + avatarHTML({ name: teamName }) +
         '<span class="team-main"><span class="team-name">' + esc(teamName) + '</span><span class="team-sub">' + esc(gameMeta(game).label) + " · 数据窗口 45 天</span></span></div>" +
@@ -4413,6 +4570,8 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     state.pickem = normalizePickemState(state.pickem); // Pick'Em 记录形状兜底（脏记录整条丢弃）
     if (state.pickemCoins === undefined || state.pickemCoins === null || typeof state.pickemCoins !== "object") state.pickemCoins = { c: 0, s: 0, g: 0, d: 0 };
     state.pickemCoins = mergePickemCoins({ c: 0, s: 0, g: 0, d: 0 }, state.pickemCoins); // 硬币形状兜底（负数/脏值清零）
+    if (!Array.isArray(state.pickemVotes)) state.pickemVotes = [];
+    state.pickemVotes = normalizeVotes(state.pickemVotes); // 投币明细形状兜底（脏条目丢弃、vid 去重；1.3.20）
   }
 
   /* ============================== 新手引导与发帖素材 ============================== */
@@ -4743,7 +4902,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match" || name === "labs" || name === "pickem" || name === "coinboard";
+    return name === "rules" || name === "schedule" || name === "about" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match" || name === "labs" || name === "pickem" || name === "coinboard" || name === "playerlove";
   }
 
   function initHistory() {
@@ -4829,7 +4988,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
       closeRulesTopic();
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem", "coinboard"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem", "coinboard", "playerlove"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
     // 对决记录/对比页/成就殿堂/战队图鉴/全部竞猜记录从「我的」侧进入返回回「我的」；
@@ -4853,6 +5012,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (name === "labs") renderLabs();
     if (name === "pickem") renderPickem();
     if (name === "coinboard") renderCoinBoard();
+    if (name === "playerlove") renderPlayerLove();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -5700,10 +5860,12 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
       if (row) openSheet(row.dataset.openMatch);
     });
 
-    // 选手卡抽屉（2026-11-10）：关闭按钮 + 点 backdrop 关闭
+    // 选手卡抽屉（2026-11-10）：关闭按钮 + 点 backdrop 关闭 + 喜爱投币按钮委托（1.3.20）
     $("#playerSheetClose").addEventListener("click", closePlayerSheet);
     $("#playerSheet").addEventListener("click", function (e) {
-      if (e.target === $("#playerSheet")) closePlayerSheet();
+      if (e.target === $("#playerSheet")) { closePlayerSheet(); return; }
+      var vb = e.target.closest("[data-pvote]");
+      if (vb && !vb.disabled) castPlayerVote(vb.dataset.pvote);
     });
 
     document.addEventListener("keydown", function (e) {
@@ -5777,6 +5939,7 @@ import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLIN
     if (!$("#view-pickem").hidden) renderPickem();
     if (!$("#view-labs").hidden) renderLabs(); // 实验功能行「N 个赛事进行中」跟随
     if (!$("#view-coinboard").hidden) renderCoinBoard(); // 硬币榜（结算可能改变硬币数）
+    if (!$("#view-playerlove").hidden) renderPlayerLove(); // 喜爱榜（结算可能改变可投硬币）
     resolveDeepLink();
     resolveVersusLink();
 

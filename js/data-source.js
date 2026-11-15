@@ -111,6 +111,27 @@ function baseUrl() {
   return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/";
 }
 
+/* ---------- 全量阵容低频拉取（1.3.22：窗口外队伍资料页阵容恢复） ----------
+ * 窗口切片（过去4天+未来16天）只保活跃队伍——主队/图鉴押过的队伍休赛期掉窗后
+ * 资料页阵容消失+队标回退首字（天禄 11-15 用户实测：最近一场 11-07 掉窗）。
+ * team-rosters.json 是采集器每小时同步的全量资产（970+ 队 ~300KB）——启动后台拉一次
+ * 合并进 ROSTERS。内存缓存不落盘（300KB 超本地 storage 单键保守线；每启动一次流量可忽略）；
+ * 失败静默（窗口切片兜底），绝不 toast——与 live.json 同族的辅助数据源。 */
+var allRostersCache = null;
+export async function fetchAllRosters() {
+  if (allRostersCache) return allRostersCache;
+  if (!isRuntimeEnabled()) return null;
+  try {
+    var raw = await networkGetJson(baseUrl() + "team-rosters.json?t=" + Date.now(), 20000);
+    var norm = normalizeRosters({ rosters: raw });
+    if (!Object.keys(norm).length) return null;
+    allRostersCache = norm;
+    return norm;
+  } catch (e) {
+    return null; // 静默：窗口切片兜底
+  }
+}
+
 /* ---------- live.json 轻量轮询（2026-11-11 深度接入二期） ----------
    独立小文件（几 KB，refresh-live 每 10 分钟写）——高频刷新不触发 1.99MiB 整包下载。
    纯内存缓存不写 storage：几 KB 且 2-3 分钟即过期，storage 序列化开销不值得；

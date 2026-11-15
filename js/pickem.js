@@ -22,8 +22,9 @@
  * 奖励（1.3.6 硬币改版：S/A 级按赛事等级定币级，Major 规则不变）：
  *   - swiss（Major 瑞士轮）：每猜对 1 个队伍位置 = 1 枚「阶段币」（coinTier：第 1 阶段铜、第 2 银、第 3 金）——不变
  *   - series（小组赛逐场）：每猜对 1 场 = 1 枚固定币级（赛事 tier=a → 铜币；其余 S 级/未知 → 银币）——不再按轮数
- *   - placement（淘汰赛）：猜对冠军 = 1 枚钻石币、亚军/季军 = 各 1 枚金币（季军=半决赛败者并列两队，猜中任意一支算对）；
- *     A 级赛事整体降一级：冠军=金币、亚军/季军=银币
+ *   - placement（淘汰赛）：猜对冠军 = 1 枚钻石币、亚军/半决赛败者 = 各 1 枚金币（半决赛败者=两支半决赛输家并列第三，
+ *     猜中任意一支算对；称谓不用「季军」——无季军赛赛事（BLAST 4进3）不存在季军赛，1.3.21）；
+ *     A 级赛事整体降一级：冠军=金币、亚军/半决赛败者=银币
  *   - 无沙粒奖励、无全对加成。
  * 截止：阶段/场次开赛前 1 小时（镜像单场竞猜 statusOf 的 3600000 语义）。
  */
@@ -536,7 +537,7 @@ export function scorePhase(stage, rec) {
 /** 结算应发硬币。返回 { coins:{c,s,g,d}, bySource:[{label,coin,icon,count}] }——阶段未完赛返回 null。
  *  币级（1.3.6 改版，eventTier = 赛事 tier："a" | ""）：
  *  swiss=stage.coinTier（1铜/2银/3金，Major 不变）；series=按赛事等级（a→铜、其余→银），不再按轮数；
- *  placement=A 级冠军金/亚季军银，其余（Major/S/未知）冠军钻、亚/季军金。 */
+ *  placement=A 级冠军金/亚军与半决赛败者银，其余（Major/S/未知）冠军钻、亚军与半决赛败者金。 */
 export function settleRewards(stage, rec, eventTier) {
   if (!stage || !rec) return null;
   var coins = zeroCoins();
@@ -566,7 +567,7 @@ export function settleRewards(stage, rec, eventTier) {
     }
     if (p.third) {
       t += 1;
-      if ((stage.results.third || []).indexOf(p.third) >= 0) { coins[placeCoin.key] += 1; c += 1; bySource.push({ label: "猜中季军", coin: placeCoin, count: 1 }); }
+      if ((stage.results.third || []).indexOf(p.third) >= 0) { coins[placeCoin.key] += 1; c += 1; bySource.push({ label: "猜中半决赛败者", coin: placeCoin, count: 1 }); }
     }
     return { coins: coins, bySource: bySource, correct: c, total: t };
   }

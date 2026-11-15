@@ -2,9 +2,9 @@ import matchesData from "../data/matches-embedded.json";
 import { Cloud, Sync } from "./cloud.js";
 import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummary, teamHistory, pickedTeamOf, mainTeamLevel, MAIN_LEVEL_THRESHOLDS } from "./collection.js";
 import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
-import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK } from "./config.js";
+import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK, RUNTIME_DATA_BASE } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, screenshotElement, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
-import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot } from "./data-source.js";
+import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot, fetchAllRosters } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, distinctPlayerIds, VOTE_LEDGER_CAP, VOTES_EXTRA_CAP } from "./like-rank.js";
@@ -673,13 +673,20 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
 
   function logoUrl(team) {
     if (!team) return "";
-    var path = TEAM_LOGOS[team.name] || team.logo || "";
+    var packed = TEAM_LOGOS[team.name];
+    var path = packed || team.logo || "";
     if (!path) return "";
     if (/^https?:\/\//i.test(path)) {
       // 遗留存量：前缀剥离修复前的绝对 URL（team/player 图同域名同路径结构）——
       // 剥出后缀走打包资源；外域原样返回（被 CSP 拦时走首字兜底）
       var legacy = path.match(/^https?:\/\/(?:cdn-api|cdn)\.pandascore\.co\/images\/(?:team|player)\/image\/(.+)$/i);
       return legacy ? LOGO_BASE + logoPackName(legacy[1]) : path;
+    }
+    // 打包集缺失（窗口外休赛队伍，TEAM_LOGOS 无键）但数据 logo 路径存在 → OSS 全量队标库
+    // 原图回退（采集器维护，键=原相对路径）。CSP 拦/404/断网都走首字兜底——不劣于现状。
+    if (!packed && RUNTIME_DATA_BASE) {
+      return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/logos/" +
+        String(path).split("/").map(encodeURIComponent).join("/"); // 键含 + 须 %2B（同 OSS 坑）
     }
     return LOGO_BASE + logoPackName(path);
   }
@@ -6036,6 +6043,22 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     }
   }
 
+  /* ---------- 全量阵容后台补拉（1.3.22：窗口外休赛队伍的资料页阵容/投票恢复） ----------
+   * 窗口切片（过去4天+未来16天）只保活跃队伍——主队/图鉴押过的队伍休赛期掉窗（天禄 11-15
+   * 实测：最近一场 11-07 掉窗，队标回退首字+阵容消失；资产完好纯切片策略问题）。
+   * 启动后后台拉 OSS 全量资产 team-rosters.json（~300KB/970+ 队，采集器每小时同步）合并进
+   * ROSTERS——内存缓存不落盘（300KB 超本地 storage 单键保守线），失败静默（窗口切片兜底）。 */
+  var allRostersMerged = false;
+  function ensureAllRosters() {
+    if (allRostersMerged || !isRuntimeEnabled()) return;
+    allRostersMerged = true;
+    fetchAllRosters().then(function (norm) {
+      if (!norm) return;
+      Object.keys(norm).forEach(function (k) { ROSTERS[k] = norm[k]; }); // 同键整体替换，与 applySnapshot 同构
+      if (!$("#view-team").hidden) renderTeamPage(); // 正在浏览的资料页即时补上阵容
+    }).catch(function () { /* 静默 */ });
+  }
+
   async function refreshData(manual) {
     if (refreshing) {
       if (manual) toast("正在检查更新…");
@@ -6889,6 +6912,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
         '<div class="empty-state"><strong>赛程数据加载失败</strong>请检查网络后刷新页面，或稍后再试</div>';
       maybeShowOnboard();
       refreshData();
+      ensureAllRosters(); // 赛程失败不影响全量阵容资产（独立文件）
       scheduleLatePlatformRecovery(platformReady);
       return;
     }
@@ -6900,6 +6924,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     resolveVersusLink();
     maybeShowOnboard();
     refreshData();
+    ensureAllRosters(); // 全量阵容后台补拉（窗口外休赛队伍，1.3.22）
     scheduleLatePlatformRecovery(platformReady);
 
     if (events.length) {

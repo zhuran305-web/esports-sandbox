@@ -2276,6 +2276,18 @@ var seenA = L.distinctPlayerIds([{ vid: "1", id: 5, coin: "g" }, { vid: "2", id:
 check("distinctPlayerIds：同选手多枚票合并计数", seenA[5] === 1 && seenA[7] === 1 && Object.keys(seenA).length === 2,
   JSON.stringify(seenA));
 
+/* ---- AJ6：窗口外队伍恢复（1.3.22：全量阵容后台补拉 + 队标 OSS 回退）----
+   窗口切片（4+16 天）会把休赛队伍切出打包集（天禄 11-15 实测）——资产完好，
+   客户端启动后台拉 team-rosters.json 全量合并 + logoUrl 打包缺失时回退 OSS 原图。 */
+console.log("AJ6. 窗口外队伍恢复：");
+check("全量阵容补拉：fetchAllRosters（内存缓存+静默失败）+ ensureAllRosters 接线 + ROSTERS 合并",
+  /export async function fetchAllRosters/.test(readIfDs()) && /allRostersCache/.test(readIfDs()) &&
+  /function ensureAllRosters/.test(appSrc) && /allRostersMerged/.test(appSrc) &&
+  /ROSTERS\[k\] = norm\[k\]/.test(appSrc) && /ensureAllRosters\(\);/.test(appSrc));
+check("队标回退：打包集缺失但数据有 logo 路径 → OSS 原图 URL（encodeURIComponent 逐段 + 键含+%2B 注释在案）",
+  /!packed && RUNTIME_DATA_BASE/.test(appSrc) && /\/logos\/" \+/.test(appSrc) &&
+  /encodeURIComponent\)\.join\("\/"\)/.test(appSrc));
+
 /* ---- AJ5：调试会话门禁（Browser Fake runtime.mode=development 禁写投票 extra——防测试票污染真实聚合榜） ---- */
 console.log("AJ5. 调试会话门禁：");
 var submitsAJ5 = makeSdk({ [WIN]: { uid: "u1", score: 5e9 + 300, extra: { first: 5, second: 300 } } });

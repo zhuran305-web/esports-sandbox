@@ -2557,11 +2557,13 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     return html;
   }
 
-  /* placement（淘汰赛名次竞猜）：猜冠军（💎）/亚军（🥇）/季军（🥇，半决赛败者并列两队猜中任一即对） */
+  /* placement（淘汰赛名次竞猜）：猜冠军（💎）/亚军（🥇）/半决赛败者（🥇，两队并列第三、猜中任一即对）。
+   *  称谓用「半决赛败者」而非「季军」——无季军赛的赛事（BLAST 4进3 等）不存在季军赛，
+   *  而结算统一按并列两队推导（不看季军赛结果），该称谓在两种赛制下都精确（1.3.21）。 */
   var PLACEMENT_FIELDS = [
     { k: "champion", label: "冠军" },
     { k: "runnerUp", label: "亚军" },
-    { k: "third", label: "季军" }
+    { k: "third", label: "半决赛败者" }
   ];
 
   function pickemPlacementBody(ev, stage, st, rec) {
@@ -2575,13 +2577,13 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var champCoin = isA ? PICKEM_COINS.g : PICKEM_COINS.d;
     var placeCoin = isA ? PICKEM_COINS.s : PICKEM_COINS.g;
     var html = '<div class="pickem-note">预测最终名次：猜对冠军得 ' + champCoin.icon + " " + esc(champCoin.name) +
-      "，猜对亚军/季军各得 " + placeCoin.icon + " " + esc(placeCoin.name) +
-      "（季军=半决赛败者并列两队，猜中任一即对）；第一场开赛前 1 小时截止后锁定</div>";
+      "，猜对亚军/半决赛败者各得 " + placeCoin.icon + " " + esc(placeCoin.name) +
+      "（半决赛败者=两支半决赛输家并列第三，猜中任一即对）；第一场开赛前 1 小时截止后锁定</div>";
     if (stage.degraded) {
       html += '<div class="pickem-note">淘汰赛名单已确定（部分对阵待公布）——名次竞猜与对阵无关；对阵树随官方公布补全</div>';
     }
     if (st === "done" && stage.results) {
-      html += '<div class="pickem-note">终局：冠军 ' + esc(stage.results.champion) + " · 亚军 " + esc(stage.results.runnerUp) + " · 季军 " + esc((stage.results.third || []).join(" / ")) + "</div>";
+      html += '<div class="pickem-note">终局：冠军 ' + esc(stage.results.champion) + " · 亚军 " + esc(stage.results.runnerUp) + " · 半决赛败者（并列第三）" + esc((stage.results.third || []).join(" / ")) + "</div>";
     }
     PLACEMENT_FIELDS.forEach(function (f) {
       var picked = rec && rec.picks ? rec.picks[f.k] : "";
@@ -2641,7 +2643,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
   function pickemCoinRuleText(ev) {
     var hasSwiss = ev.stages.some(function (s) { return s.type === "swiss"; });
     var hasRecords = ev.stages.some(function (s) { return s.type === "records"; });
-    if (hasSwiss) return "Major 规则：瑞士轮第 1/2/3 阶段猜对得 🥉/🥈/🥇 · 淘汰赛冠军 💎 亚/季军 🥇";
+    if (hasSwiss) return "Major 规则：瑞士轮第 1/2/3 阶段猜对得 🥉/🥈/🥇 · 淘汰赛冠军 💎 亚军/半决赛败者 🥇";
     if (hasRecords) {
       // 与 settleRewards 同源（原则 9）：records 币级取 stage.coinTier，不按 ev.tier 推导
       var recStage0 = null;
@@ -2649,7 +2651,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
       var rc2 = PICKEM_COINS[coinKeyForTier((recStage0 && recStage0.coinTier) || 1)];
       var tier = rc2.icon + " " + rc2.name;
       // auto 赛事没有 placement（淘汰赛纯展示）——文案按形态分流，避免误导「猜冠军得钻石」
-      var tail = ev.auto ? " · 淘汰赛等其他阶段仅赛程展示" : " · 淘汰赛冠军 💎/🥇 亚/季军 🥇（S/A）";
+      var tail = ev.auto ? " · 淘汰赛等其他阶段仅赛程展示" : " · 淘汰赛冠军 💎 亚军/半决赛败者 🥇（S/A）";
       return "战绩桶规则：把每支队伍放进小组赛最终战绩（猜对一桶得 " + tier + "）" + tail;
     }
     if (ev.tier === "a") return "A 级赛事：小组赛猜对每场得 🥉 铜币 · 淘汰赛逐场不计币（名次奖励见名次竞猜赛事）";
@@ -2873,7 +2875,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var ctx = pickemSheetCtx;
     var rec = pickemRec(ctx.evId, ctx.stageId);
     var picks = rec && rec.picks ? rec.picks : {};
-    var fieldLabel = { champion: "冠军", runnerUp: "亚军", third: "季军" };
+    var fieldLabel = { champion: "冠军", runnerUp: "亚军", third: "半决赛败者" };
     $("#pickemSheetTitle").textContent = "选择" + (fieldLabel[ctx.field] || "名次");
     $("#pickemSheetMeta").textContent = ctx.current ? "点当前队伍可清空该名次" : "点选队伍（各名次不能同队）";
     var used = {};
@@ -2928,7 +2930,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var stage = hit.stage;
     var rec = pickemEnsureRec(stage, ctx.evId, ctx.stageId);
     if (ctx.kind === "placement") {
-      // 名次选择：清空当前 / 互异校验（冠军≠亚军≠季军）
+      // 名次选择：清空当前 / 互异校验（冠军≠亚军≠半决赛败者）
       if (name === "__remove__") {
         rec.picks[ctx.field] = "";
       } else {
@@ -5159,12 +5161,12 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
           "「设置 → 关于小程序 → <strong>实验功能</strong>」进入赛事竞猜",
           "瑞士轮阶段（小组赛）：共 <strong>10 项选择</strong>——猜哪些队 <strong>3:0 晋级（2 支）</strong>、哪些队 <strong>3:1/3:2 晋级（6 支）</strong>、哪些队 <strong>0:3 淘汰（2 支）</strong>，不用猜对局路线；1:3/2:3 淘汰的 6 队由剩余队伍自动落位，仅供展示",
           "双败小组赛（如 IEM）：逐场猜胜者，第 1/2/3 轮对应铜/银/金币",
-          "淘汰赛：对阵确定后<strong>预测最终名次</strong>——冠军、亚军、季军各猜 1 队（季军=半决赛败者并列两队，猜中任一即对）"
+          "淘汰赛：对阵确定后<strong>预测最终名次</strong>——冠军、亚军、半决赛败者各猜 1 队（两支半决赛输家并列第三，猜中任一即对）"
         ] },
         { h: "截止与结算", p: "每阶段在<strong>第一场开赛前 1 小时</strong>截止（逐场竞猜则各场各自截止），截止前可随时修改；阶段全部打完后自动结算——猜进「3:0 晋级」的队伍要真以 3-0 出线才算对。" },
         { h: "硬币奖励", ul: [
           "按阶段/轮次分级：<strong>第 1 阶段（轮）猜对 1 项 = 🥉 铜币、第 2 = 🥈 银币、第 3 及以后 = 🥇 金币</strong>",
-          "淘汰赛：<strong>猜中冠军 = 💎 钻石币</strong>，猜中亚军/季军各 = 🥇 金币",
+          "淘汰赛：<strong>猜中冠军 = 💎 钻石币</strong>，猜中亚军/半决赛败者各 = 🥇 金币",
           "硬币为<strong>荣誉奖励</strong>：不可交易、不可作为压注，只在硬币排行榜（实验功能内）展示"
         ] },
         { h: "实验功能", warn: true, p: "参赛名单与赛果以赛事官方公布为准；本功能为实验功能，可能随时调整或下线，奖励口径如有调整以当期页面说明为准。" }

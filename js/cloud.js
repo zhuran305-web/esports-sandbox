@@ -693,8 +693,10 @@ export var Sync = {
           mainLevels: state.mainLevels || {}, // 主队等级累计（1.2.12，{键: 押过场次}，逐键 max 合并）
           pickem: state.pickem || {},          // Pick'Em 竞猜记录（1.4.0，选择极小；冲突合并见 app.js#applyCloudRecord）
           pickemCoins: state.pickemCoins || {}, // Pick'Em 硬币（1.3.5，逐键 max 合并；纯荣誉货币）
-          pickemVotes: state.pickemVotes || [] // 选手喜爱榜投币明细（1.3.20，union by vid 合并；append-only 投出不可撤回；
-                                               // 条数 ≤ VOTE_LEDGER_CAP=40，生涯金/钻枚数量级，实际远小于 15KB 预算）
+          pickemVotes: state.pickemVotes || [], // 选手喜爱榜投出明细（1.3.20，union by vid 合并；只增不删；
+                                                // 条数 ≤ VOTE_LEDGER_CAP=40，生涯金/钻枚数量级，实际远小于 15KB 预算）
+          pickemRefunds: state.pickemRefunds || [] // 选手喜爱榜撤回明细（1.3.26，union by ref 合并；≤ REFUND_LEDGER_CAP=80，
+                                                   // ref=被撤 vote 的 vid——去重后恒 ≤ vote，撤回永不造币）
         }
       });
     }

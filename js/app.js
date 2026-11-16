@@ -7,7 +7,7 @@ import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, 
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot, fetchAllRosters } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
 import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
-import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, distinctPlayerIds, VOTE_LEDGER_CAP, VOTES_EXTRA_CAP } from "./like-rank.js";
+import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, netByPlayer, netHolders, VOTE_LEDGER_CAP, REFUND_LEDGER_CAP, VOTES_EXTRA_CAP } from "./like-rank.js";
 
 (function () {
   "use strict";
@@ -132,7 +132,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
   ];
 
   /* ============================== 状态 ============================== */
-  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 }, pickemVotes: [] };
+  var state = { bankroll: START_BALANCE, predictions: [], digs: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 }, pickemVotes: [], pickemRefunds: [] };
   var currentGame = "all";
   var currentTournament = "__all__";
   var currentStatus = "all";
@@ -270,7 +270,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
   }
 
   async function loadState() {
-    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 }, pickemVotes: [] };
+    var base = { bankroll: START_BALANCE, predictions: [], digs: 0, updatedAt: 0, gods: 0, bankrupts: 0, godOffered: false, bankruptOffered: false, lastCeremonyAt: 0, collection: {}, achv: {}, minBankroll: START_BALANCE, title: undefined, mainTeam: undefined, mainLevels: {}, pickem: {}, pickemCoins: { c: 0, s: 0, g: 0, d: 0 }, pickemVotes: [], pickemRefunds: [] };
     try {
       var raw = await storageGet(STORAGE_KEY);
       if (!raw) return base;
@@ -293,7 +293,8 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
         mainLevels: normalizeAchv(parsed.mainLevels), // {键: 累计押过场次}——复用同构校验（正数、取整、上限）
         pickem: normalizePickemState(parsed.pickem), // Pick'Em 竞猜记录（键 eventId:stageId）
         pickemCoins: mergePickemCoins({ c: 0, s: 0, g: 0, d: 0 }, parsed.pickemCoins), // Pick'Em 硬币（1.3.5，逐键 max）
-        pickemVotes: normalizeVotes(parsed.pickemVotes), // 选手喜爱榜投币明细（1.3.20，union 合并账本）
+        pickemVotes: normalizeVotes(parsed.pickemVotes), // 选手喜爱榜投出明细（1.3.20，union 合并账本）
+        pickemRefunds: normalizeRefunds(parsed.pickemRefunds), // 选手喜爱榜撤回明细（1.3.26，union by ref 合并）
         updatedAt: typeof parsed.updatedAt === "number" && isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
       };
     } catch (e) {
@@ -306,7 +307,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
   var achvChecking = false; // 成就检测重入防护（checkAchievements 在 saveState 内执行）
 
   function stateSnapshot() {
-    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam, state.mainLevels, state.pickem, state.pickemCoins, state.pickemVotes]);
+    return JSON.stringify([state.bankroll, state.digs, state.predictions, state.gods, state.bankrupts, state.godOffered, state.bankruptOffered, state.lastCeremonyAt, state.collection, state.achv, state.minBankroll, state.title, state.mainTeam, state.mainLevels, state.pickem, state.pickemCoins, state.pickemVotes, state.pickemRefunds]);
   }
 
   function saveState() {
@@ -500,6 +501,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var localPickem = state.pickem;
     var localPickemCoins = state.pickemCoins;
     var localPickemVotes = state.pickemVotes;
+    var localPickemRefunds = state.pickemRefunds;
     state = {
       bankroll: typeof s.bankroll === "number" && isFinite(s.bankroll) ? s.bankroll : START_BALANCE,
       predictions: Array.isArray(s.predictions) ? s.predictions : [],
@@ -517,7 +519,8 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
       mainLevels: mergeAchv(localMainLevels, s.mainLevels),
       pickem: mergePickem(localPickem, s.pickem), // Pick'Em：pickedAt 较新者胜、settled 取 OR（js/pickem.js#mergePickem）
       pickemCoins: mergePickemCoins(localPickemCoins, s.pickemCoins), // 硬币逐键 max（只增不减）
-      pickemVotes: mergeVotes(localPickemVotes, s.pickemVotes), // 投币明细 union by vid（1.3.20，append-only 只增；js/like-rank.js）
+      pickemVotes: mergeVotes(localPickemVotes, s.pickemVotes), // 投出明细 union by vid（1.3.20，只增不删；js/like-rank.js）
+      pickemRefunds: mergeRefunds(localPickemRefunds, s.pickemRefunds), // 撤回明细 union by ref（1.3.26，并发双撤去重；js/like-rank.js）
       updatedAt: rec.updatedAt
     };
     validateLoadedState();
@@ -1561,7 +1564,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
       }, nick, avatar, state.title,
       // 选手喜爱榜投票清单（1.3.20）：本地账本非空时随每次战绩提交顺路刷新 extra.v；
       // 空清单传 undefined=沿用榜上旧值（防旧设备在同步到账本前把其他设备刚投的票清掉）
-      (state.pickemVotes && state.pickemVotes.length) ? encodeVotesExtra(state.pickemVotes) : undefined,
+      (state.pickemVotes && state.pickemVotes.length) ? encodeVotesExtra(state.pickemVotes, state.pickemRefunds) : undefined,
       // extra.mt 必须是纯队名（看榜端按名字查队标映射）——不能传图鉴键 "game:名字"，
       // 否则队标查找落空回退首字，还会渲染出 "CS2T" 这类键名截断（1.2.13 用户实测抓到）
       state.mainTeam === undefined ? undefined : state.mainTeam === "" ? "" : mainTeamName(),
@@ -2791,12 +2794,13 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var active = evs.filter(function (e) { return e.status !== "done"; }).length;
     var coins = state.pickemCoins || { c: 0, s: 0, g: 0, d: 0 };
     var coinTotal = (coins.c || 0) + (coins.s || 0) + (coins.g || 0) + (coins.d || 0);
-    // 选手喜爱榜行值：可投金/钻枚数；无可投但有投币记录显示已投数（1.3.20）
-    var myBal = availableCoins(state.pickemCoins, state.pickemVotes);
-    var voteCount = (state.pickemVotes || []).length;
+    // 选手喜爱榜行值：可投金/钻枚数；无可投但有净持仓显示已投数（1.3.20；1.3.26 净额口径）
+    var myBal = availableCoins(state.pickemCoins, state.pickemVotes, state.pickemRefunds);
+    var netHold = netHolders(state.pickemVotes, state.pickemRefunds);
+    var holdCount = Object.keys(netHold).length;
     var loveValue = myBal.g + myBal.d > 0
       ? PICKEM_COINS.g.icon + myBal.g + " " + PICKEM_COINS.d.icon + myBal.d + " 可投"
-      : voteCount ? "已投 " + voteCount + " 枚" : "实验 · 给选手投币";
+      : holdCount ? "已投 " + holdCount + " 名选手" : "实验 · 给选手投币";
     box.innerHTML =
       '<button type="button" class="settings-row" data-labs="pickem">' +
         '<span class="settings-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/></svg></span>' +
@@ -3270,12 +3274,14 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var body = $("#playerloveBody");
     if (!body) return;
     var rows = aggregateBoardVotes((res && res.entries) || []);
+    var myNet = netByPlayer(state.pickemVotes, state.pickemRefunds);
     var myIds = {};
-    (state.pickemVotes || []).forEach(function (v) { myIds[v.id] = 1; });
-    var bal = availableCoins(state.pickemCoins, state.pickemVotes);
+    Object.keys(myNet).forEach(function (k) { if (myNet[k].g + myNet[k].d > 0) myIds[myNet[k].id] = 1; });
+    var bal = availableCoins(state.pickemCoins, state.pickemVotes, state.pickemRefunds);
+    var holdCount = Object.keys(myIds).length;
     var head = '<div class="settings-group"><div class="pickem-coin has" style="margin:0 0 10px">可投 ' +
       PICKEM_COINS.g.icon + "×" + bal.g + " " + PICKEM_COINS.d.icon + "×" + bal.d +
-      " · 已投 " + (state.pickemVotes || []).length + " 枚 · 投票入口在战队资料页选手卡</div></div>";
+      " · 已投 " + holdCount + " 名选手 · 投票入口在战队资料页选手卡</div></div>";
     if (!rows.length) {
       body.innerHTML = head +
         '<div class="empty-state"><strong>还没有人投币</strong>去战队资料页打开选手卡，给喜欢的选手投一枚金币或钻石币</div>';
@@ -3283,7 +3289,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     }
     body.innerHTML = head +
       rows.map(function (r, i) { return loveRowHTML(r, i, myIds); }).join("") +
-      '<p class="data-note">票数来自榜上玩家条目聚合 · 金/钻币投出不可撤回 · 实验功能</p>';
+      '<p class="data-note">票数来自榜上玩家条目聚合 · 投出可撤回改投（净额计入榜面） · 实验功能</p>';
   }
 
   function renderPlayerLove() {
@@ -3294,8 +3300,8 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     if (loveLoading) return;
     loveLoading = true;
     voteSyncNow(); // 进入页面顺路刷一次投票 extra（免 4s 防抖，与硬币榜 syncCoinBoard 同构）
-    // 调试会话传本地账本供回显（Browser Fake 禁写真实榜）；生产端该参数被忽略
-    Cloud.getVoteBoard((state.pickemVotes || []).length ? encodeVotesExtra(state.pickemVotes) : []).then(function (res) {
+    // 调试会话传本地净额供回显（Browser Fake 禁写真实榜）；生产端该参数被忽略
+    Cloud.getVoteBoard((state.pickemVotes || []).length ? encodeVotesExtra(state.pickemVotes, state.pickemRefunds) : []).then(function (res) {
       loveCache = res;
       loveLoading = false;
       paintPlayerLove(res);
@@ -3505,27 +3511,48 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     document.body.style.overflow = "";
   }
 
-  /* ---------- 喜爱投币（1.3.20 实验功能）：选手卡内投金币/钻石币，明细走 union 账本 ---------- */
+  /* ---------- 喜爱投币（1.3.20 实验功能；1.3.26 自定义数量 + 按选手撤回）：
+     选手卡内投金币/钻石币（步进器定数量），明细走 union 账本（投出+撤回） ---------- */
+
+  var voteQty = 1;           // 步进器当前数量（两币种共用，投币时按所选币余额校验）
+  var withdrawArmedKey = ""; // 撤回二次确认：armed 键（playerId:coin 场景），3 秒超时
+  var withdrawArmedTimer = 0;
 
   function playerVoteHTML(p) {
     var votes = state.pickemVotes || [];
-    var bal = availableCoins(state.pickemCoins, votes);
-    var mine = { g: 0, d: 0 };
-    votes.forEach(function (v) { if (v.id === p.id) mine[v.coin]++; });
+    var refunds = state.pickemRefunds || [];
+    var bal = availableCoins(state.pickemCoins, votes, refunds);
+    var net = netByPlayer(votes, refunds)[p.id] || { g: 0, d: 0 };
+    var myNet = net.g + net.d;
     var full = votes.length >= VOTE_LEDGER_CAP;
     function btn(k) {
       var none = !(bal[k] > 0) || full;
       return '<button type="button" class="vote-btn" data-pvote="' + k + '"' + (none ? " disabled" : "") + ">" +
         PICKEM_COINS[k].icon + " 投" + PICKEM_COINS[k].name + (bal[k] > 0 ? " ×" + bal[k] : "") + "</button>";
     }
-    return '<div class="section-head"><h2>喜爱投币</h2><span class="section-sub">实验功能 · 投出不可撤回</span></div>' +
+    return '<div class="section-head"><h2>喜爱投币</h2><span class="section-sub">实验功能 · 可撤回改投</span></div>' +
       '<div class="vote-box">' +
-        '<div class="vote-meta">我已投给TA ' + PICKEM_COINS.g.icon + "×" + mine.g + " " + PICKEM_COINS.d.icon + "×" + mine.d +
+        '<div class="vote-meta">我已投给TA ' + PICKEM_COINS.g.icon + "×" + net.g + " " + PICKEM_COINS.d.icon + "×" + net.d +
           " · 可投 " + PICKEM_COINS.g.icon + "×" + bal.g + " " + PICKEM_COINS.d.icon + "×" + bal.d +
           " · 最多 " + VOTES_EXTRA_CAP + " 名选手</div>" +
+        '<div class="vote-qty">' +
+          '<button type="button" class="vote-step" data-pvqty="-1" aria-label="减少数量">−</button>' +
+          '<span class="vote-qty-num" id="voteQtyNum">' + voteQty + "</span>" +
+          '<button type="button" class="vote-step" data-pvqty="1" aria-label="增加数量">+</button>' +
+          '<span class="vote-qty-unit">枚</span>' +
+        "</div>" +
         '<div class="vote-btns">' + btn("g") + btn("d") + "</div>" +
-        (bal.g + bal.d === 0 ? '<div class="vote-hint">金/钻石币来自赛事竞猜 · Major 瑞士轮与名次竞猜可得</div>' : "") +
+        (myNet > 0 ? '<button type="button" class="vote-withdraw" data-pwdraw="1">' +
+          (withdrawArmedKey === String(p.id) ? "再点一次确认撤回" : "撤回给TA的全部投币") + "</button>" : "") +
+        (bal.g + bal.d === 0 && myNet === 0 ? '<div class="vote-hint">金/钻石币来自赛事竞猜 · Major 瑞士轮与名次竞猜可得</div>' : "") +
       "</div>";
+  }
+
+  /** 步进器：±1，范围 [1, 999999]（上限校验在投币时按所选币余额做） */
+  function stepVoteQty(delta) {
+    voteQty = Math.min(999999, Math.max(1, voteQty + delta));
+    var el = $("#voteQtyNum");
+    if (el) el.textContent = String(voteQty);
   }
 
   function castPlayerVote(coin) {
@@ -3534,23 +3561,67 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     var roster = ROSTERS[ctx.teamKey];
     var p = roster && roster[ctx.idx];
     if (!p || typeof p.id !== "number") return;
-    if ((state.pickemVotes || []).length >= VOTE_LEDGER_CAP) { toast("投币明细已满，无法继续投"); return; }
-    // 可投不同选手数硬限 = VOTES_EXTRA_CAP（与榜上携带条数同常量）：保证 extra.v 完整携带全部投票、
-    // 聚合榜零丢失；同一名选手追加票不受此限（聚合后仍是一条）
-    var seenIds = distinctPlayerIds(state.pickemVotes);
-    if (seenIds[p.id] !== 1 && Object.keys(seenIds).length >= VOTES_EXTRA_CAP) {
-      toast("最多投 " + VOTES_EXTRA_CAP + " 名选手（榜单携带上限），同一名选手可继续追加");
+    var votes = state.pickemVotes || [];
+    var refunds = state.pickemRefunds || [];
+    if (votes.length >= VOTE_LEDGER_CAP) { toast("投币明细已满，先撤回一些再投"); return; }
+    // 净持仓选手数硬限 = VOTES_EXTRA_CAP（与榜上携带条数同常量）：保证 extra.v 完整携带全部净投、
+    // 聚合榜零丢失；同一名选手追加票不受此限（聚合后仍是一条）；撤光一名即腾出一个名额
+    var holders = netHolders(votes, refunds);
+    if (holders[p.id] !== 1 && Object.keys(holders).length >= VOTES_EXTRA_CAP) {
+      toast("最多投 " + VOTES_EXTRA_CAP + " 名选手（榜单携带上限），撤回一名即可改投他人");
       return;
     }
-    var bal = availableCoins(state.pickemCoins, state.pickemVotes);
-    if (!(bal[coin] > 0)) { toast("没有可投的" + PICKEM_COINS[coin].name + "了"); return; }
+    var qty = Math.min(Math.max(Math.round(voteQty), 1), 999999);
+    var bal = availableCoins(state.pickemCoins, votes, refunds);
+    if (!(bal[coin] >= qty)) {
+      toast(bal[coin] > 0 ? "余额只有 " + bal[coin] + " 枚" + PICKEM_COINS[coin].name : "没有可投的" + PICKEM_COINS[coin].name + "了");
+      return;
+    }
     var sep = ctx.teamKey.indexOf(":");
-    state.pickemVotes.push({ vid: makeVoteId(), id: p.id, n: String(p.n || "").slice(0, 12), t: ctx.teamKey.slice(sep + 1), coin: coin, at: Date.now() });
+    state.pickemVotes.push({ vid: makeVoteId(), id: p.id, n: String(p.n || "").slice(0, 12), t: ctx.teamKey.slice(sep + 1), coin: coin, qty: qty, at: Date.now() });
+    voteQty = 1; // 投完复位步进器
     saveState();
     scheduleVoteSync();
     vibrate("light");
-    toast("已投出 1 枚" + PICKEM_COINS[coin].name + "给 " + (p.n || "TA"));
+    toast("已投出 " + qty + " 枚" + PICKEM_COINS[coin].name + "给 " + (p.n || "TA"));
     openPlayerSheet(ctx.teamKey, ctx.idx); // 重渲染抽屉：余额/已投即时更新
+  }
+
+  /** 按选手一键撤回：为该选手全部未撤的 vote 条目逐条生成 refund（ref=vid，append-only，
+   *  union by ref 去重 → 并发双撤同一票只算一次，Σrefund ≤ Σvote 恒成立 → 撤回永不造币） */
+  function withdrawPlayerVotes() {
+    var ctx = playerSheetCtx;
+    if (!ctx) return;
+    var roster = ROSTERS[ctx.teamKey];
+    var p = roster && roster[ctx.idx];
+    if (!p || typeof p.id !== "number") return;
+    if (withdrawArmedKey !== String(p.id)) {
+      // 二次确认（仿清空重选的 armed 模式）：撤回虽可再投，但会触发榜面同步，防手滑
+      withdrawArmedKey = String(p.id);
+      clearTimeout(withdrawArmedTimer);
+      withdrawArmedTimer = setTimeout(function () { withdrawArmedKey = ""; if (playerSheetCtx) openPlayerSheet(ctx.teamKey, ctx.idx); }, 3000);
+      toast("再点一次确认撤回");
+      openPlayerSheet(ctx.teamKey, ctx.idx);
+      return;
+    }
+    withdrawArmedKey = "";
+    clearTimeout(withdrawArmedTimer);
+    var votes = state.pickemVotes || [];
+    var refundedRefs = {};
+    (state.pickemRefunds || []).forEach(function (r) { refundedRefs[r.ref] = 1; });
+    var pending = votes.filter(function (v) { return v.id === p.id && !refundedRefs[v.vid]; });
+    if (!pending.length) { toast("TA 的投币已全部撤回"); return; }
+    var now = Date.now();
+    var total = 0;
+    pending.forEach(function (v) {
+      state.pickemRefunds.push({ ref: v.vid, id: v.id, coin: v.coin, qty: v.qty, at: now });
+      total += v.qty;
+    });
+    saveState();
+    scheduleVoteSync();
+    vibrate("light");
+    toast("已撤回 " + total + " 枚（余额已退回，可改投他人）");
+    openPlayerSheet(ctx.teamKey, ctx.idx); // 重渲染抽屉：净持仓/余额即时更新
   }
 
   /** 投票 extra.v 提交（防抖合并连点）；进喜爱榜页时直接调 voteSyncNow 免等防抖 */
@@ -3559,9 +3630,10 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
   function voteSyncNow() {
     if (voteSyncBusy) return Promise.resolve();
     var votes = state.pickemVotes || [];
+    var refunds = state.pickemRefunds || [];
     if (!votes.length) return Promise.resolve();
     voteSyncBusy = true;
-    var encoded = encodeVotesExtra(votes);
+    var encoded = encodeVotesExtra(votes, refunds);
     function displayArgs(nick, avatar) {
       return [nick, avatar, state.title,
         state.mainTeam === undefined ? undefined : state.mainTeam === "" ? "" : mainTeamName(),
@@ -4589,7 +4661,9 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     if (state.pickemCoins === undefined || state.pickemCoins === null || typeof state.pickemCoins !== "object") state.pickemCoins = { c: 0, s: 0, g: 0, d: 0 };
     state.pickemCoins = mergePickemCoins({ c: 0, s: 0, g: 0, d: 0 }, state.pickemCoins); // 硬币形状兜底（负数/脏值清零）
     if (!Array.isArray(state.pickemVotes)) state.pickemVotes = [];
-    state.pickemVotes = normalizeVotes(state.pickemVotes); // 投币明细形状兜底（脏条目丢弃、vid 去重；1.3.20）
+    state.pickemVotes = normalizeVotes(state.pickemVotes); // 投出明细形状兜底（脏条目丢弃、vid 去重；1.3.20）
+    if (!Array.isArray(state.pickemRefunds)) state.pickemRefunds = [];
+    state.pickemRefunds = normalizeRefunds(state.pickemRefunds); // 撤回明细形状兜底（ref 去重；1.3.26）
   }
 
   /* ============================== 新手引导与发帖素材 ============================== */
@@ -5881,12 +5955,16 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
       if (row) openSheet(row.dataset.openMatch);
     });
 
-    // 选手卡抽屉（2026-11-10）：关闭按钮 + 点 backdrop 关闭 + 喜爱投币按钮委托（1.3.20）
+    // 选手卡抽屉（2026-11-10）：关闭按钮 + 点 backdrop 关闭 + 喜爱投币委托（1.3.20；1.3.26 数量/撤回）
     $("#playerSheetClose").addEventListener("click", closePlayerSheet);
     $("#playerSheet").addEventListener("click", function (e) {
       if (e.target === $("#playerSheet")) { closePlayerSheet(); return; }
       var vb = e.target.closest("[data-pvote]");
-      if (vb && !vb.disabled) castPlayerVote(vb.dataset.pvote);
+      if (vb && !vb.disabled) { castPlayerVote(vb.dataset.pvote); return; }
+      var step = e.target.closest("[data-pvqty]");
+      if (step) { stepVoteQty(Number(step.dataset.pvqty) || 0); return; }
+      var wd = e.target.closest("[data-pwdraw]");
+      if (wd) { withdrawPlayerVotes(); return; }
     });
 
     document.addEventListener("keydown", function (e) {

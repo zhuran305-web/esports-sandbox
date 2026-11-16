@@ -12,7 +12,8 @@
  *                    （degraded=部分对阵未排期：名单齐（8 队）仍可名次竞猜，结算仍需完整 7 场推导 results）
  *                    （rec.type="bracket" 历史记录兼容放行见下方 normalizePickemState；类型本身 1.3.16 已删除，
  *                     normalizeStage 拒收 bracket 阶段——淘汰赛一律用 placement）
- *   用户侧记录（state.pickem，键 = eventId + ":" + stageId）：
+ *   用户侧记录（state.pickem，键 = eventId + "##" + stageId，1.3.6 起——自动赛事 id 含冒号，
+ *   单一来源 pickemRecKey()，拆分一律 indexOf("##")）：
  *     swiss     rec = { type:"swiss", picks:{adv30:[],adv:[],out03:[]}, pickedAt, settled, settledAt, score, total, prize }
  *     series    rec = { type:"series", picks:{w:{matchId:"A"|"B"}}, ...同上 }
  *     placement rec = { type:"placement", picks:{champion:"队名",runnerUp:"队名",third:"队名"}, ...同上 }

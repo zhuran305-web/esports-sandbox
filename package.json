@@ -1,6 +1,6 @@
 {
   "name": "esports-sandbox",
-  "version": "1.3.24",
+  "version": "1.3.25",
   "private": true,
   "type": "module",
   "description": "赛事沙盘 · 电竞赛事预测模拟盘（小黑盒小程序）+ 赛事数据采集器",
@@ -10,7 +10,7 @@
     "dev:vite": "vite",
     "prebuild": "node tools/pull-data.mjs --force && node tools/trim-embedded.mjs && node tools/pack-team-logos.mjs",
     "build": "hb-sdk build",
-    "deploy": "VITE_RUNTIME_DATA_BASE=https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/ hb-sdk remote deploy",
+    "deploy": "hb-sdk remote deploy",
     "data:pull": "node tools/pull-data.mjs --force && node tools/trim-embedded.mjs",
     "runtime:build": "node tools/build-runtime-data.mjs",
     "runtime:serve": "node tools/serve-runtime.mjs",

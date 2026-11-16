@@ -886,10 +886,10 @@ check("桶体奖励展示与结算同源（1.3.15）：records/swiss 桶体币�
   /coinKeyForTier\(\(recStage0 && recStage0\.coinTier\) \|\| 1\)/.test(appSrc) && // 规则文案同源
   /export function coinKeyForTier/.test(pickemJsSrc)); // helper 从 pickem.js 导出
 check("状态与结算：state.pickem 全链（init/load/快照/校验/云合并）+ settlePickem 四挂点 + Sync.pack 白名单",
-  /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}, pickemVotes: \[\]/.test(appSrc) &&
+  /mainLevels: \{\}, pickem: \{\}, pickemCoins: \{ c: 0, s: 0, g: 0, d: 0 \}, pickemVotes: \[\], pickemRefunds: \[\]/.test(appSrc) &&
   /pickem: normalizePickemState\(parsed\.pickem\)/.test(appSrc) &&
   /mergePickemCoins\(\{ c: 0, s: 0, g: 0, d: 0 \}, parsed\.pickemCoins\)/.test(appSrc) &&
-  /state\.mainLevels, state\.pickem, state\.pickemCoins, state\.pickemVotes\]/.test(appSrc) &&
+  /state\.mainLevels, state\.pickem, state\.pickemCoins, state\.pickemVotes, state\.pickemRefunds\]/.test(appSrc) &&
   /state\.pickem = normalizePickemState\(state\.pickem\)/.test(appSrc) &&
   /pickem: mergePickem\(localPickem, s\.pickem\)/.test(appSrc) &&
   /pickemCoins: mergePickemCoins\(localPickemCoins, s\.pickemCoins\)/.test(appSrc) &&
@@ -2272,9 +2272,57 @@ check("16 条最坏全汉字 + 其他字段最坏 → trim 后落 1900B 预算�
     return L.utf8Len(JSON.stringify(extra)) <= 1900 && extra.v.length >= 16 - 2; // 极端叠加也几乎不截
   })(),
   "v.length=" + (function () { var extra = { first: 9, second: 999999999, nick: "十二字中文昵称十二字中文昵称", avatar: "https://a.example/" + "x".repeat(280), title: "streak_5", mt: "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", ml: 8, v: enc16 }; L.trimExtraForBudget(extra, 1900); return extra.v.length; })());
-var seenA = L.distinctPlayerIds([{ vid: "1", id: 5, coin: "g" }, { vid: "2", id: 5, coin: "g" }, { vid: "3", id: 7, coin: "d" }]);
-check("distinctPlayerIds：同选手多枚票合并计数", seenA[5] === 1 && seenA[7] === 1 && Object.keys(seenA).length === 2,
+var seenA = L.netHolders([{ vid: "1", id: 5, coin: "g" }, { vid: "2", id: 5, coin: "g" }, { vid: "3", id: 7, coin: "d" }], []);
+check("netHolders：同选手多枚票合并计数（净持仓口径）", seenA[5] === 1 && seenA[7] === 1 && Object.keys(seenA).length === 2,
   JSON.stringify(seenA));
+
+/* ---- 撤回账本（1.3.26）：自定义数量 + 按选手一键撤回 + 防刷不变式 ----
+   核心不变式：refund 以 ref（被撤 vote 的 vid）为去重键 → Σrefund ≤ Σvote per (id,coin)
+   恒成立 → 撤回永不造币；并发双撤同一票只算一次（堵死负净额刷币路径）。 */
+console.log("撤回账本（自定义数量 + 按选手撤回 1.3.26）：");
+var oldVotes = L.normalizeVotes([{ vid: "old1", id: 100, n: "a", t: "T", coin: "g", at: 1 }]);
+check("老数据无 qty → 默认 1（1.3.25 及以前逐枚投存量兼容）", oldVotes[0].qty === 1);
+var bal1 = L.availableCoins({ g: 10, d: 2 },
+  [{ vid: "v1", id: 1, coin: "g", qty: 5 }, { vid: "v2", id: 1, coin: "d", qty: 2 }], []);
+check("qty 投币净额：余额=earned−Σvote.qty", bal1.g === 5 && bal1.d === 0, JSON.stringify(bal1));
+var refundPair = { ref: "v1", id: 1, coin: "g", qty: 5, at: 9 };
+var bal2 = L.availableCoins({ g: 10, d: 2 }, [{ vid: "v1", id: 1, coin: "g", qty: 5 }], [refundPair]);
+check("撤回余额恢复：earned−vote+refund=earned（撤回不造币）", bal2.g === 10 && bal2.d === 2, JSON.stringify(bal2));
+var doubleWd = L.availableCoins({ g: 10, d: 2 },
+  [{ vid: "v1", id: 1, coin: "g", qty: 3 }],
+  [{ ref: "v1", id: 1, coin: "g", qty: 3 }, { ref: "v1", id: 1, coin: "g", qty: 3, at: 2 }]); // 两设备各撤同一票
+check("并发双撤同一票（同 ref）→ 去重只算一次，余额=earned 不变多", bal2.g === 10 && (function () {
+  var b = L.availableCoins({ g: 10, d: 2 }, [{ vid: "v1", id: 1, coin: "g", qty: 3 }],
+    [{ ref: "v1", id: 1, coin: "g", qty: 3 }, { ref: "v1", id: 1, coin: "g", qty: 3, at: 2 }]);
+  return b.g === 10;
+})(), JSON.stringify(bal2));
+var netA = L.netByPlayer(
+  [{ vid: "v1", id: 1, coin: "g", qty: 3 }, { vid: "v2", id: 2, coin: "g", qty: 2 }],
+  [{ ref: "v1", id: 1, coin: "g", qty: 1 }]);
+check("netByPlayer：per-player 净投（撤 1 枚 → 净 2）", netA[1].g === 2 && netA[2].g === 2, JSON.stringify(netA));
+var encNet = L.encodeVotesExtra(
+  [{ vid: "v1", id: 1, coin: "g", qty: 3 }, { vid: "v2", id: 2, coin: "g", qty: 2 }],
+  [{ ref: "v1", id: 1, coin: "g", qty: 3 }]); // 撤光选手 1
+check("encodeVotesExtra：净额 0（撤光）自动下榜 + 净额进榜值",
+  encNet.length === 1 && encNet[0][0] === 2 && encNet[0][3] === 2, JSON.stringify(encNet));
+var mrA = L.mergeRefunds([{ ref: "r1", id: 1, coin: "g", qty: 2 }],
+  [{ ref: "r1", id: 1, coin: "g", qty: 2 }, { ref: "r2", id: 2, coin: "d", qty: 1 }]);
+check("mergeRefunds：union by ref（并发双撤去重 + 异 ref 全保留）",
+  mrA.length === 2 && mrA[0].ref === "r1" && mrA[1].ref === "r2", JSON.stringify(mrA.map(function (r) { return r.ref; })));
+var nrBad = L.normalizeRefunds([
+  { ref: "", id: 1, coin: "g", qty: 1 },        // 空 ref → 丢
+  { ref: "a", id: "x", coin: "g", qty: 1 },     // id 非数字 → 丢
+  { ref: "b", id: 2, coin: "c", qty: 1 },       // 铜币不可投 → 丢
+  { ref: "c", id: 3, coin: "d", qty: 9999999 }, // qty 钳 1e6
+  { ref: "c", id: 3, coin: "d", qty: 5 }        // 同 ref 重复 → 丢（保首条）
+]);
+check("normalizeRefunds：非法条目丢弃 + 同 ref 去重 + qty 钳制",
+  nrBad.length === 1 && nrBad[0].ref === "c" && nrBad[0].qty === 1e6, JSON.stringify(nrBad));
+var holdersA = L.netHolders(
+  [{ vid: "v1", id: 1, coin: "g", qty: 3 }, { vid: "v2", id: 2, coin: "g", qty: 2 }],
+  [{ ref: "v2", id: 2, coin: "g", qty: 2 }]); // 选手 2 撤光
+check("netHolders：撤光选手不再占名额（16 上限腾位）",
+  holdersA[1] === 1 && holdersA[2] !== 1 && Object.keys(holdersA).length === 1, JSON.stringify(holdersA));
 
 /* ---- AJ6：窗口外队伍恢复（1.3.22：全量阵容后台补拉 + 队标 OSS 回退）----
    窗口切片（4+16 天）会把休赛队伍切出打包集（天禄 11-15 实测）——资产完好，

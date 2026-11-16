@@ -2296,6 +2296,18 @@ check("阀门 2 数据侧：pack 工具 webp 镜像（logos-webp/ + PUT 幂等�
   /function webpProbe/.test(rf(path.join(root, "tools", "pack-team-logos.mjs"), "utf8")) &&
   /function webpUpload/.test(rf(path.join(root, "tools", "pack-team-logos.mjs"), "utf8")));
 
+/* ---- 数据基址兜底（1.3.24 deploy 重建事故）：hb-sdk remote deploy 会自己重新构建，
+   调用方漏带 VITE_RUNTIME_DATA_BASE 时旧写法产出空基址 → 1.3.20~23 四个线上版本
+   全部离线态（用户鸿蒙机「当前版本未启用在线更新」实测抓到）。硬编码兜底后任何构建
+   路径都不丢基址；诊断行加在线开关防盲区。 ---- */
+console.log("数据基址兜底（deploy 重建事故 1.3.24）：");
+var cfgSrc = rf(path.join(root, "js", "config.js"), "utf8");
+check("config：RUNTIME_DATA_BASE 硬编码兜底（env || 生产桶常量，与换票端点同款模式）",
+  /VITE_RUNTIME_DATA_BASE\) \|\|/.test(cfgSrc) && /esports-sandbox-data\.oss-cn-hangzhou\.aliyuncs\.com/.test(cfgSrc) &&
+  !/VITE_RUNTIME_DATA_BASE\) \|\| "";/.test(cfgSrc));
+check("诊断行：在线数据开关 + 数据版本（离线态一眼可见）",
+  /在线数据:" \+ \(isRuntimeEnabled\(\) \? "开" : "关"\)/.test(appSrc) && /var dataDiag/.test(appSrc));
+
 /* ---- AJ5：调试会话门禁（Browser Fake runtime.mode=development 禁写投票 extra——防测试票污染真实聚合榜） ---- */
 console.log("AJ5. 调试会话门禁：");
 var submitsAJ5 = makeSdk({ [WIN]: { uid: "u1", score: 5e9 + 300, extra: { first: 5, second: 300 } } });

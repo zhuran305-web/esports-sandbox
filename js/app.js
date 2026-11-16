@@ -57,7 +57,7 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "1.3.23";
+  var APP_VERSION = "1.3.24";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -4900,8 +4900,11 @@ import { normalizeVotes, mergeVotes, spentCoins, availableCoins, encodeVotesExtr
       // 已同步账号：按钮转为状态提示（点击只提示，不再发起换票=不再产生 FC 调用）
       $("#hbSyncBtn").textContent = hbProfileMatchesIdentity(hb) ? "已同步黑盒资料" : "同步黑盒资料";
       $("#hbSyncBtn").hidden = false;
-      // 诊断行：宿主环境快照（版本/模式/系统），用于各端排障
-      $("#settingsDiag").textContent = getDiagnostics() +
+      // 诊断行：宿主环境快照（版本/模式/系统）+ 在线数据开关 + 数据版本（1.3.24 加——
+      // 「deploy 重建丢基址」类问题（1.3.20~23 离线态事故）曾无 UI 可查，一票否决式盲区）
+      var dataDiag = " · 在线数据:" + (isRuntimeEnabled() ? "开" : "关") +
+        (DATA_UPDATED_AT ? "(" + String(DATA_UPDATED_AT).slice(0, 10) + ")" : "");
+      $("#settingsDiag").textContent = getDiagnostics() + dataDiag +
         (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") +
           (hb.via ? "(" + hb.via + ")" : "(旧缓存，点同步刷新)") +
           (hb.avatar ? "+头像" : "-无头像") : "");

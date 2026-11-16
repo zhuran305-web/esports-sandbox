@@ -1,10 +1,14 @@
 /*
- * 运行时数据源。留空表示关闭运行时拉取，只使用构建时内置数据。
- * 联调：VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/ npm run dev
- * 生产：VITE_RUNTIME_DATA_BASE=https://<bucket 域名>/ npm run build
+ * 运行时数据源（生产桶基址为公开常量，与换票端点同款「env || 硬编码」兜底）。
+ * 1.3.24 事故修复：`hb-sdk remote deploy` 会自己重新构建（CLI 说明「构建并提交」）——
+ * 调用方漏带 VITE_RUNTIME_DATA_BASE 时旧写法产出空基址，1.3.20~1.3.23 四个线上版本
+ * 因此全部处于「未启用在线更新」离线态（用户鸿蒙机 toast 实测抓到；天禄队标/阵容消失
+ * 只是其表象之一）。硬编码兜底后任何构建路径（deploy 重建/联调）都不会再丢基址；
+ * 联调仍可用 env 覆盖（VITE_RUNTIME_DATA_BASE=http://127.0.0.1:5180/）。
  */
 export var RUNTIME_DATA_BASE =
-  (import.meta.env && import.meta.env.VITE_RUNTIME_DATA_BASE) || "";
+  (import.meta.env && import.meta.env.VITE_RUNTIME_DATA_BASE) ||
+  "https://esports-sandbox-data.oss-cn-hangzhou.aliyuncs.com/";
 
 /*
  * 身份换票端点（2026-10-26 起直连优先）。官方口径：network 权限批准后访问第三方

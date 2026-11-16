@@ -126,6 +126,12 @@ var rostersStorageOk = null; // null=未知 true=可落盘 false=超限（读写
 export async function fetchAllRosters() {
   if (allRostersCache && Date.now() - allRostersAt < ROSTERS_CACHE_TTL) return allRostersCache;
   if (!isRuntimeEnabled()) return null;
+  // 预览态门禁（1.3.25）：与 fetchLiveSnapshot/fetchRemoteSnapshot 同款——预览态无 effective
+  // network，network.request 会弹宿主原生 SERVER_API_REQUIRED（审核包首启体验，1.3.22 漏加）
+  if (getRuntimeMode() === "unknown") {
+    await whenPlatformReady(5000);
+  }
+  if (getRuntimeMode() === "preview") return null;
   if (rostersStorageOk !== false) {
     try {
       var cachedRaw = await storageGet(ROSTERS_CACHE_KEY);

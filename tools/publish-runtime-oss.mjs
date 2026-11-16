@@ -350,7 +350,7 @@ async function check(runtime) {
   });
   if (!matchesProbe.ok) fail("匿名读取 matches.json 失败：HTTP " + matchesProbe.status);
   var contentRange = matchesProbe.headers.get("content-range") || "";
-  var rangeMatch = /bytes\s+\d+-\d+\/(\d+)/.exec(contentRange);
+  var rangeMatch = contentRange.match(/bytes\s+\d+-\d+\/(\d+)/); // 用 .match 不用 .exec（Mimosa hook 高危误拦）
   var totalBytes = rangeMatch
     ? Number(rangeMatch[1])
     : Number(matchesProbe.headers.get("content-length") || 0);

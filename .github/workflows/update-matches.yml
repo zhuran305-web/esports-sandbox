@@ -200,7 +200,7 @@ jobs:
       - name: Publish runtime data to OSS
         if: env.OSS_ACCESS_KEY_ID != ''
         run: |
-          REMOTE_HASH="$(curl -fsSL "https://${OSS_BUCKET}.oss-${OSS_REGION}.aliyuncs.com/${OSS_PREFIX}meta.json" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(String(JSON.parse(d).hash||''))}catch(e){console.log('')}})" || echo '')"
+          REMOTE_HASH="$(curl -fsSL "https://${OSS_BUCKET}.oss-${OSS_REGION}.aliyuncs.com/${OSS_PREFIX:+$OSS_PREFIX/}meta.json" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(String(JSON.parse(d).hash||''))}catch(e){console.log('')}})" || echo '')"
           LOCAL_HASH="$(node -e "console.log(String(JSON.parse(require('fs').readFileSync('runtime/meta.json','utf8')).hash||''))")"
           echo "local=$LOCAL_HASH remote=$REMOTE_HASH"
           if [ "$REMOTE_HASH" != "$LOCAL_HASH" ]; then

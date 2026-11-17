@@ -2259,23 +2259,50 @@ check("HTML/CSS：喜爱榜迁入排行页（boardModeTabs 滑块 + boardPlayerB
   !/id="view-playerlove"/.test(htmlSrc) &&
   /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc));
 
-/* ---- AJ5a：可投选手数上限（1.3.21：Major 全对单届可攒 🥇×12+💎×1 > 旧上限 8——
-   cap 提到 16 且人数硬限同常量，保证 extra.v 完整携带全部投票、聚合榜零丢失） ---- */
-console.log("AJ5a. 可投选手数上限 16（字节账：16 条最坏全汉字 1249B+578B=1827B<1900B）：");
+/* ---- AJ5a：可投选手数上限（1.3.21；1.3.30 fixture 改**真实最坏**——12 字名/16 字队 + game：
+   旧 fixture 只有 10 字无 game，掩盖了 16 行超 1900B 预算的事实（trim 裁到 ~12 行 +
+   votesExtraEqual 永假 → second+1 永久漂移）。修复=比较基准与榜上 trim 对齐（cloud.js
+   submitBoardWithNick probe trim）→ 漂移收敛；丢行（13-16 名不进榜）是预算内的显式取舍。 ---- */
+console.log("AJ5a. 可投选手数上限 16（真最坏：12字名/16字队 + game=valorant）：");
 var manyVotes = [];
-for (var vi2 = 0; vi2 < 20; vi2++) manyVotes.push({ vid: "v" + vi2, id: 10000 + vi2, n: "十二字选手名啊十二字", t: "十六字队伍名十六字队伍", coin: vi2 % 2 ? "g" : "d", at: vi2 });
+for (var vi2 = 0; vi2 < 20; vi2++) manyVotes.push({ vid: "v" + vi2, id: 10000 + vi2, n: "十二字选手名啊十二字", t: "十六字队伍名十六字队伍", game: "valorant", coin: vi2 % 2 ? "g" : "d", qty: vi2 % 9 + 1, at: vi2 });
 var enc16 = L.encodeVotesExtra(manyVotes);
 check("encodeVotesExtra：输入 20 条 → 输出 16 条（VOTES_EXTRA_CAP=16）", enc16.length === 16, String(enc16.length));
-check("16 条最坏全汉字 + 其他字段最坏 → trim 后落 1900B 预算内",
+check("真最坏 16 行 + 其他字段最坏 → 平台/trim 裁尾后落 1900B 预算内（丢行是显式取舍）",
   (function () {
     var extra = { first: 9, second: 999999999, nick: "十二字中文昵称十二字中文昵称", avatar: "https://a.example/" + "x".repeat(280), title: "streak_5", mt: "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", ml: 8, v: enc16 };
     L.trimExtraForBudget(extra, 1900);
-    return L.utf8Len(JSON.stringify(extra)) <= 1900 && extra.v.length >= 16 - 2; // 极端叠加也几乎不截
+    return L.utf8Len(JSON.stringify(extra)) <= 1900 && extra.v.length < 16;
   })(),
   "v.length=" + (function () { var extra = { first: 9, second: 999999999, nick: "十二字中文昵称十二字中文昵称", avatar: "https://a.example/" + "x".repeat(280), title: "streak_5", mt: "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", ml: 8, v: enc16 }; L.trimExtraForBudget(extra, 1900); return extra.v.length; })());
 var seenA = L.netHolders([{ vid: "1", id: 5, coin: "g" }, { vid: "2", id: 5, coin: "g" }, { vid: "3", id: 7, coin: "d" }], []);
 check("netHolders：同选手多枚票合并计数（净持仓口径）", seenA[5] === 1 && seenA[7] === 1 && Object.keys(seenA).length === 2,
   JSON.stringify(seenA));
+
+/* ---- 漂移收敛（1.3.30）：榜上存的是 trim 后清单，本地 16 行 encode 与之永不等 →
+   votesExtraEqual 永假 → 每次同步 second+1（赚沙粒显示漂移）。修复=比较前按榜上 extra
+   同口径 trim → 存储值收敛为比较基准 → 第二次起不重复提交。
+   场景用「其他字段最坏」（24 字昵称/300B 头像/64 字主队）挤占预算逼出裁尾。 ---- */
+console.log("漂移收敛（trim 比较基准对齐 1.3.30）：");
+var driftVotes = [];
+for (var vi3 = 0; vi3 < 20; vi3++) driftVotes.push({ vid: "d" + vi3, id: 20000 + vi3, n: "十二字选手名啊十二字", t: "十六字队伍名十六字队伍", game: "valorant", coin: "g", qty: 1, at: vi3 });
+var driftEnc = L.encodeVotesExtra(driftVotes);
+var driftSdk = makeSdk({ [WIN]: { uid: "u1", score: 5e9 + 300, extra: { first: 5, second: 300 } } });
+await Cloud.submitStats({ wins: 5, winProfit: 300, losses: 0, loseAmount: 0 }, "十二字中文昵称十二字中文昵称", "https://a.example/" + "x".repeat(280), "streak_5", "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", 8, driftEnc);
+var storedRows = driftSdk[0] && driftSdk[0].extra.v ? driftSdk[0].extra.v.length : 0;
+await Cloud.submitStats({ wins: 5, winProfit: 300, losses: 0, loseAmount: 0 }, "十二字中文昵称十二字中文昵称", "https://a.example/" + "x".repeat(280), "streak_5", "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", 8, driftEnc);
+await Cloud.submitStats({ wins: 5, winProfit: 300, losses: 0, loseAmount: 0 }, "十二字中文昵称十二字中文昵称", "https://a.example/" + "x".repeat(280), "streak_5", "十六字队伍名十六字队伍名十六字队伍名十六字队伍名", 8, driftEnc);
+check("trim 对齐：其他字段最坏挤占预算逼出裁尾（<16 行），重复提交不再触发 second+1 漂移",
+  storedRows < 16 && driftSdk.length === 1,
+  "storedRows=" + storedRows + " submits=" + driftSdk.length);
+
+/* ---- 空清单权威清空（1.3.30）：全撤后 encoded=[] 必须提交清掉榜上残留旧票 ---- */
+console.log("空清单权威清空（1.3.30）：");
+var clearSdk = makeSdk({ [WIN]: { uid: "u1", score: 5e9 + 302, extra: { first: 5, second: 302, nick: "旧名", v: [[35905, "donk", "TYLOO", 0, 3, "cs2"]] } } });
+await Cloud.submitVotes([], "旧名");
+check("submitVotes([])：全撤清单提交一次（榜上 extra.v 清除）",
+  clearSdk.length === 1 && !("v" in (clearSdk[0].extra || {})) && clearSdk[0].score === 5e9 + 303,
+  JSON.stringify(clearSdk[0]));
 
 /* ---- 撤回账本（1.3.26）：自定义数量 + 按选手一键撤回 + 防刷不变式 ----
    核心不变式：refund 以 ref（被撤 vote 的 vid）为去重键 → Σrefund ≤ Σvote per (id,coin)

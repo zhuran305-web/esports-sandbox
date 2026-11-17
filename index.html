@@ -401,46 +401,52 @@
         <div id="coinboardBody"></div>
       </section>
 
-      <!-- 选手喜爱榜（实验功能 1.3.20：胜榜 extra 投票清单聚合，不占新榜位；投票入口=选手卡抽屉） -->
-      <section class="view" id="view-playerlove" hidden>
-        <div class="subpage-head">
-          <button class="back-btn" id="playerloveBackBtn" type="button" aria-label="返回实验功能">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
-          </button>
-          <h1 class="page-title">选手喜爱榜</h1>
-          <span class="labs-badge">实验功能</span>
-        </div>
-        <div id="playerloveBody"></div>
-      </section>
+      <!-- 选手喜爱榜已迁入排行榜页（1.3.28：排行页顶部滑块「用户榜 / 选手榜」切换） -->
 
       <!-- 排行榜 -->
       <section class="view" id="view-board" hidden>
         <h1 class="page-title">排行榜</h1>
 
-        <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">
-          <button class="board-tab is-active" data-board="win" role="tab" aria-selected="true">
-            <span class="board-dot win"></span>胜榜
+        <!-- 榜单模式滑块（1.3.28）：左=用户榜（胜/败），右=选手榜（选手喜爱榜迁移） -->
+        <div class="board-tabs" id="boardModeTabs" role="tablist" aria-label="榜单类型切换">
+          <button class="board-tab is-active" data-bmode="user" role="tab" aria-selected="true">
+            <span class="board-dot win"></span>用户榜
           </button>
-          <button class="board-tab" data-board="lose" role="tab" aria-selected="false">
-            <span class="board-dot lose"></span>败榜
+          <button class="board-tab" data-bmode="player" role="tab" aria-selected="false">
+            <span class="board-dot"></span>选手榜
           </button>
         </div>
-        <p class="board-hint" id="boardHint">比谁猜对的次数多，猜对次数相同比赚的沙粒多</p>
 
-        <div class="board-me" id="boardMe">
-          <div class="board-me-rank" id="boardMyRank">--</div>
-          <div class="board-me-main">
-            <span class="board-me-label" id="boardMyLabel">我的成绩</span>
-            <strong class="board-me-score" id="boardMyScore">--</strong>
+        <div id="boardUserPane">
+          <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">
+            <button class="board-tab is-active" data-board="win" role="tab" aria-selected="true">
+              <span class="board-dot win"></span>胜榜
+            </button>
+            <button class="board-tab" data-board="lose" role="tab" aria-selected="false">
+              <span class="board-dot lose"></span>败榜
+            </button>
           </div>
-          <div class="board-me-sub">
-            <span>上榜成绩 <b id="boardMyBest">--</b></span>
+          <p class="board-hint" id="boardHint">比谁猜对的次数多，猜对次数相同比赚的沙粒多</p>
+
+          <div class="board-me" id="boardMe">
+            <div class="board-me-rank" id="boardMyRank">--</div>
+            <div class="board-me-main">
+              <span class="board-me-label" id="boardMyLabel">我的成绩</span>
+              <strong class="board-me-score" id="boardMyScore">--</strong>
+            </div>
+            <div class="board-me-sub">
+              <span>上榜成绩 <b id="boardMyBest">--</b></span>
+            </div>
           </div>
+
+          <div class="board-list" id="boardList"></div>
+
+          <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
         </div>
 
-        <div class="board-list" id="boardList"></div>
-
-        <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
+        <div id="boardPlayerPane" hidden>
+          <div class="board-list" id="boardPlayerBody"></div>
+        </div>
       </section>
 
       <!-- 设置 -->

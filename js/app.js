@@ -531,7 +531,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     renderBalance();
     renderAll();
     if (!$("#view-profile").hidden) renderProfile();
-    if (!$("#view-board").hidden) renderBoard();
+    if (!$("#view-board").hidden) renderBoardMode();
     toast("已从云端同步战绩");
     if (events.length) syncBoards();
   }
@@ -2794,13 +2794,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     var active = evs.filter(function (e) { return e.status !== "done"; }).length;
     var coins = state.pickemCoins || { c: 0, s: 0, g: 0, d: 0 };
     var coinTotal = (coins.c || 0) + (coins.s || 0) + (coins.g || 0) + (coins.d || 0);
-    // 选手喜爱榜行值：可投金/钻枚数；无可投但有净持仓显示已投数（1.3.20；1.3.26 净额口径）
-    var myBal = availableCoins(state.pickemCoins, state.pickemVotes, state.pickemRefunds);
-    var netHold = netHolders(state.pickemVotes, state.pickemRefunds);
-    var holdCount = Object.keys(netHold).length;
-    var loveValue = myBal.g + myBal.d > 0
-      ? PICKEM_COINS.g.icon + myBal.g + " " + PICKEM_COINS.d.icon + myBal.d + " 可投"
-      : holdCount ? "已投 " + holdCount + " 名选手" : "实验 · 给选手投币";
+    // 选手喜爱榜 1.3.28 已迁入排行榜页（顶部滑块切换）——labs 入口行拆除
     box.innerHTML =
       '<button type="button" class="settings-row" data-labs="pickem">' +
         '<span class="settings-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/></svg></span>' +
@@ -2813,13 +2807,8 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
         '<span class="settings-row-label">硬币排行榜</span>' +
         '<span class="settings-row-value">' + (coinTotal ? pickemCoinsHTML() : "荣誉货币 · 暂无硬币") + "</span>" +
         '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' +
-      "</button>" +
-      '<button type="button" class="settings-row" data-labs="playerlove">' +
-        '<span class="settings-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C7 16.5 3 13 3 9.3 3 6.9 4.9 5 7.3 5c1.7 0 3.4.9 4.7 2.6C13.3 5.9 15 5 16.7 5 19.1 5 21 6.9 21 9.3c0 3.7-4 7.2-9 11.7z"/></svg></span>' +
-        '<span class="settings-row-label">选手喜爱榜</span>' +
-        '<span class="settings-row-value">' + loveValue + "</span>" +
-        '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' +
       "</button>";
+      // 选手喜爱榜入口已迁入排行榜页（1.3.28：顶部「用户榜 / 选手榜」滑块）——labs 行拆除
   }
 
   /* ---------- 交互：桶位选择器（底部 sheet）与淘汰赛点选 ---------- */
@@ -3050,7 +3039,6 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     });
     $("#labsBackBtn").addEventListener("click", function () { goBack("about"); });
     $("#coinboardBackBtn").addEventListener("click", function () { goBack("labs"); });
-    $("#playerloveBackBtn").addEventListener("click", function () { goBack("labs"); });
     $("#pickemBackBtn").addEventListener("click", function () { goBack("labs"); });
     // 作业页筛选与搜索（1.3.6，仿主页）：搜索防抖 + 游戏 tiles + 清空
     $("#pickemSearch").addEventListener("input", function () {
@@ -3277,7 +3265,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   }
 
   function paintPlayerLove(res) {
-    var body = $("#playerloveBody");
+    var body = $("#boardPlayerBody"); // 1.3.28 迁入排行榜页（原 view-playerlove 独立页拆除）
     if (!body) return;
     var rows = aggregateBoardVotes((res && res.entries) || []);
     var myNet = netByPlayer(state.pickemVotes, state.pickemRefunds);
@@ -3299,7 +3287,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   }
 
   function renderPlayerLove() {
-    var body = $("#playerloveBody");
+    var body = $("#boardPlayerBody");
     if (!body) return;
     if (loveCache) paintPlayerLove(loveCache);
     else body.innerHTML = '<div class="empty-state"><strong>加载中…</strong></div>';
@@ -3315,6 +3303,27 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       loveLoading = false;
       body.innerHTML = '<div class="empty-state"><strong>暂时读不到选手喜爱榜</strong>稍后再试（未登录/宿主不支持时不可用）</div>';
     });
+  }
+
+  /* ---------- 榜单模式滑块（1.3.28：排行页顶部「用户榜 / 选手榜」切换） ----------
+   * 选手喜爱榜自 labs 独立页迁入排行页（原 view-playerlove 拆除）；用户榜=既有胜/败榜。
+   * 所有「切到排行页/结算后刷榜」的调用点统一走 renderBoardMode()，保持当前模式刷新。 */
+  var boardMode = "user";
+
+  function renderBoardMode() {
+    var userPane = $("#boardUserPane");
+    var playerPane = $("#boardPlayerPane");
+    if (!userPane || !playerPane) return;
+    userPane.hidden = boardMode !== "user";
+    playerPane.hidden = boardMode !== "player";
+    document.querySelectorAll("#boardModeTabs .board-tab").forEach(function (t) {
+      var active = t.dataset.bmode === boardMode;
+      t.classList.toggle("is-active", active);
+      t.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    if (boardMode === "player") renderPlayerLove();
+    else renderBoard();
+  }
   }
 
   /* ---------- 战队图鉴（押过的队伍 + 跟队连击；纯本地养成，随战绩云同步跨设备） ---------- */
@@ -5003,7 +5012,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match" || name === "labs" || name === "pickem" || name === "coinboard" || name === "playerlove";
+    return name === "rules" || name === "schedule" || name === "about" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match" || name === "labs" || name === "pickem" || name === "coinboard";
   }
 
   function initHistory() {
@@ -5089,7 +5098,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
       closeRulesTopic();
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem", "coinboard", "playerlove"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem", "coinboard"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
     // 对决记录/对比页/成就殿堂/战队图鉴/全部竞猜记录从「我的」侧进入返回回「我的」；
@@ -5102,7 +5111,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     });
     if (name === "matches" && matchesDirty) renderMatches();
     if (name === "profile") renderProfile();
-    if (name === "board") { syncBoards(); renderBoard(); }
+    if (name === "board") { syncBoards(); renderBoardMode(); }
     if (name === "duels") renderDuels();
     if (name === "versus") renderVersus();
     if (name === "team") renderTeamPage();
@@ -5113,7 +5122,6 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     if (name === "labs") renderLabs();
     if (name === "pickem") renderPickem();
     if (name === "coinboard") renderCoinBoard();
-    if (name === "playerlove") renderPlayerLove();
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -5632,6 +5640,15 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       });
     });
 
+    // 榜单模式滑块（1.3.28）：用户榜 / 选手榜
+    $("#boardModeTabs").addEventListener("click", function (e) {
+      var tab = e.target.closest("[data-bmode]");
+      if (!tab) return;
+      if (boardMode === tab.dataset.bmode) return;
+      boardMode = tab.dataset.bmode;
+      renderBoardMode();
+    });
+
     $("#boardTabs").addEventListener("click", function (e) {
       var tab = e.target.closest(".board-tab");
       if (!tab) return;
@@ -6039,12 +6056,12 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     renderAll();
     renderSettings();
     if (!$("#view-schedule").hidden) renderSchedule();
-    if (!$("#view-board").hidden) renderBoard();
+    if (!$("#view-board").hidden) renderBoardMode();
     // 作业页随赛程即时更新（1.3.6）：淘汰赛名单/赛果一到，正在浏览的作业页立刻重渲染并结算
     if (!$("#view-pickem").hidden) renderPickem();
     if (!$("#view-labs").hidden) renderLabs(); // 实验功能行「N 个赛事进行中」跟随
     if (!$("#view-coinboard").hidden) renderCoinBoard(); // 硬币榜（结算可能改变硬币数）
-    if (!$("#view-playerlove").hidden) renderPlayerLove(); // 喜爱榜（结算可能改变可投硬币）
+    // 喜爱榜已迁入排行页（renderBoardMode 按 boardMode 刷对应榜单）
     resolveDeepLink();
     resolveVersusLink();
 
@@ -6125,7 +6142,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       settlePending();
       settleDuels();
       settlePickem();
-      if (!$("#view-board").hidden) renderBoard();
+      if (!$("#view-board").hidden) renderBoardMode();
       if (!$("#view-pickem").hidden) renderPickem();
       syncBoards();
     }
@@ -6189,7 +6206,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
           toast("赛程已是最新");
         }
         syncBoards(); // 全平台统一：数据刷新后同步榜单（submit 只在新分数更优时落库）
-        if (!$("#view-board").hidden) renderBoard();
+        if (!$("#view-board").hidden) renderBoardMode();
         return true;
       }
 
@@ -6223,7 +6240,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       if (!ok) return;
       setupViewport();
       if (!$("#view-settings").hidden) renderSettings();
-      if (!$("#view-board").hidden) renderBoard();
+      if (!$("#view-board").hidden) renderBoardMode();
       refreshData();
     });
   }
@@ -6363,14 +6380,14 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     onHostEvent("heybox_app_login_change", function () {
       Cloud.resetIdentity();
       if (!$("#view-settings").hidden) renderSettings();
-      if (!$("#view-board").hidden) renderBoard();
+      if (!$("#view-board").hidden) renderBoardMode();
     });
     onHostEvent("show", function () {
       // 回前台：切号检测（免手势静默比对 accountKey）+ 可见页账号/榜单重渲染 + 赛程节流刷新（3 分钟内查过则只走本地缓存）
       checkAccountState();
       refreshData(false);
       if (!$("#view-settings").hidden) renderSettings();
-      if (!$("#view-board").hidden) renderBoard();
+      if (!$("#view-board").hidden) renderBoardMode();
     });
   }
 
@@ -7057,7 +7074,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     setInterval(function () {
       if (Date.now() < pollBackoffUntil) return;
       refreshData(false);
-      if (!$("#view-board").hidden) renderBoard();
+      if (!$("#view-board").hidden) renderBoardMode();
     }, POLL_INTERVAL);
 
     // live 轻量轮询（2026-11-11 深度接入二期）：live.json 只有几 KB（独立小文件，不触发整包），

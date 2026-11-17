@@ -473,7 +473,7 @@ check("分享卡跟队色：shareThemeColors 提亮防线 + 三处应用",
   /theme \? "rgba\(" \+ theme\.rgb \+ ", \.3\)" : "rgba\(255,255,255,\.07\)"/.test(appSrc));
 check("全部竞猜记录页：DOM + 视图接线 + 渲染与分享委托",
   /id="view-history"/.test(htmlSrc) && /id="historyAllBtn"/.test(htmlSrc) && /id="historyBackBtn"/.test(htmlSrc) &&
-  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) && /"match", "labs", "pickem", "coinboard", "playerlove"\]\.forEach/.test(appSrc) &&
+  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) && /"match", "labs", "pickem", "coinboard"]\.forEach/.test(appSrc) &&
   /function renderHistoryFull/.test(appSrc) && /name === "history"\) renderHistoryFull/.test(appSrc) &&
   /historySettledList"\)\.addEventListener/.test(appSrc));
 check("竞猜快照：下注落账冗余存队名/赛事 + 归档降级渲染",
@@ -491,7 +491,7 @@ check("采集器：location→region + end_at 采集 + normalize 白名单放行
 check("比赛详情页：DOM + 视图接线 + 渲染与操作委托",
   /id="view-match"/.test(htmlSrc) && /id="matchBackBtn"/.test(htmlSrc) && /id="matchDetailBody"/.test(htmlSrc) &&
   /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) &&
-  /"match", "labs", "pickem", "coinboard", "playerlove"\]\.forEach/.test(appSrc) &&
+  /"match", "labs", "pickem", "coinboard"]\.forEach/.test(appSrc) &&
   /function renderMatchDetail/.test(appSrc) && /name === "match"\) renderMatchDetail/.test(appSrc) &&
   /scheduleList"\)\.addEventListener/.test(appSrc) && /view-match"\)\.addEventListener/.test(appSrc) &&
   /matchBackBtn"\)\.addEventListener/.test(appSrc) && /goBack\("schedule"\)/.test(appSrc));
@@ -858,7 +858,7 @@ check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册
   /id="pickemSheet"/.test(htmlSrc) && /id="pickemSheetList"/.test(htmlSrc) &&
   /id="openLabsBtn"/.test(htmlSrc) && /id="labsBackBtn"/.test(htmlSrc) && /id="pickemBackBtn"/.test(htmlSrc) &&
   /name === "labs" \|\| name === "pickem"/.test(appSrc) &&
-  /"match", "labs", "pickem", "coinboard", "playerlove"\]\.forEach/.test(appSrc) &&
+  /"match", "labs", "pickem", "coinboard"]\.forEach/.test(appSrc) &&
   /name === "labs"\) renderLabs/.test(appSrc) && /name === "pickem"\) renderPickem/.test(appSrc) &&
   /function bindPickem/.test(appSrc) && /bindPickem\(\);/.test(appSrc) &&
   /"#pickemSheet"/.test(appSrc));
@@ -2251,12 +2251,13 @@ check("云链路静态：votesChanged 门控 + extra.v + trim 守卫 + 分页读
   /votesChanged/.test(cloudSrc) && /extra\.v/.test(cloudSrc) && /trimExtraForBudget\(extra/.test(cloudSrc) &&
   /realListPaged/.test(cloudSrc) && /getVoteBoard/.test(cloudSrc) &&
   /if \(isDebugRuntime\(\)\) votes = undefined/.test(cloudSrc));
-check("app 接线：投票动作 + 提交链 + 聚合页 + labs 入口",
+check("app 接线：投票动作 + 提交链 + 聚合页（1.3.28 迁入排行页，labs 入口拆除）",
   /function castPlayerVote/.test(appSrc) && /scheduleVoteSync/.test(appSrc) && /function renderPlayerLove/.test(appSrc) &&
-  /data-pvote/.test(appSrc) && /data-labs="playerlove"/.test(appSrc) && /name === "playerlove"\) renderPlayerLove/.test(appSrc));
-check("HTML/CSS：喜爱榜视图容器 + 返回键 + 投票块样式",
-  /id="view-playerlove"/.test(htmlSrc) && /id="playerloveBackBtn"/.test(htmlSrc) && /id="playerloveBody"/.test(htmlSrc) &&
-  /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc));
+  /data-pvote/.test(appSrc) && /function renderBoardMode/.test(appSrc) && !/data-labs="playerlove"/.test(appSrc));
+check("HTML/CSS：喜爱榜迁入排行页（boardModeTabs 滑块 + boardPlayerBody 容器）+ 投票块样式",
+  /id="boardModeTabs"/.test(htmlSrc) && /id="boardPlayerPane"/.test(htmlSrc) && /id="boardPlayerBody"/.test(htmlSrc) &&
+  !/id="view-playerlove"/.test(htmlSrc) &&
+  /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc));
 
 /* ---- AJ5a：可投选手数上限（1.3.21：Major 全对单届可攒 🥇×12+💎×1 > 旧上限 8——
    cap 提到 16 且人数硬限同常量，保证 extra.v 完整携带全部投票、聚合榜零丢失） ---- */

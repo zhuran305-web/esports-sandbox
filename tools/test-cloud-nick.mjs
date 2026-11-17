@@ -2254,10 +2254,13 @@ check("云链路静态：votesChanged 门控 + extra.v + trim 守卫 + 分页读
 check("app 接线：投票动作 + 提交链 + 聚合页（1.3.28 迁入排行页，labs 入口拆除）",
   /function castPlayerVote/.test(appSrc) && /scheduleVoteSync/.test(appSrc) && /function renderPlayerLove/.test(appSrc) &&
   /data-pvote/.test(appSrc) && /function renderBoardMode/.test(appSrc) && !/data-labs="playerlove"/.test(appSrc));
-check("HTML/CSS：喜爱榜迁入排行页（boardModeTabs 滑块 + boardPlayerBody 容器）+ 投票块样式",
-  /id="boardModeTabs"/.test(htmlSrc) && /id="boardPlayerPane"/.test(htmlSrc) && /id="boardPlayerBody"/.test(htmlSrc) &&
-  !/id="view-playerlove"/.test(htmlSrc) &&
-  /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc));
+check("HTML/CSS：喜爱榜迁入排行页（1.3.31 双段平铺：boardPlayerPane 不带 hidden + board-sect-head 段标题 + boardPlayerBody 容器）+ 投票块样式",
+  /id="boardPlayerPane"/.test(htmlSrc) && /id="boardPlayerBody"/.test(htmlSrc) &&
+  /class="board-sect-head">用户榜</.test(htmlSrc) && /class="board-sect-head">选手榜 /.test(htmlSrc) &&
+  !/id="boardPlayerPane" hidden/.test(htmlSrc) && // 审核口径：内容默认不可见实拒（1.3.9/1.3.29/1.3.30 三例）——pane 不得默认隐藏
+  !/id="view-playerlove"/.test(htmlSrc) && !/boardModeTabs/.test(htmlSrc) && // 滑块已拆除防回潮
+  /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc) &&
+  /\.board-sect-head/.test(cssSrc) && !/board-mode-track/.test(cssSrc));
 
 /* ---- AJ5a：可投选手数上限（1.3.21；1.3.30 fixture 改**真实最坏**——12 字名/16 字队 + game：
    旧 fixture 只有 10 字无 game，掩盖了 16 行超 1900B 预算的事实（trim 裁到 ~12 行 +

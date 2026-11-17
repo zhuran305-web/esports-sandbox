@@ -1440,48 +1440,29 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   margin-bottom: 10px;
 }
 
-/* 榜单模式滑块（1.3.29）：整体滑槽 + 滑块左右滑动——与胜/败 tab 明显分层 */
-.board-mode-track {
-  position: relative;
+/* 排行页双段平铺（1.3.31）：段标题——两段常驻可见（滑块切换形态被审核判「内容默认不可见」） */
+.board-sect-head {
   display: flex;
-  background: rgba(255, 255, 255, .05);
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  padding: 3px;
-  margin: 0 0 12px;
-}
-
-.board-mode-thumb {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc(50% - 3px);
-  border-radius: 9px;
-  background: linear-gradient(145deg, var(--accent), var(--accent-strong));
-  transition: left .22s ease;
-}
-
-.board-mode-track.is-player .board-mode-thumb {
-  left: 50%;
-}
-
-.board-mode-btn {
-  position: relative;
-  z-index: 1;
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: var(--text-faint);
-  padding: 9px 0;
-  font-size: 13px;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
   font-weight: 700;
-  cursor: pointer;
-  transition: color .2s;
+  letter-spacing: .5px;
+  padding-left: 9px;
+  border-left: 3px solid var(--accent);
+  margin: 4px 2px 12px;
 }
 
-.board-mode-btn.is-active {
-  color: var(--accent-text, #1a0e04);
+.board-sect-head + #boardUserPane,
+.board-sect-head + #boardPlayerPane {
+  margin-bottom: 18px;
+}
+
+.board-sect-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+  letter-spacing: 0;
 }
 
 

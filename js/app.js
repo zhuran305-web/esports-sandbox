@@ -57,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "1.3.30";
+  var APP_VERSION = "1.3.31";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -3309,26 +3309,14 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     });
   }
 
-  /* ---------- 榜单模式滑块（1.3.28：排行页顶部「用户榜 / 选手榜」切换） ----------
-   * 选手喜爱榜自 labs 独立页迁入排行页（原 view-playerlove 拆除）；用户榜=既有胜/败榜。
-   * 所有「切到排行页/结算后刷榜」的调用点统一走 renderBoardMode()，保持当前模式刷新。 */
-  var boardMode = "user";
-
+  /* ---------- 排行页双段平铺（1.3.31）：用户榜 + 选手榜两段常驻可见 ----------
+   * 1.3.28 滑块迁移 → 1.3.29/30 两次被审核拒（「不符合平台展示要求」=1.3.9「内容默认不可见」
+   * 同款口径：选手榜 pane 默认 hidden 整块不可见）——平铺后两段都渲染，不再有隐藏 pane；
+   * renderBoardMode 函数名与全部调用点（9 处）保留，语义改为「刷两段」，调用点零改动。 */
   function renderBoardMode() {
-    var userPane = $("#boardUserPane");
-    var playerPane = $("#boardPlayerPane");
-    var track = $("#boardModeTabs");
-    if (!userPane || !playerPane || !track) return;
-    userPane.hidden = boardMode !== "user";
-    playerPane.hidden = boardMode !== "player";
-    track.classList.toggle("is-player", boardMode === "player"); // 滑块滑到右侧
-    document.querySelectorAll("#boardModeTabs .board-mode-btn").forEach(function (t) {
-      var active = t.dataset.bmode === boardMode;
-      t.classList.toggle("is-active", active);
-      t.setAttribute("aria-selected", active ? "true" : "false");
-    });
-    if (boardMode === "player") renderPlayerLove();
-    else renderBoard();
+    if (!$("#boardUserPane") || !$("#boardPlayerPane")) return;
+    renderBoard();
+    renderPlayerLove();
   }
 
   /* ---------- 战队图鉴（押过的队伍 + 跟队连击；纯本地养成，随战绩云同步跨设备） ---------- */
@@ -5655,14 +5643,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       });
     });
 
-    // 榜单模式滑块（1.3.28）：用户榜 / 选手榜
-    $("#boardModeTabs").addEventListener("click", function (e) {
-      var tab = e.target.closest("[data-bmode]");
-      if (!tab) return;
-      if (boardMode === tab.dataset.bmode) return;
-      boardMode = tab.dataset.bmode;
-      renderBoardMode();
-    });
+    // 滑块监听器已随 1.3.31 平铺改造拆除（无切换态，renderBoardMode 由进页/结算调用点刷新两段）
 
     $("#boardTabs").addEventListener("click", function (e) {
       var tab = e.target.closest(".board-tab");
@@ -6076,7 +6057,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     if (!$("#view-pickem").hidden) renderPickem();
     if (!$("#view-labs").hidden) renderLabs(); // 实验功能行「N 个赛事进行中」跟随
     if (!$("#view-coinboard").hidden) renderCoinBoard(); // 硬币榜（结算可能改变硬币数）
-    // 喜爱榜已迁入排行页（renderBoardMode 按 boardMode 刷对应榜单）
+    // 喜爱榜已迁入排行页（1.3.31 平铺：renderBoardMode 刷用户榜+选手榜两段）
     resolveDeepLink();
     resolveVersusLink();
 

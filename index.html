@@ -401,19 +401,14 @@
         <div id="coinboardBody"></div>
       </section>
 
-      <!-- 选手喜爱榜已迁入排行榜页（1.3.28：排行页顶部滑块「用户榜 / 选手榜」切换） -->
+      <!-- 选手喜爱榜已迁入排行榜页（1.3.28 迁移 → 1.3.31 改双段平铺：滑块切换形态选手榜默认 hidden，
+           被审核判「不符合平台展示要求」〔1.3.9「内容默认不可见」同款口径实拒〕——两段常驻可见） -->
 
       <!-- 排行榜 -->
       <section class="view" id="view-board" hidden>
         <h1 class="page-title">排行榜</h1>
 
-        <!-- 榜单模式滑块（1.3.29）：整体滑槽 + 滑块左右滑动，左=用户榜（胜/败），右=选手榜（选手喜爱榜迁移） -->
-        <div class="board-mode-track" id="boardModeTabs" role="tablist" aria-label="榜单类型切换">
-          <span class="board-mode-thumb" aria-hidden="true"></span>
-          <button class="board-mode-btn is-active" data-bmode="user" role="tab" aria-selected="true">用户榜</button>
-          <button class="board-mode-btn" data-bmode="player" role="tab" aria-selected="false">选手榜</button>
-        </div>
-
+        <div class="board-sect-head">用户榜</div>
         <div id="boardUserPane">
           <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">
             <button class="board-tab is-active" data-board="win" role="tab" aria-selected="true">
@@ -441,7 +436,8 @@
           <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
         </div>
 
-        <div id="boardPlayerPane" hidden>
+        <div class="board-sect-head">选手榜 <span class="board-sect-sub">投你喜欢的选手 · 入口在战队资料页选手卡</span></div>
+        <div id="boardPlayerPane">
           <div class="board-list" id="boardPlayerBody"></div>
         </div>
       </section>

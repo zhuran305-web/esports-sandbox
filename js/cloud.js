@@ -221,6 +221,17 @@ async function submitBoardWithNick(board, first, second, displayNick, avatar, ti
   var mtChanged = mainTeam !== undefined && mainTeam !== curMt;
   var mlChanged = mtLevel !== undefined && mtLevel !== curMl;
   var votesChanged = votes !== undefined && !votesExtraEqual(votes, curVotes);
+  // 1.3.30 修复「second+1 永久漂移」：本地 16 行净投在榜上可能被 trimExtraForBudget 裁尾存储
+  // （真最坏 12字名/16字队+game 时 16 行超 1900B 预算）——比较基准必须与**榜上实际存储形态**对齐：
+  // 用榜上旧 extra 的其他字段 + 本地 votes 构造 probe 做 trim，比较与提交都用 trim 后的清单，
+  // 否则 votesExtraEqual 永假 → 每次同步 second+1（赚沙粒显示持续漂移，永不收敛）。
+  var trimmedVotes = votes;
+  if (trimmedVotes !== undefined && trimmedVotes.length && cur) {
+    var probe = Object.assign({}, curExtra, { v: trimmedVotes });
+    trimExtraForBudget(probe, EXTRA_BYTE_BUDGET);
+    trimmedVotes = probe.v;
+    votesChanged = !votesExtraEqual(trimmedVotes, curVotes);
+  }
   if (cur && (nickChanged || avatarChanged || titleChanged || mtChanged || mlChanged || votesChanged)) {
     await realSubmit(
       board, curFirst, curSecond + 1,
@@ -229,7 +240,7 @@ async function submitBoardWithNick(board, first, second, displayNick, avatar, ti
       title !== undefined ? title : curTitle,
       mainTeam !== undefined ? mainTeam : curMt,
       mtLevel !== undefined ? mtLevel : curMl,
-      votes !== undefined ? votes : curVotes
+      trimmedVotes !== undefined ? trimmedVotes : curVotes
     );
   }
 }
@@ -505,17 +516,20 @@ export var Cloud = {
   },
 
   /** 选手喜爱榜（1.3.20 实验功能）：投票清单随胜榜条目 extra.v 携带。
-   *  votes=已编码元组数组（app 端 encodeVotesExtra 产物）；空清单不提交（无「权威清空」场景——投出不可撤回）。
+   *  votes=已编码元组数组（app 端 encodeVotesExtra 产物）。
+   *  语义（1.3.30 改）：**undefined=不提交**（从未参与投票）；**[]（空数组）=权威清空**——
+   *  1.3.26 撤回改造后「全部撤光」是真实场景，必须提交空清单清掉榜上残留旧票，
+   *  否则其他用户与本人聚合榜一直读到已撤的票（app.js#voteSyncNow 全撤时传 []）。
    *  复用 submitBoardWithNick 的 votesChanged 门控：传 (0, -1) 保证不走分数更优分支，走「second+1 刷 extra」。 */
   submitVotes: async function (votes, displayNick, avatar, title, mainTeam, mtLevel) {
-    if (!votes || !votes.length) return;
+    if (votes === undefined || votes === null) return;
     if (isDebugRuntime()) return; // 调试会话禁写真实榜（submitBoardWithNick 已兜底，这里提前返回省一次读榜）
     if (!isMiniProgram()) {
       // mock 层直接写 me 条目的 extra.v（只存不校验——实验功能，真实验证走 Browser Fake/真机）
       var data = mockEnsure();
       var me = data.win["me"] || { uid: "me", nick: displayNick || "我", score: 0, extra: { first: 0, second: 0 } };
       me.extra = me.extra || {};
-      me.extra.v = votes;
+      if (votes.length) me.extra.v = votes; else delete me.extra.v; // [] = 权威清空
       data.win["me"] = me;
       mockWrite(data);
       return;

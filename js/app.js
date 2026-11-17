@@ -1562,9 +1562,10 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
         losses: s.losses,
         loseAmount: s.loseAmount
       }, nick, avatar, state.title,
-      // 选手喜爱榜投票清单（1.3.20）：本地账本非空时随每次战绩提交顺路刷新 extra.v；
-      // 空清单传 undefined=沿用榜上旧值（防旧设备在同步到账本前把其他设备刚投的票清掉）
-      (state.pickemVotes && state.pickemVotes.length) ? encodeVotesExtra(state.pickemVotes, state.pickemRefunds) : undefined,
+      // 选手喜爱榜投票清单（1.3.20；1.3.30 语义改）：任一账本非空 → 传净额编码（全撤=传 [] 权威清空榜上残留）；
+      // 两账本全空（从未参与投票）→ undefined=沿用榜上旧值（防旧设备在同步到账本前清掉其他设备刚投的票）
+      (state.pickemVotes && state.pickemVotes.length) || (state.pickemRefunds && state.pickemRefunds.length)
+        ? encodeVotesExtra(state.pickemVotes, state.pickemRefunds) : undefined,
       // extra.mt 必须是纯队名（看榜端按名字查队标映射）——不能传图鉴键 "game:名字"，
       // 否则队标查找落空回退首字，还会渲染出 "CS2T" 这类键名截断（1.2.13 用户实测抓到）
       state.mainTeam === undefined ? undefined : state.mainTeam === "" ? "" : mainTeamName(),
@@ -3615,7 +3616,13 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       // 二次确认（仿清空重选的 armed 模式）：撤回虽可再投，但会触发榜面同步，防手滑
       withdrawArmedKey = String(p.id);
       clearTimeout(withdrawArmedTimer);
-      withdrawArmedTimer = setTimeout(function () { withdrawArmedKey = ""; if (playerSheetCtx) openPlayerSheet(ctx.teamKey, ctx.idx); }, 3000);
+      // 超时只清 armed 标记；重渲染限定「抽屉仍停在原选手」（1.3.30：旧闭包会跳回已换人的抽屉）
+      withdrawArmedTimer = setTimeout(function () {
+        withdrawArmedKey = "";
+        if (playerSheetCtx && playerSheetCtx.teamKey === ctx.teamKey && playerSheetCtx.idx === ctx.idx) {
+          openPlayerSheet(ctx.teamKey, ctx.idx);
+        }
+      }, 3000);
       toast("再点一次确认撤回");
       openPlayerSheet(ctx.teamKey, ctx.idx);
       return;
@@ -3647,7 +3654,9 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     if (voteSyncBusy) return Promise.resolve();
     var votes = state.pickemVotes || [];
     var refunds = state.pickemRefunds || [];
-    if (!votes.length) return Promise.resolve();
+    // 1.3.30：两个账本全空才跳过（从未参与投票）；有 refunds 无 votes（全撤）也要提交——
+    // encoded=[] = 权威清空（清掉榜上残留旧票，1.3.30 修复全撤残留缺口）
+    if (!votes.length && !refunds.length) return Promise.resolve();
     voteSyncBusy = true;
     var encoded = encodeVotesExtra(votes, refunds);
     function displayArgs(nick, avatar) {
@@ -3661,10 +3670,12 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       var avatar = (hb && hb.avatar) || "";
       return Cloud.submitVotes.apply(null, [encoded].concat(displayArgs(nick, avatar)));
     }).then(function () {
-      // 回读校验：并发 second+1 撞车（另一设备同分提交）会静默丢 extra → 用新榜值重试一次
+      // 回读校验：并发 second+1 撞车（另一设备同分提交）会静默丢 extra → 用新榜值重试一次。
+      // encoded.length > curV.length 时为 trim 裁尾场景（本地 16 行 vs 榜上裁尾存储）——
+      // 重试也会被裁，跳过防 second+1 漂移（1.3.30）
       return Cloud.getMyEntry("win").then(function (cur) {
         var curV = cur && cur.extra && Array.isArray(cur.extra.v) ? cur.extra.v : [];
-        if (!votesExtraEqual(encoded, curV)) {
+        if (!votesExtraEqual(encoded, curV) && encoded.length <= curV.length) {
           return loadHbProfile().catch(function () { return null; }).then(function (hb) {
             return Cloud.submitVotes.apply(null, [encoded].concat(displayArgs((hb && hb.nick) || "", (hb && hb.avatar) || "")));
           });

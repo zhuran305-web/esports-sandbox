@@ -3257,12 +3257,18 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   var loveLoading = false;
 
   function loveRowHTML(r, i, myIds) {
+    // 游戏 label（1.3.27：防同俱乐部不同分部混淆，如 TYLOO 的 cs2/r6 两支队）；
+    // 老条目无 game 字段 → 不显示（r.game 为空）
+    var gameLabel = r.game && GAMES[r.game] ? esc(GAMES[r.game].label) : esc(r.game || "");
     return '<div class="board-row' + (myIds[r.id] ? " is-me" : "") + '">' +
       '<span class="board-rank">' + (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1) + "</span>" +
-      playerAvatarHTML({ n: r.n }) +
       '<span class="board-nick-wrap">' +
         '<span class="board-nick">' + esc(r.n || "未知选手") + (myIds[r.id] ? '<span class="me-tag">我投</span>' : "") + "</span>" +
-        '<span class="board-sub">' + esc(r.t || "") + (r.voters > 1 ? " · " + r.voters + " 人投过" : "") + "</span>" +
+        '<span class="board-sub">' +
+          (gameLabel ? '<span class="love-game">' + gameLabel + "</span>" : "") +
+          esc(r.t ? (gameLabel ? " · " : "") + r.t : "") +
+          (r.voters > 1 ? " · " + r.voters + " 人投过" : "") +
+        "</span>" +
       "</span>" +
       '<span class="board-detail"><span class="board-coins">' +
         PICKEM_COINS.d.icon + " " + r.d + " · " + PICKEM_COINS.g.icon + " " + r.g +
@@ -3578,7 +3584,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       return;
     }
     var sep = ctx.teamKey.indexOf(":");
-    state.pickemVotes.push({ vid: makeVoteId(), id: p.id, n: String(p.n || "").slice(0, 12), t: ctx.teamKey.slice(sep + 1), coin: coin, qty: qty, at: Date.now() });
+    state.pickemVotes.push({ vid: makeVoteId(), id: p.id, n: String(p.n || "").slice(0, 12), t: ctx.teamKey.slice(sep + 1), game: ctx.teamKey.slice(0, sep), coin: coin, qty: qty, at: Date.now() });
     voteQty = 1; // 投完复位步进器
     saveState();
     scheduleVoteSync();

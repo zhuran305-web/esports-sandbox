@@ -57,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "1.3.29";
+  var APP_VERSION = "1.3.30";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -3251,6 +3251,9 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     var gameLabel = r.game && GAMES[r.game] ? esc(GAMES[r.game].label) : esc(r.game || "");
     return '<div class="board-row' + (myIds[r.id] ? " is-me" : "") + '">' +
       '<span class="board-rank">' + (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1) + "</span>" +
+      // 首字徽标（1.3.30 恢复）：1.3.27 去徽标后聚合榜行成纯文本+数字，1.3.29 审核被拒
+      // 「不符合平台展示要求」——与 1.3.17 纯文本阵容同款口径；列表类 UI 必须有视觉元素
+      playerAvatarHTML({ n: r.n }) +
       '<span class="board-nick-wrap">' +
         '<span class="board-nick">' + esc(r.n || "未知选手") + (myIds[r.id] ? '<span class="me-tag">我投</span>' : "") + "</span>" +
         '<span class="board-sub">' +

@@ -57,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "1.3.28";
+  var APP_VERSION = "1.3.29";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -3313,10 +3313,12 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   function renderBoardMode() {
     var userPane = $("#boardUserPane");
     var playerPane = $("#boardPlayerPane");
-    if (!userPane || !playerPane) return;
+    var track = $("#boardModeTabs");
+    if (!userPane || !playerPane || !track) return;
     userPane.hidden = boardMode !== "user";
     playerPane.hidden = boardMode !== "player";
-    document.querySelectorAll("#boardModeTabs .board-tab").forEach(function (t) {
+    track.classList.toggle("is-player", boardMode === "player"); // 滑块滑到右侧
+    document.querySelectorAll("#boardModeTabs .board-mode-btn").forEach(function (t) {
       var active = t.dataset.bmode === boardMode;
       t.classList.toggle("is-active", active);
       t.setAttribute("aria-selected", active ? "true" : "false");

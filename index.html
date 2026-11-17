@@ -407,14 +407,11 @@
       <section class="view" id="view-board" hidden>
         <h1 class="page-title">排行榜</h1>
 
-        <!-- 榜单模式滑块（1.3.28）：左=用户榜（胜/败），右=选手榜（选手喜爱榜迁移） -->
-        <div class="board-tabs" id="boardModeTabs" role="tablist" aria-label="榜单类型切换">
-          <button class="board-tab is-active" data-bmode="user" role="tab" aria-selected="true">
-            <span class="board-dot win"></span>用户榜
-          </button>
-          <button class="board-tab" data-bmode="player" role="tab" aria-selected="false">
-            <span class="board-dot"></span>选手榜
-          </button>
+        <!-- 榜单模式滑块（1.3.29）：整体滑槽 + 滑块左右滑动，左=用户榜（胜/败），右=选手榜（选手喜爱榜迁移） -->
+        <div class="board-mode-track" id="boardModeTabs" role="tablist" aria-label="榜单类型切换">
+          <span class="board-mode-thumb" aria-hidden="true"></span>
+          <button class="board-mode-btn is-active" data-bmode="user" role="tab" aria-selected="true">用户榜</button>
+          <button class="board-mode-btn" data-bmode="player" role="tab" aria-selected="false">选手榜</button>
         </div>
 
         <div id="boardUserPane">

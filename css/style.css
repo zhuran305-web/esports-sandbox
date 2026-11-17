@@ -1440,6 +1440,51 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   margin-bottom: 10px;
 }
 
+/* 榜单模式滑块（1.3.29）：整体滑槽 + 滑块左右滑动——与胜/败 tab 明显分层 */
+.board-mode-track {
+  position: relative;
+  display: flex;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 3px;
+  margin: 0 0 12px;
+}
+
+.board-mode-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: 9px;
+  background: linear-gradient(145deg, var(--accent), var(--accent-strong));
+  transition: left .22s ease;
+}
+
+.board-mode-track.is-player .board-mode-thumb {
+  left: 50%;
+}
+
+.board-mode-btn {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  padding: 9px 0;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color .2s;
+}
+
+.board-mode-btn.is-active {
+  color: var(--accent-text, #1a0e04);
+}
+
+
 .board-tab {
   flex: 1;
   display: inline-flex;

@@ -81,6 +81,7 @@ export function normalizeVotes(raw) {
       id: v.id,
       n: typeof v.n === "string" ? v.n.slice(0, 12) : "",
       t: typeof v.t === "string" ? v.t.slice(0, 16) : "",
+      game: typeof v.game === "string" ? v.game.slice(0, 12) : "", // 游戏 key（1.3.27：防同俱乐部不同分部混淆）
       coin: v.coin,
       qty: qtyOf(v), // 老数据无 qty → 默认 1（1.3.25 及以前逐枚投的存量兼容）
       at: typeof v.at === "number" && isFinite(v.at) && v.at > 0 ? v.at : 0
@@ -154,15 +155,16 @@ export function spentCoins(votes, refunds) {
   return out;
 }
 
-/** per-player 净投：{id: {g, d, n, t}}——净额钳 0；n/t 取最新一条 vote 快照（遍历按 at 升序） */
+/** per-player 净投：{id: {g, d, n, t, game}}——净额钳 0；n/t/game 取最新一条 vote 快照（遍历按 at 升序） */
 export function netByPlayer(votes, refunds) {
   var acc = {};
   (Array.isArray(votes) ? votes : []).forEach(function (v) {
     if (!v || !VOTE_COIN_KEYS[v.coin] || typeof v.id !== "number") return;
     var a = acc[v.id];
-    if (!a) { a = acc[v.id] = { id: v.id, n: "", t: "", g: 0, d: 0 }; }
+    if (!a) { a = acc[v.id] = { id: v.id, n: "", t: "", game: "", g: 0, d: 0 }; }
     if (v.n) a.n = v.n; // 升序遍历 → 后写覆盖 = 最新快照
     if (v.t) a.t = v.t;
+    if (v.game) a.game = v.game;
     a[v.coin] += qtyOf(v);
   });
   (Array.isArray(refunds) ? refunds : []).forEach(function (r) {
@@ -206,18 +208,20 @@ function votesSort(a, b) {
   return b.d - a.d || b.g - a.g || a.id - b.id; // 钻优先 → 金次之 → id 定序（确定性并列）
 }
 
-/** 净投按选手聚合 → 排序取前 VOTES_EXTRA_CAP 条 → [id, n, t, g, d] 元组数组（净额 0 自动不进榜） */
+/** 净投按选手聚合 → 排序取前 VOTES_EXTRA_CAP 条 → [id, n, t, g, d, game] 元组数组
+ *  （净额 0 自动不进榜；第 6 位 game=1.3.27 新增防同俱乐部不同分部混淆，老条目 5 位） */
 export function encodeVotesExtra(votes, refunds) {
   var net = netByPlayer(votes, refunds);
   var rows = Object.keys(net).map(function (k) { return net[k]; })
     .filter(function (r) { return r.g + r.d > 0; }); // 净额 0（撤光）自动下榜
   rows.sort(votesSort);
   return rows.slice(0, VOTES_EXTRA_CAP).map(function (r) {
-    return [r.id, String(r.n || "").slice(0, 12), String(r.t || "").slice(0, 16), r.g, r.d];
+    return [r.id, String(r.n || "").slice(0, 12), String(r.t || "").slice(0, 16), r.g, r.d, String(r.game || "").slice(0, 12)];
   });
 }
 
-/** 读榜端防御解码：形状不对整条跳过（extra 可伪造，坏条目不能崩聚合） */
+/** 读榜端防御解码：形状不对整条跳过（extra 可伪造，坏条目不能崩聚合）；
+ *  元组 5 位=1.3.26 及以前存量（无 game），6 位=1.3.27+（带 game） */
 export function decodeVotesExtra(raw) {
   if (!Array.isArray(raw)) return [];
   var out = [];
@@ -225,11 +229,12 @@ export function decodeVotesExtra(raw) {
     var it = raw[i];
     if (!Array.isArray(it) || it.length < 5) continue;
     var id = it[0], n = it[1], t = it[2], g = it[3], d = it[4];
+    var game = it.length >= 6 && typeof it[5] === "string" ? it[5] : "";
     if (typeof id !== "number" || !isFinite(id) || id <= 0) continue;
     if (typeof n !== "string" || typeof t !== "string") continue;
     if (typeof g !== "number" || !isFinite(g) || g < 0) g = 0;
     if (typeof d !== "number" || !isFinite(d) || d < 0) d = 0;
-    out.push({ id: id, n: String(n).slice(0, 12), t: String(t).slice(0, 16), g: Math.min(Math.round(g), 1e6), d: Math.min(Math.round(d), 1e6) });
+    out.push({ id: id, n: String(n).slice(0, 12), t: String(t).slice(0, 16), game: String(game).slice(0, 12), g: Math.min(Math.round(g), 1e6), d: Math.min(Math.round(d), 1e6) });
   }
   return out;
 }
@@ -264,9 +269,10 @@ export function aggregateBoardVotes(entries) {
     var votes = decodeVotesExtra(e.extra && e.extra.v);
     votes.forEach(function (v) {
       var a = acc[v.id];
-      if (!a) { a = acc[v.id] = { id: v.id, n: "", t: "", g: 0, d: 0, voters: 0 }; }
+      if (!a) { a = acc[v.id] = { id: v.id, n: "", t: "", game: "", g: 0, d: 0, voters: 0 }; }
       if (v.n && !a.n) a.n = v.n;
       if (v.t && !a.t) a.t = v.t;
+      if (v.game && !a.game) a.game = v.game; // 游戏 key（防同俱乐部不同分部混淆；老条目无此字段）
       a.g += v.g;
       a.d += v.d;
       a.voters += 1;

@@ -2191,8 +2191,8 @@ var encA = L.encodeVotesExtra([
   { vid: "v2", id: 35905, n: "donk", t: "TYLOO", coin: "d", at: 2 },
   { vid: "v3", id: 23237, n: "sh1ro", t: "C9", coin: "g", at: 3 }
 ]);
-check("encodeVotesExtra：按选手聚合 + 钻优先排序",
-  JSON.stringify(encA) === JSON.stringify([[35905, "donk", "TYLOO", 1, 1], [23237, "sh1ro", "C9", 1, 0]]),
+check("encodeVotesExtra：按选手聚合 + 钻优先排序（1.3.27 起元组第 6 位 game，无 game 存量传空）",
+  JSON.stringify(encA) === JSON.stringify([[35905, "donk", "TYLOO", 1, 1, ""], [23237, "sh1ro", "C9", 1, 0, ""]]),
   JSON.stringify(encA));
 check("decodeVotesExtra：坏条目跳过（extra 可伪造不崩聚合）",
   L.decodeVotesExtra([[1, "a", "T", 2, 0], "垃圾", [2, "b", "T"], [3, "c", "T", "x", 1], [4, "d", "T", 1, 5]]).length === 3 &&
@@ -2323,6 +2323,23 @@ var holdersA = L.netHolders(
   [{ ref: "v2", id: 2, coin: "g", qty: 2 }]); // 选手 2 撤光
 check("netHolders：撤光选手不再占名额（16 上限腾位）",
   holdersA[1] === 1 && holdersA[2] !== 1 && Object.keys(holdersA).length === 1, JSON.stringify(holdersA));
+
+/* ---- 游戏标识（1.3.27）：extra.v 元组第 6 位 game——防同俱乐部不同分部（TYLOO cs2/r6 同队名）混淆 ---- */
+console.log("游戏标识（extra.v 第 6 位 game 1.3.27）：");
+var gVotes = L.normalizeVotes([
+  { vid: "g1", id: 100, n: "a", t: "TYLOO", game: "cs2", coin: "g", qty: 2 },
+  { vid: "g2", id: 200, n: "b", t: "TYLOO", game: "r6", coin: "d", qty: 1 } // 同俱乐部不同分部
+]);
+var gEnc = L.encodeVotesExtra(gVotes, []);
+check("encodeVotesExtra：元组 6 位带 game（钻优先排序 + cs2/r6 同队名不同分部可区分）",
+  gEnc.length === 2 && gEnc[0][5] === "r6" && gEnc[1][5] === "cs2" && gEnc[0][2] === "TYLOO" && gEnc[0][4] === 1,
+  JSON.stringify(gEnc));
+var gDec = L.decodeVotesExtra([[100, "a", "TYLOO", 2, 0, "cs2"], [200, "b", "TYLOO", 0, 1], [300, "c", "T", 1, 0, "r6"]]);
+check("decodeVotesExtra：6 位新条目带 game + 5 位老条目兼容（game 空）",
+  gDec.length === 3 && gDec[0].game === "cs2" && gDec[1].game === "" && gDec[2].game === "r6",
+  JSON.stringify(gDec.map(function (v) { return v.game; })));
+var gAgg = L.aggregateBoardVotes([{ uid: "u1", extra: { v: [[100, "a", "TYLOO", 2, 0, "cs2"]] } }]);
+check("aggregateBoardVotes：game 透传到聚合行", gAgg.length === 1 && gAgg[0].game === "cs2", JSON.stringify(gAgg[0]));
 
 /* ---- AJ6：窗口外队伍恢复（1.3.22：全量阵容后台补拉 + 队标 OSS 回退）----
    窗口切片（4+16 天）会把休赛队伍切出打包集（天禄 11-15 实测）——资产完好，

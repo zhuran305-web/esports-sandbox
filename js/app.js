@@ -239,7 +239,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
 
   /* ============================== 页面生命周期 ============================== */
   var OVERLAY_SELECTORS = [
-    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#confirmBackdrop", "#templeCeremony", "#cardFullscreen", "#shotStage",
+    "#sheetBackdrop", "#shareBackdrop", "#onboardBackdrop", "#templeCeremony", "#cardFullscreen", "#shotStage",
     "#gamePopover", "#tournamentPopover", "#schedGamePopover", "#schedTournamentPopover", "#pickemGamePopover", "#pickemEvPopover", "#duelDialogBackdrop", "#duelHelpBackdrop",
     "#pickemSheet", "#playerSheet"
   ];
@@ -5111,9 +5111,9 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     ["matches", "profile", "board", "settings", "rules", "schedule", "about", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem", "coinboard", "playerboard"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
-    // 对决记录/对比页/成就殿堂/战队图鉴/全部竞猜记录从「我的」侧进入返回回「我的」；
+    // 对决记录/对比页/成就殿堂/战队图鉴/全部竞猜记录/选手喜爱榜从「我的」侧进入返回回「我的」；
     // 战队资料页按来源高亮（图鉴进=我的，比赛卡进=赛事）；实验功能/赛事竞猜/硬币榜挂在「关于小程序」链上归设置 tab
-    var tabName = name === "duels" || name === "versus" || name === "achv" || name === "codex" || name === "history" ? "profile"
+    var tabName = name === "duels" || name === "versus" || name === "achv" || name === "codex" || name === "history" || name === "playerboard" ? "profile"
         : name === "team" ? (teamFromView === "profile" ? "profile" : "matches")
           : (isSubPage ? "settings" : name);
     document.querySelectorAll(".tab").forEach(function (t) {
@@ -6072,7 +6072,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     if (!$("#view-pickem").hidden) renderPickem();
     if (!$("#view-labs").hidden) renderLabs(); // 实验功能行「N 个赛事进行中」跟随
     if (!$("#view-coinboard").hidden) renderCoinBoard(); // 硬币榜（结算可能改变硬币数）
-    // 喜爱榜已迁入排行页（1.3.31 平铺：renderBoardMode 刷用户榜+选手榜两段）
+    // 喜爱榜已迁至「我的」页入口+独立子视图（1.3.34）；renderBoardMode 只刷用户榜
     resolveDeepLink();
     resolveVersusLink();
 

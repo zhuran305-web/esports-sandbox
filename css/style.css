@@ -545,8 +545,6 @@ input { font-family: inherit; }
 .match-card.is-open { border-color: rgba(var(--accent-rgb), .2); }
 .match-card.is-open:hover { border-color: rgba(var(--accent-rgb), .4); }
 
-.match-card.is-finished { opacity: .92; }
-
 .card-top {
   display: flex;
   align-items: center;
@@ -1044,7 +1042,6 @@ input { font-family: inherit; }
   justify-content: space-between;
   gap: 8px;
 }
-.codex-title { font-size: 14px; font-weight: 800; }
 .codex-sub {
   font-size: 11px;
   color: var(--text-faint);
@@ -2384,23 +2381,7 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
 
 .sheet-tip { margin: 10px 0 0; text-align: center; font-size: 11px; color: var(--text-faint); }
 
-/* ---------- 确认框 ---------- */
-#confirmBackdrop { align-items: center; padding: 24px; }
-
-.confirm-box {
-  width: 100%;
-  max-width: 340px;
-  padding: 20px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #1b2231, #141a25);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  animation: viewIn .2s ease both;
-}
-.confirm-box h2 { margin: 0 0 10px; font-size: 16px; }
-.confirm-box p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-dim); }
-
-.confirm-actions { display: flex; gap: 10px; margin-top: 18px; }
+/* 确认框（confirmBackdrop/confirm-box）已随功能下线删除（2026-11-19 清理：HTML 无此结构、JS 无生成，死代码） */
 .ghost-btn, .danger-btn {
   flex: 1;
   padding: 11px 0;
@@ -2457,11 +2438,6 @@ button.settings-row:active { background: rgba(255, 255, 255, .03); }
   color: #03130c;
   background: linear-gradient(145deg, #7fe8c0, #17a06b);
   box-shadow: 0 8px 22px rgba(23, 160, 107, .3);
-}
-.onboard-icon.onboard-warn {
-  color: #2b0508;
-  background: linear-gradient(145deg, #ffb3a1, #ff4655);
-  box-shadow: 0 8px 22px rgba(255, 70, 85, .3);
 }
 
 .onboard-step h2 { margin: 0 0 12px; font-size: 18px; text-align: center; letter-spacing: .3px; }
@@ -2647,7 +2623,6 @@ html[data-theme="light"] .account-badge { color: #a8430a; }
 
 html[data-theme="light"] .sheet,
 html[data-theme="light"] .share-sheet,
-html[data-theme="light"] .confirm-box,
 html[data-theme="light"] .onboard {
   background: linear-gradient(180deg, #ffffff, #f4f7fb 70%);
   border-color: var(--border);
@@ -2705,31 +2680,9 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb { background: #c3ccd9; }
 html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #aeb9c9; }
 html[data-theme="light"] .game-popover::-webkit-scrollbar-thumb { background: #c3ccd9; }
 
-/* ============================== 魔神殿与转生（Apple HIG：大标题/分段/卡片层级） ============================== */
-.temple-entry { display: flex; align-items: center; gap: 12px; margin: 16px 0 10px; padding: 13px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border-soft); cursor: pointer; }
-.temple-entry:active { background: rgba(127, 127, 127, .12); }
-.temple-entry-ic { width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: #ffd166; background: linear-gradient(135deg, rgba(255,209,102,.22), rgba(255,195,143,.12)); }
-.temple-entry-ic svg { width: 22px; height: 22px; }
-.temple-entry-main { min-width: 0; }
-.temple-entry-main b { display: block; font-size: 15.5px; font-weight: 750; }
-.temple-entry-main small { display: block; color: var(--text-faint); font-size: 12px; margin-top: 2px; }
-.temple-entry-chev { width: 18px; height: 18px; margin-left: auto; flex: 0 0 auto; color: var(--text-faint); }
-
-.board-dot.god { background: #ffd166; }
-.board-dot.dog { background: #7c8cff; }
-
-.temple-me { display: flex; flex-direction: column; gap: 12px; }
-.temple-mine { display: flex; gap: 22px; }
-.temple-cap { display: block; color: var(--text-faint); font-size: 11.5px; margin-bottom: 2px; }
-.temple-mine strong { font-size: 22px; font-weight: 800; }
-.temple-progress-bar { height: 6px; border-radius: 3px; background: rgba(127,127,127,.16); overflow: hidden; }
-.temple-progress-bar > div { height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, #ffd166, #ffb35c); transition: width .3s ease; }
-.temple-dist { display: block; color: var(--text-faint); font-size: 12px; margin-top: 7px; }
-.temple-dist b { color: var(--text); }
-
-.temple-cta { width: 100%; border: 0; font: inherit; font-weight: 800; font-size: 15px; color: #1a1204; padding: 13px 0; border-radius: 14px; cursor: pointer; margin: 2px 0 12px; background: linear-gradient(135deg, #ffd166, #ffb35c); box-shadow: 0 8px 22px rgba(255,179,92,.25); }
-.temple-cta.danger { background: linear-gradient(135deg, #ff5d6c, #b04dff); color: #fff; box-shadow: 0 8px 22px rgba(255,93,108,.22); }
-.temple-cta:active { filter: brightness(1.06); }
+/* 魔神殿页面样式（temple-entry/temple-me/temple-mine/temple-cap/temple-progress-bar/temple-dist/
+   temple-cta/board-dot.god/.dog）已随 1.3.5 页面下线删除（2026-11-19 清理：HTML/JS 零引用死代码；
+   转生庆祝页 cer-backdrop 与 honor-line 保留在下方——仪式功能仍在线） */
 
 .honor-line { display: flex; gap: 14px; justify-content: center; align-items: center; margin: 10px 0 2px; padding: 8px 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-dim); font-size: 13.5px; flex-wrap: wrap; }
 .honor-line b { color: var(--text); font-weight: 750; }
@@ -2759,8 +2712,6 @@ html[data-theme="light"] .game-popover::-webkit-scrollbar-thumb { background: #c
 .cer-ghost { width: 100%; background: transparent; border: 0; color: #6c788d; font: inherit; font-size: 13px; padding: 12px 0 2px; cursor: pointer; }
 
 @media (max-width: 374px) {
-  .temple-entry { padding: 11px 12px; }
-  .temple-entry-main b { font-size: 14.5px; }
   .cer-panel { padding: 22px 16px 10px; }
 }
 
@@ -2769,11 +2720,8 @@ html[data-theme="light"] .game-popover { background: var(--surface); box-shadow:
 html[data-theme="light"] .game-tile.is-selected { background: rgba(var(--accent-rgb), .07); border-color: rgba(var(--accent-rgb), .5); }
 html[data-theme="light"] .tournament-row.is-selected { background: rgba(var(--accent-rgb), .08); color: #b34f08; }
 html[data-theme="light"] .hb-sync-btn { background: rgba(var(--accent-rgb), .07); border-color: rgba(var(--accent-rgb), .32); color: #a8430a; }
-html[data-theme="light"] .temple-entry-ic { color: #b8860b; background: linear-gradient(135deg, rgba(255, 209, 102, .32), rgba(255, 195, 143, .18)); }
-html[data-theme="light"] .temple-progress-bar { background: rgba(24, 32, 45, .08); }
-html[data-theme="light"] .temple-dist b, html[data-theme="light"] .cer-desc b { color: var(--text); }
+html[data-theme="light"] .cer-desc b { color: var(--text); }
 html[data-theme="light"] .cer-backdrop { background: rgba(24, 32, 45, .45); }
-html[data-theme="light"] .temple-cta { color: #4a2f04; }
 
 /* 分享卡全屏预览（保存兜底：系统截屏） */
 .card-full { position: fixed; inset: 0; z-index: 94; background: rgba(0, 0, 0, .93); display: flex; align-items: center; justify-content: center; }
@@ -2993,9 +2941,6 @@ html[data-theme="light"] .duel-sent-row { background: rgba(24, 32, 45, .03); }
 .duel-foot-acts { margin-left: auto; display: flex; gap: 8px; }
 .duel-foot-acts .duel-report-btn { margin-left: 0; }
 
-/* 魔神殿感言 */
-.temple-quote { color: var(--text-dim); font-style: normal; }
-
 /* 战绩对比页 */
 .versus-head {
   display: flex;
@@ -3095,24 +3040,7 @@ html[data-theme="light"] .cer-quote input {
 
 /* ============================== Pick'Em 赛事竞猜（1.4.0 实验功能） ==============================
    说明：追加在文件末尾（基础规则之后），本组自己的窄屏 media 块也放在本组基础规则之后。 */
-/* display:flex 会压制 [hidden] 的 UA 隐藏（同 .game-popover[hidden] 先例）——scoped 公测入口显式补丁 */
-.pickem-evtab {
-  flex: 0 0 auto;
-  padding: 7px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  background: var(--surface);
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.pickem-evtab.is-active {
-  border-color: rgba(var(--accent-rgb), .5);
-  background: rgba(var(--accent-rgb), .1);
-  color: var(--accent);
-}
+/* pickem-evtab（旧赛事 tab 切换条）已随 1.3.6 轮次流改版删除（2026-11-19 清理：零引用死代码） */
 .pickem-evhead {
   display: flex;
   align-items: baseline;
@@ -3309,26 +3237,7 @@ html[data-theme="light"] .cer-quote input {
 }
 .pk-standing b { font-weight: 700; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pk-standing i { font-style: normal; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.pickem-match {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-.pickem-match-time {
-  flex: 0 0 auto;
-  width: 74px;
-  font-size: 10px;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
-.pickem-match-sides {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
+/* pickem-match/pickem-match-time/pickem-match-sides（旧轮次流场次行）已随 1.3.6 改版删除（2026-11-19 清理） */
 .pickem-side {
   flex: 1;
   display: flex;
@@ -3366,8 +3275,7 @@ html[data-theme="light"] .cer-quote input {
 }
 .pickem-side.is-winner { border-color: rgba(53, 211, 154, .5); }
 .pickem-side:disabled { cursor: default; opacity: .85; }
-.pickem-vs { flex: 0 0 auto; font-size: 10px; font-weight: 800; color: var(--text-faint); }
-.pickem-match .pickem-mark { flex: 0 0 auto; font-size: 12px; }
+/* pickem-vs（旧场次行 VS 分隔）已随 1.3.6 改版删除（2026-11-19 清理） */
 .pickem-picker {
   display: flex;
   flex-direction: column;
@@ -3409,12 +3317,11 @@ html[data-theme="light"] .cer-quote input {
   justify-content: center;
 }
 
-/* Pick'Em 窄屏（≤374px）：五桶收紧间距，淘汰赛时间列收窄 */
+/* Pick'Em 窄屏（≤374px）：五桶收紧间距 */
 @media (max-width: 374px) {
   .pickem-slot-grid { gap: 4px; }
   .pickem-slot { padding: 7px 2px 6px; }
   .pickem-slot .avatar { width: 26px; height: 26px; border-radius: 8px; }
-  .pickem-match-time { width: 62px; font-size: 9px; }
 }
 
 

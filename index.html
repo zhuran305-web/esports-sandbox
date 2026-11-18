@@ -401,52 +401,56 @@
         <div id="coinboardBody"></div>
       </section>
 
-      <!-- 选手喜爱榜已迁入排行榜页（1.3.28 迁移 → 1.3.31 改双段平铺：滑块切换形态选手榜默认 hidden，
-           被审核判「不符合平台展示要求」〔1.3.9「内容默认不可见」同款口径实拒〕——两段常驻可见） -->
+      <!-- 选手喜爱榜：排行页常显入口 → 独立子视图（1.3.33：照魔神殿先例的「入口+子视图」模式——
+           入口按钮常显可见（不藏内容、不违「内容默认不可见」口径），功能在子视图内完整呈现；
+           1.3.28 滑块切换（被拒）→ 1.3.31 双段平铺（观感割裂）→ 1.3.33 子视图入口 -->
 
       <!-- 排行榜 -->
       <section class="view" id="view-board" hidden>
         <h1 class="page-title">排行榜</h1>
 
-        <!-- 段锚点导航（1.3.32）：两段内容全平铺渲染不隐藏，chip 只做滚动定位——
-             不违反「内容默认不可见」审核口径（1.3.29/30 实拒教训） -->
-        <nav class="board-jump" id="boardJumpNav" aria-label="榜单区域跳转">
-          <button class="board-jump-chip is-active" data-jump="user" type="button">用户榜</button>
-          <button class="board-jump-chip" data-jump="player" type="button">选手榜</button>
-        </nav>
+        <!-- 选手喜爱榜入口（1.3.33）：常显按钮，点击进入子视图——与魔神殿二级入口同模式 -->
+        <button class="board-entry" id="playerboardEntry" type="button">
+          <span class="board-entry-ico">👑</span>选手榜 <span class="board-entry-sub">给喜欢的选手投币</span>
+        </button>
 
-        <div class="board-sect-head">用户榜</div>
-        <div id="boardUserPane">
-          <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">
-            <button class="board-tab is-active" data-board="win" role="tab" aria-selected="true">
-              <span class="board-dot win"></span>胜榜
-            </button>
-            <button class="board-tab" data-board="lose" role="tab" aria-selected="false">
-              <span class="board-dot lose"></span>败榜
-            </button>
+        <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">
+          <button class="board-tab is-active" data-board="win" role="tab" aria-selected="true">
+            <span class="board-dot win"></span>胜榜
+          </button>
+          <button class="board-tab" data-board="lose" role="tab" aria-selected="false">
+            <span class="board-dot lose"></span>败榜
+          </button>
+        </div>
+        <p class="board-hint" id="boardHint">比谁猜对的次数多，猜对次数相同比赚的沙粒多</p>
+
+        <div class="board-me" id="boardMe">
+          <div class="board-me-rank" id="boardMyRank">--</div>
+          <div class="board-me-main">
+            <span class="board-me-label" id="boardMyLabel">我的成绩</span>
+            <strong class="board-me-score" id="boardMyScore">--</strong>
           </div>
-          <p class="board-hint" id="boardHint">比谁猜对的次数多，猜对次数相同比赚的沙粒多</p>
-
-          <div class="board-me" id="boardMe">
-            <div class="board-me-rank" id="boardMyRank">--</div>
-            <div class="board-me-main">
-              <span class="board-me-label" id="boardMyLabel">我的成绩</span>
-              <strong class="board-me-score" id="boardMyScore">--</strong>
-            </div>
-            <div class="board-me-sub">
-              <span>上榜成绩 <b id="boardMyBest">--</b></span>
-            </div>
+          <div class="board-me-sub">
+            <span>上榜成绩 <b id="boardMyBest">--</b></span>
           </div>
-
-          <div class="board-list" id="boardList"></div>
-
-          <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
         </div>
 
-        <div class="board-sect-head">选手榜 <span class="board-sect-sub">投你喜欢的选手 · 入口在战队资料页选手卡</span></div>
-        <div id="boardPlayerPane">
-          <div class="board-list" id="boardPlayerBody"></div>
+        <div class="board-list" id="boardList"></div>
+
+        <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
+      </section>
+
+      <!-- 选手喜爱榜（独立子视图 1.3.33：从排行页入口进入，返回回排行页；容器复用 boardPlayerBody -->
+      <!-- （renderPlayerLove 挂点不变），投票入口仍在战队资料页选手卡抽屉） -->
+      <section class="view" id="view-playerboard" hidden>
+        <div class="subpage-head">
+          <button class="back-btn" id="playerboardBackBtn" type="button" aria-label="返回排行榜">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h1 class="page-title">选手喜爱榜</h1>
+          <span class="labs-badge">实验功能</span>
         </div>
+        <div id="boardPlayerBody"></div>
       </section>
 
       <!-- 设置 -->

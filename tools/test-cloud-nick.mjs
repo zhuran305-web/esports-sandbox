@@ -473,7 +473,7 @@ check("分享卡跟队色：shareThemeColors 提亮防线 + 三处应用",
   /theme \? "rgba\(" \+ theme\.rgb \+ ", \.3\)" : "rgba\(255,255,255,\.07\)"/.test(appSrc));
 check("全部竞猜记录页：DOM + 视图接线 + 渲染与分享委托",
   /id="view-history"/.test(htmlSrc) && /id="historyAllBtn"/.test(htmlSrc) && /id="historyBackBtn"/.test(htmlSrc) &&
-  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) && /"match", "labs", "pickem", "coinboard"]\.forEach/.test(appSrc) &&
+  /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) && /"match", "labs", "pickem", "coinboard", "playerboard"]\.forEach/.test(appSrc) &&
   /function renderHistoryFull/.test(appSrc) && /name === "history"\) renderHistoryFull/.test(appSrc) &&
   /historySettledList"\)\.addEventListener/.test(appSrc));
 check("竞猜快照：下注落账冗余存队名/赛事 + 归档降级渲染",
@@ -491,7 +491,7 @@ check("采集器：location→region + end_at 采集 + normalize 白名单放行
 check("比赛详情页：DOM + 视图接线 + 渲染与操作委托",
   /id="view-match"/.test(htmlSrc) && /id="matchBackBtn"/.test(htmlSrc) && /id="matchDetailBody"/.test(htmlSrc) &&
   /name === "history" \|\| name === "match" \|\| name === "labs"/.test(appSrc) &&
-  /"match", "labs", "pickem", "coinboard"]\.forEach/.test(appSrc) &&
+  /"match", "labs", "pickem", "coinboard", "playerboard"]\.forEach/.test(appSrc) &&
   /function renderMatchDetail/.test(appSrc) && /name === "match"\) renderMatchDetail/.test(appSrc) &&
   /scheduleList"\)\.addEventListener/.test(appSrc) && /view-match"\)\.addEventListener/.test(appSrc) &&
   /matchBackBtn"\)\.addEventListener/.test(appSrc) && /goBack\("schedule"\)/.test(appSrc));
@@ -858,7 +858,7 @@ check("视图接线：两视图 + 关于页入口 + 桶位选择器 sheet 注册
   /id="pickemSheet"/.test(htmlSrc) && /id="pickemSheetList"/.test(htmlSrc) &&
   /id="openLabsBtn"/.test(htmlSrc) && /id="labsBackBtn"/.test(htmlSrc) && /id="pickemBackBtn"/.test(htmlSrc) &&
   /name === "labs" \|\| name === "pickem"/.test(appSrc) &&
-  /"match", "labs", "pickem", "coinboard"]\.forEach/.test(appSrc) &&
+  /"match", "labs", "pickem", "coinboard", "playerboard"]\.forEach/.test(appSrc) &&
   /name === "labs"\) renderLabs/.test(appSrc) && /name === "pickem"\) renderPickem/.test(appSrc) &&
   /function bindPickem/.test(appSrc) && /bindPickem\(\);/.test(appSrc) &&
   /"#pickemSheet"/.test(appSrc));
@@ -2254,17 +2254,13 @@ check("云链路静态：votesChanged 门控 + extra.v + trim 守卫 + 分页读
 check("app 接线：投票动作 + 提交链 + 聚合页（1.3.28 迁入排行页，labs 入口拆除）",
   /function castPlayerVote/.test(appSrc) && /scheduleVoteSync/.test(appSrc) && /function renderPlayerLove/.test(appSrc) &&
   /data-pvote/.test(appSrc) && /function renderBoardMode/.test(appSrc) && !/data-labs="playerlove"/.test(appSrc));
-check("HTML/CSS：喜爱榜迁入排行页（1.3.31 双段平铺：boardPlayerPane 不带 hidden + board-sect-head 段标题 + boardPlayerBody 容器）+ 投票块样式",
-  /id="boardPlayerPane"/.test(htmlSrc) && /id="boardPlayerBody"/.test(htmlSrc) &&
-  /class="board-sect-head">用户榜</.test(htmlSrc) && /class="board-sect-head">选手榜 /.test(htmlSrc) &&
-  !/id="boardPlayerPane" hidden/.test(htmlSrc) && // 审核口径：内容默认不可见实拒（1.3.9/1.3.29/1.3.30 三例）——pane 不得默认隐藏
-  !/id="view-playerlove"/.test(htmlSrc) && !/boardModeTabs/.test(htmlSrc) && // 滑块已拆除防回潮
-  /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc) &&
-  /\.board-sect-head/.test(cssSrc) && !/board-mode-track/.test(cssSrc));
-check("排行页段锚点导航（1.3.32：chip 只做滚动定位、两段内容不隐藏——用户榜长列表压底问题的可达性修复）",
-  /id="boardJumpNav"/.test(htmlSrc) && /data-jump="user"/.test(htmlSrc) && /data-jump="player"/.test(htmlSrc) &&
-  /boardJumpNav/.test(appSrc) && /scrollIntoView/.test(appSrc) &&
-  /\.board-jump-chip/.test(cssSrc) && !/boardPlayerPane" hidden/.test(htmlSrc));
+check("HTML/CSS：喜爱榜独立子视图模式（1.3.33：排行页常显入口+view-playerboard 子视图，魔神殿先例；防回潮=无滑块/锚点/隐藏 pane）",
+  /id="playerboardEntry"/.test(htmlSrc) && /id="playerboardBackBtn"/.test(htmlSrc) && /id="view-playerboard"/.test(htmlSrc) &&
+  /id="boardPlayerBody"/.test(htmlSrc) &&
+  !/id="boardModeTabs"/.test(htmlSrc) && !/boardJumpNav/.test(htmlSrc) && !/boardPlayerPane" hidden/.test(htmlSrc) &&
+  !/view-playerlove/.test(htmlSrc) &&
+  /\.board-entry/.test(cssSrc) && /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc) &&
+  /playerboard/.test(appSrc) && !/boardJumpNav/.test(appSrc) && !/board-mode-track/.test(cssSrc) && !/board-jump-chip/.test(cssSrc));
 
 /* ---- AJ5a：可投选手数上限（1.3.21；1.3.30 fixture 改**真实最坏**——12 字名/16 字队 + game：
    旧 fixture 只有 10 字无 game，掩盖了 16 行超 1900B 预算的事实（trim 裁到 ~12 行 +

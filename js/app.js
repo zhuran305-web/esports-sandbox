@@ -57,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "1.3.32";
+  var APP_VERSION = "1.3.33";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -3269,7 +3269,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   }
 
   function paintPlayerLove(res) {
-    var body = $("#boardPlayerBody"); // 1.3.28 迁入排行榜页（原 view-playerlove 独立页拆除）
+    var body = $("#boardPlayerBody"); // 1.3.33：挂点在选手喜爱榜样子视图（container 自 1.3.28 迁入排行页以来未变）
     if (!body) return;
     var rows = aggregateBoardVotes((res && res.entries) || []);
     var myNet = netByPlayer(state.pickemVotes, state.pickemRefunds);
@@ -3309,14 +3309,13 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     });
   }
 
-  /* ---------- 排行页双段平铺（1.3.31）：用户榜 + 选手榜两段常驻可见 ----------
-   * 1.3.28 滑块迁移 → 1.3.29/30 两次被审核拒（「不符合平台展示要求」=1.3.9「内容默认不可见」
-   * 同款口径：选手榜 pane 默认 hidden 整块不可见）——平铺后两段都渲染，不再有隐藏 pane；
-   * renderBoardMode 函数名与全部调用点（9 处）保留，语义改为「刷两段」，调用点零改动。 */
+  /* ---------- 排行页用户榜刷新（1.3.33 起语义恢复为「刷用户榜」）----------
+   * 1.3.28 滑块迁移 → 1.3.29/30 被拒（选手榜 pane 默认 hidden 命中「内容默认不可见」口径）
+   * → 1.3.31 双段平铺 → 1.3.33 选手榜改为排行页常显入口 + 独立子视图（魔神殿先例模式）。
+   * renderBoardMode 函数名与全部调用点（9 处）保留，语义=进排行页刷新用户榜。 */
   function renderBoardMode() {
-    if (!$("#boardUserPane") || !$("#boardPlayerPane")) return;
+    if (!$("#view-board") || $("#view-board").hidden) return;
     renderBoard();
-    renderPlayerLove();
   }
 
   /* ---------- 战队图鉴（押过的队伍 + 跟队连击；纯本地养成，随战绩云同步跨设备） ---------- */
@@ -5015,7 +5014,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   var resetTimer = 0;
 
   function isSubView(name) {
-    return name === "rules" || name === "schedule" || name === "about" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match" || name === "labs" || name === "pickem" || name === "coinboard";
+    return name === "rules" || name === "schedule" || name === "about" || name === "duels" || name === "versus" || name === "team" || name === "achv" || name === "codex" || name === "history" || name === "match" || name === "labs" || name === "pickem" || name === "coinboard" || name === "playerboard";
   }
 
   function initHistory() {
@@ -5101,7 +5100,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       // 重新进入玩法说明总是回到分类菜单（详情内容即时丢弃）
       closeRulesTopic();
     }
-    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem", "coinboard"].forEach(function (v) {
+    ["matches", "profile", "board", "settings", "rules", "schedule", "about", "duels", "versus", "team", "achv", "codex", "history", "match", "labs", "pickem", "coinboard", "playerboard"].forEach(function (v) {
       $("#view-" + v).hidden = v !== name;
     });
     // 对决记录/对比页/成就殿堂/战队图鉴/全部竞猜记录从「我的」侧进入返回回「我的」；
@@ -5125,6 +5124,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     if (name === "labs") renderLabs();
     if (name === "pickem") renderPickem();
     if (name === "coinboard") renderCoinBoard();
+    if (name === "playerboard") renderPlayerLove(); // 1.3.33：进子视图即拉聚合榜（挂点 boardPlayerBody 不变）
     if (name === "settings" || isSubPage) renderSettings();
     if (name === "schedule") renderSchedule();
     currentView = name;
@@ -5643,25 +5643,14 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       });
     });
 
-    // 滑块监听器已随 1.3.31 平铺改造拆除（无切换态，renderBoardMode 由进页/结算调用点刷新两段）
-
-    // 排行页段锚点导航（1.3.32）：两段内容全渲染不隐藏，chip 只做平滑滚动定位——
-    // 解决长用户榜把选手榜压到页底不可达（不加 hidden/折叠，避免 1.3.29/30「内容默认不可见」实拒口径）
-    var boardJumpNav = $("#boardJumpNav");
-    if (boardJumpNav) {
-      boardJumpNav.addEventListener("click", function (e) {
-        var chip = e.target.closest("[data-jump]");
-        if (!chip) return;
-        var pane = $("#" + (chip.dataset.jump === "player" ? "boardPlayerPane" : "boardUserPane"));
-        if (!pane) return;
-        // 滚到段标题（better 视觉锚：标题+内容一起露出）
-        var head = pane.previousElementSibling;
-        (head && head.classList.contains("board-sect-head") ? head : pane).scrollIntoView({ behavior: "smooth", block: "start" });
-        boardJumpNav.querySelectorAll(".board-jump-chip").forEach(function (c) {
-          c.classList.toggle("is-active", c === chip);
-        });
-      });
-    }
+    // 排行页选手喜爱榜入口（1.3.33）：常显按钮 → 独立子视图（魔神殿二级入口模式；
+    // 入口可见=不藏内容，规避 1.3.29/30「内容默认不可见」实拒口径）
+    $("#playerboardEntry").addEventListener("click", function () {
+      switchView("playerboard");
+    });
+    $("#playerboardBackBtn").addEventListener("click", function () {
+      goBack("board");
+    });
 
     $("#boardTabs").addEventListener("click", function (e) {
       var tab = e.target.closest(".board-tab");

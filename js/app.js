@@ -57,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "1.3.31";
+  var APP_VERSION = "1.3.32";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -5644,6 +5644,24 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     });
 
     // 滑块监听器已随 1.3.31 平铺改造拆除（无切换态，renderBoardMode 由进页/结算调用点刷新两段）
+
+    // 排行页段锚点导航（1.3.32）：两段内容全渲染不隐藏，chip 只做平滑滚动定位——
+    // 解决长用户榜把选手榜压到页底不可达（不加 hidden/折叠，避免 1.3.29/30「内容默认不可见」实拒口径）
+    var boardJumpNav = $("#boardJumpNav");
+    if (boardJumpNav) {
+      boardJumpNav.addEventListener("click", function (e) {
+        var chip = e.target.closest("[data-jump]");
+        if (!chip) return;
+        var pane = $("#" + (chip.dataset.jump === "player" ? "boardPlayerPane" : "boardUserPane"));
+        if (!pane) return;
+        // 滚到段标题（better 视觉锚：标题+内容一起露出）
+        var head = pane.previousElementSibling;
+        (head && head.classList.contains("board-sect-head") ? head : pane).scrollIntoView({ behavior: "smooth", block: "start" });
+        boardJumpNav.querySelectorAll(".board-jump-chip").forEach(function (c) {
+          c.classList.toggle("is-active", c === chip);
+        });
+      });
+    }
 
     $("#boardTabs").addEventListener("click", function (e) {
       var tab = e.target.closest(".board-tab");

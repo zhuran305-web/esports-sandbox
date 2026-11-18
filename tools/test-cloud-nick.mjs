@@ -2261,6 +2261,10 @@ check("HTML/CSS：喜爱榜迁入排行页（1.3.31 双段平铺：boardPlayerPa
   !/id="view-playerlove"/.test(htmlSrc) && !/boardModeTabs/.test(htmlSrc) && // 滑块已拆除防回潮
   /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc) &&
   /\.board-sect-head/.test(cssSrc) && !/board-mode-track/.test(cssSrc));
+check("排行页段锚点导航（1.3.32：chip 只做滚动定位、两段内容不隐藏——用户榜长列表压底问题的可达性修复）",
+  /id="boardJumpNav"/.test(htmlSrc) && /data-jump="user"/.test(htmlSrc) && /data-jump="player"/.test(htmlSrc) &&
+  /boardJumpNav/.test(appSrc) && /scrollIntoView/.test(appSrc) &&
+  /\.board-jump-chip/.test(cssSrc) && !/boardPlayerPane" hidden/.test(htmlSrc));
 
 /* ---- AJ5a：可投选手数上限（1.3.21；1.3.30 fixture 改**真实最坏**——12 字名/16 字队 + game：
    旧 fixture 只有 10 字无 game，掩盖了 16 行超 1900B 预算的事实（trim 裁到 ~12 行 +

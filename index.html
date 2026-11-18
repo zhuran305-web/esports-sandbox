@@ -408,6 +408,13 @@
       <section class="view" id="view-board" hidden>
         <h1 class="page-title">排行榜</h1>
 
+        <!-- 段锚点导航（1.3.32）：两段内容全平铺渲染不隐藏，chip 只做滚动定位——
+             不违反「内容默认不可见」审核口径（1.3.29/30 实拒教训） -->
+        <nav class="board-jump" id="boardJumpNav" aria-label="榜单区域跳转">
+          <button class="board-jump-chip is-active" data-jump="user" type="button">用户榜</button>
+          <button class="board-jump-chip" data-jump="player" type="button">选手榜</button>
+        </nav>
+
         <div class="board-sect-head">用户榜</div>
         <div id="boardUserPane">
           <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">

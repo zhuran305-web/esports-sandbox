@@ -221,6 +221,17 @@
           <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </button>
 
+        <!-- 选手喜爱榜入口（1.3.34）：成就殿堂同款横条——玩家个人投币聚合属个人数据，
+             与成就殿堂（我的页入口+子视图，多次过审先例）同模式；排行页高曝光形态三次被拒 -->
+        <button class="duel-entry" id="playerboardEntry" type="button">
+          <span class="duel-entry-icon" aria-hidden="true">👑</span>
+          <span class="duel-entry-main">
+            <b>选手喜爱榜</b>
+            <span id="playerboardEntrySub">给喜欢的选手投币</span>
+          </span>
+          <svg class="duel-entry-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+
         <div class="section-head">
           <h2>竞猜记录</h2>
           <span class="section-head-more">
@@ -409,11 +420,6 @@
       <section class="view" id="view-board" hidden>
         <h1 class="page-title">排行榜</h1>
 
-        <!-- 选手喜爱榜入口（1.3.33）：常显按钮，点击进入子视图——与魔神殿二级入口同模式 -->
-        <button class="board-entry" id="playerboardEntry" type="button">
-          <span class="board-entry-ico">👑</span>选手榜 <span class="board-entry-sub">给喜欢的选手投币</span>
-        </button>
-
         <div class="board-tabs" id="boardTabs" role="tablist" aria-label="榜单切换">
           <button class="board-tab is-active" data-board="win" role="tab" aria-selected="true">
             <span class="board-dot win"></span>胜榜
@@ -440,11 +446,12 @@
         <p class="data-note">胜榜比猜对次数与净赚沙粒，败榜比猜错次数与净亏沙粒。成绩在结算后自动更新；数据保存在本设备，正式版将同步到小黑盒云端。</p>
       </section>
 
-      <!-- 选手喜爱榜（独立子视图 1.3.33：从排行页入口进入，返回回排行页；容器复用 boardPlayerBody -->
-      <!-- （renderPlayerLove 挂点不变），投票入口仍在战队资料页选手卡抽屉） -->
+      <!-- 选手喜爱榜（独立子视图 1.3.34：入口在「我的」页成就殿堂下方——同款横条按钮，
+           照成就殿堂「我的页入口+子视图」多次过审先例；1.3.29/30/33 在排行页暴露均被拒。
+           容器复用 boardPlayerBody（renderPlayerLove 挂点不变），投票入口仍在战队资料页选手卡抽屉） -->
       <section class="view" id="view-playerboard" hidden>
         <div class="subpage-head">
-          <button class="back-btn" id="playerboardBackBtn" type="button" aria-label="返回排行榜">
+          <button class="back-btn" id="playerboardBackBtn" type="button" aria-label="返回我的">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
           </button>
           <h1 class="page-title">选手喜爱榜</h1>

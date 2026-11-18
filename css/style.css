@@ -1440,40 +1440,7 @@ html[data-theme="light"] .history-badge.pending { background: rgba(0, 0, 0, .06)
   margin-bottom: 10px;
 }
 
-/* 排行页选手喜爱榜入口（1.3.33）：常显按钮，进入独立子视图（魔神殿二级入口模式）——
-   入口一直可见，不藏内容（区别于被拒的滑块切换方案） */
-.board-entry {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  border: 1px solid rgba(var(--accent-rgb), .35);
-  background: rgba(var(--accent-rgb), .10);
-  color: var(--accent-hi);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  margin: 0 0 12px;
-  transition: background .2s, transform .1s;
-}
-
-.board-entry:active {
-  transform: scale(.985);
-  background: rgba(var(--accent-rgb), .18);
-}
-
-.board-entry-ico {
-  font-size: 15px;
-}
-
-.board-entry-sub {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-faint);
-  letter-spacing: 0;
-}
+/* 选手喜爱榜入口（1.3.34）：「我的」页成就殿堂同款 duel-entry 横条（样式复用 .duel-entry，无新增） */
 
 
 .board-tab {

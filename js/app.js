@@ -57,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "1.3.33";
+  var APP_VERSION = "1.3.34";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -1677,6 +1677,14 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   }
 
   function renderProfile() {
+    // 选手喜爱榜入口副文案（1.3.34）：净持仓人数动态——有持仓显示「已投 N 名选手」，无则引导文案
+    var pbSub = $("#playerboardEntrySub");
+    if (pbSub) {
+      var pbNet = netByPlayer(state.pickemVotes, state.pickemRefunds);
+      var pbHold = 0;
+      Object.keys(pbNet).forEach(function (k) { if (pbNet[k].g + pbNet[k].d > 0) pbHold++; });
+      pbSub.textContent = pbHold > 0 ? "已投 " + pbHold + " 名选手 · 可撤回改投" : "给喜欢的选手投币";
+    }
     var settled = settledInOrder();
     var wins = 0, profit = 0, staked = 0, payout = 0;
     var bestWin = null, worstLoss = null;
@@ -5649,7 +5657,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       switchView("playerboard");
     });
     $("#playerboardBackBtn").addEventListener("click", function () {
-      goBack("board");
+      goBack("profile"); // 1.3.34：入口在「我的」页，返回回我的
     });
 
     $("#boardTabs").addEventListener("click", function (e) {

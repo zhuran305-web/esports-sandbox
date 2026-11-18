@@ -2254,13 +2254,16 @@ check("云链路静态：votesChanged 门控 + extra.v + trim 守卫 + 分页读
 check("app 接线：投票动作 + 提交链 + 聚合页（1.3.28 迁入排行页，labs 入口拆除）",
   /function castPlayerVote/.test(appSrc) && /scheduleVoteSync/.test(appSrc) && /function renderPlayerLove/.test(appSrc) &&
   /data-pvote/.test(appSrc) && /function renderBoardMode/.test(appSrc) && !/data-labs="playerlove"/.test(appSrc));
-check("HTML/CSS：喜爱榜独立子视图模式（1.3.33：排行页常显入口+view-playerboard 子视图，魔神殿先例；防回潮=无滑块/锚点/隐藏 pane）",
+check("HTML/CSS：喜爱榜独立子视图+我的页入口（1.3.34：入口=成就殿堂同款 duel-entry 横条于我的页，子视图返回回 profile；排行页零选手榜元素——三次被拒教训；防回潮）",
   /id="playerboardEntry"/.test(htmlSrc) && /id="playerboardBackBtn"/.test(htmlSrc) && /id="view-playerboard"/.test(htmlSrc) &&
   /id="boardPlayerBody"/.test(htmlSrc) &&
+  htmlSrc.indexOf('id="achvEntry"') > -1 && htmlSrc.indexOf('id="achvEntry"') < htmlSrc.indexOf('id="playerboardEntry"') && // 入口在成就殿堂之后（用户拍板位置：我的页成就殿堂下方）
+  !/board-entry/.test(htmlSrc) && !/board-entry/.test(cssSrc) && // 排行页零入口残留（1.3.29/30/33 被拒形态防回潮）
   !/id="boardModeTabs"/.test(htmlSrc) && !/boardJumpNav/.test(htmlSrc) && !/boardPlayerPane" hidden/.test(htmlSrc) &&
   !/view-playerlove/.test(htmlSrc) &&
-  /\.board-entry/.test(cssSrc) && /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc) &&
-  /playerboard/.test(appSrc) && !/boardJumpNav/.test(appSrc) && !/board-mode-track/.test(cssSrc) && !/board-jump-chip/.test(cssSrc));
+  /\.vote-btn/.test(cssSrc) && /\.vote-box/.test(cssSrc) && /board-sub/.test(cssSrc) && /\.love-game/.test(cssSrc) &&
+  /playerboardEntrySub/.test(appSrc) && /goBack\("profile"\)/.test(appSrc) &&
+  !/boardJumpNav/.test(appSrc) && !/board-mode-track/.test(cssSrc) && !/board-jump-chip/.test(cssSrc));
 
 /* ---- AJ5a：可投选手数上限（1.3.21；1.3.30 fixture 改**真实最坏**——12 字名/16 字队 + game：
    旧 fixture 只有 10 字无 game，掩盖了 16 行超 1900B 预算的事实（trim 裁到 ~12 行 +

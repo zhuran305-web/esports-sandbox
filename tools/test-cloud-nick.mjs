@@ -875,9 +875,12 @@ check("作业页筛选与搜索（1.3.6 统一口径；1.3.12 换主页同款浮
   /scopedWrap\.hidden = !\(scopedEv && scopedEv\.status !== "done"\)/.test(appSrc) &&
   /var pickemGame = "all"/.test(appSrc) && /var pickemQuery = ""/.test(appSrc) &&
   /function buildAutoEvents/.test(pickemJsSrc) && /buildAutoEvents\(MATCHES, pickemManualTournaments\(\), STRUCTURES\)/.test(appSrc) &&
-  /function autoRecordsBuckets/.test(pickemJsSrc) && // 1.3.14：4 队组自动升级战绩桶（淘汰赛阶段名豁免）
-  /isPlayoffStageKey\(sk\) \? null : autoRecordsBuckets/.test(pickemJsSrc) &&
-  /id: sk \+ "\|rec"/.test(pickemJsSrc) && // records 阶段 recKey 与同源 series 阶段隔离（历史选择结算通道不冲撞）
+  /function matchBucketTemplate/.test(pickemJsSrc) && /function autoRecordsStages/.test(pickemJsSrc) && // 2026-11-19：连通分量拆分+精确签名匹配（宽松「4队≥5场」曾误套混合形态桶→永不结算）
+  /dist === "2,2,3,3"/.test(pickemJsSrc) && // GSL 精确签名（每队场数多重集）
+  /function splitStageComponents/.test(pickemJsSrc) && // 同阶段名多小组拆分量
+  /!isPlayoffStageKey\(sk\)\) \{/.test(pickemJsSrc) && // 淘汰赛阶段名豁免（semifinals 也是 4 队，绝不能套 GSL 桶）
+  /sk \+ \(recStages\.length > 1/.test(pickemJsSrc) && // 多分量各自出桶 recKey 隔离（双 GSL 阶段 "#1"/"#2"）
+  /sk \+ "\|rec"/.test(pickemJsSrc) !== false && // records 阶段 recKey 与同源 series 阶段隔离（历史选择结算通道不冲撞）
   /recTwin\[s\.srcStage\] = 1/.test(appSrc) && /!recTwin\[s\.id\]/.test(appSrc) && // 渲染去重：孪生 series 隐藏（桶体已含对阵与赛果）
   /pk-selectors\[hidden\]/.test(cssSrc)); // [hidden] 显式补丁（浮层常显陷阱）
 check("桶体奖励展示与结算同源（1.3.15）：records/swiss 桶体币级走 stage.coinTier（settleRewards 同源，防 ev.tier 再漂移）",
@@ -1289,13 +1292,22 @@ check("⑦ auto records 端到端（1.3.14 仿 BLAST 模式）：GSL 全完赛�
   var rw = PK.settleRewards(rec, picks(), "");
   if (!r || r.correct !== 4 || r.total !== 4 || !r.perfect) return false;
   if (!rw || rw.coins.s !== 4) return false; // S 级（tier ""）→ 银币
-  // 误判兜底：4 队循环赛（6 场，各 3 战）——战绩分布 3:0/2:1/1:2/0:3 不落 GSL 桶 → 结果 null 不结算
-  var rr = PK.buildAutoEvents([
+  // 误判防御升级（2026-11-19）：4 队循环赛（6 场，各 3 战）签名[3,3,3,3]≠GSL[2,2,3,3]——
+  // 不再出 records 阶段（旧宽松规则「≥5 场」会误套桶再靠 results=null 兜底，用户能看到错误桶）
+  var rrStages = PK.buildAutoEvents([
     g("c1", "A队", "B队", "A", 9), g("c2", "C队", "D队", "A", 9),
     g("c3", "A队", "C队", "A", 8), g("c4", "B队", "D队", "A", 8),
     g("c5", "A队", "D队", "A", 7), g("c6", "B队", "C队", "A", 7)
-  ], [])[0].stages.filter(function (s) { return s.type === "records"; })[0];
-  return !!rr && rr.results === null;
+  ], [])[0].stages.filter(function (s) { return s.type === "records"; });
+  if (rrStages.length !== 0) return false;
+  // 混合形态防御（线上实测误伤案例）：4 队 8 场（GSL+排名赛，每队[3,4,4,5]）同样不出桶
+  var mixStages = PK.buildAutoEvents([
+    g("m1", "A队", "B队", "A", 9), g("m2", "C队", "D队", "A", 9),
+    g("m3", "A队", "C队", "A", 9), g("m4", "B队", "D队", "A", 8),
+    g("m5", "B队", "C队", "A", 8), g("m6", "A队", "D队", "A", 7),
+    g("m7", "A队", "B队", "A", 7), g("m8", "C队", "D队", "A", 6)
+  ], [])[0].stages.filter(function (s) { return s.type === "records"; });
+  return mixStages.length === 0;
 })());
 
 /* ---------- 场景 AD（2026-11-08 四踩后固化）：mergeMatches 属性测试（fuzz） ----------

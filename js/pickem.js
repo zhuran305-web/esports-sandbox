@@ -623,25 +623,50 @@ function autoStageRounds(list) {
   });
 }
 
-/** 自动收录的战绩桶模板（1.3.14：auto 赛事小组赛自动升级战绩桶竞猜，仿 BLAST records 模式）。
- *  桶结构=赛制推导，**要求证据充分**（与 tools/pickem-config-helper 同规则）：
- *  4 队×≥5 场 → 经典 GSL 双败（2:0/2:1/1:2/0:2 各 1，每队最多 3 场）；
- *  8 队×12 场 → 8 队双败（3:0/3:1/2:1/2:2 各 1 + 1:2/0:2 各 2）；
- *  其余形态返回 null → 保持 series 赛程展示——宁缺勿滥不硬套。
- *  ⚠ 4 队组的形态歧义（2026-11-09 BLAST 香港实测）：经典 GSL=5 场（2:0/2:1/1:2/0:2），
- *  BLAST Rivals 式「4 进 3」=4 场（每队只打两场 → 2:0×1/1:1×2/0:2×1）。数据侧两条路都
- *  只有首轮 2 场带真实队名（TBD 场次被采集器过滤），预测时点无法区分——套错桶会因分布
- *  不符永不结算（IEM 季军赛同级教训）。故 4 队组只在 ≥5 场时才套 GSL 桶；「4 进 3」形态
- *  走手工配置（type=records + 自定义 buckets），auto 路径不硬套。 */
-function autoRecordsBuckets(list) {
+/** 阶段内按「对赛关系」拆连通分量（2026-11-19）：数据源偶把多个小组并进同一阶段名
+ *  （实测 BLAST R6 Major Osaka「Phase 1 - GSL Stage」= 两个 4 队 GSL 共 10 场）。
+ *  拆开后每个分量独立匹配桶模板——双 GSL 自动出双桶，互不干扰；单分量阶段行为不变。 */
+function splitStageComponents(list) {
+  var parent = {};
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+  list.forEach(function (m) {
+    var a = m.teamA && m.teamA.name, b = m.teamB && m.teamB.name;
+    if (!a || !b) return;
+    if (parent[a] === undefined) parent[a] = a;
+    if (parent[b] === undefined) parent[b] = b;
+    union(a, b);
+  });
+  var groups = {};
+  list.forEach(function (m) {
+    var a = m.teamA && m.teamA.name;
+    if (!a) return;
+    var r = find(a);
+    if (!groups[r]) groups[r] = [];
+    groups[r].push(m);
+  });
+  return Object.keys(groups).map(function (k) { return groups[k]; });
+}
+
+/** 单个连通分量的桶模板精确匹配（签名=队数×场数×每队场数多重集）：
+ *  - 4 队×5 场 每队[2,2,3,3] → 经典 GSL 双败（2:0/2:1/1:2/0:2 各 1）
+ *  - 8 队×12 场 → 8 队双败（3:0/3:1/2:1/2:2 各 1 + 1:2/0:2 各 2）
+ *  签名不精确匹配 → null。⚠ 历史教训两条：
+ *  ①「4 队 ≥5 场」宽松规则曾把 GSL+排名赛混合组（4 队 8 场每队[3,4,4,5]）、
+ *    Play-In 循环+淘汰混合（4 队 6 场）误套 GSL 桶——战绩出现桶外形态永不结算（2026-11-19 收紧）；
+ *  ② 4 队 4 场（每队 2 场）=「4进3」与未展开 GSL 数据侧不可区分（TBD 被过滤）——走手工配置。 */
+function matchBucketTemplate(list) {
   var seen = {};
   var n = 0;
+  var perTeam = {};
   list.forEach(function (m) {
     [m.teamA, m.teamB].forEach(function (t) {
       if (t && t.name && !seen[t.name]) { seen[t.name] = 1; n += 1; }
+      if (t && t.name) perTeam[t.name] = (perTeam[t.name] || 0) + 1;
     });
   });
-  if (n === 4 && list.length >= 5) return [
+  var dist = Object.keys(perTeam).map(function (k) { return perTeam[k]; }).sort().join(",");
+  if (n === 4 && list.length === 5 && dist === "2,2,3,3") return [
     { k: "2:0", label: "2:0 出线", cap: 1 }, { k: "2:1", label: "2:1 出线", cap: 1 },
     { k: "1:2", label: "1:2 淘汰", cap: 1 }, { k: "0:2", label: "0:2 淘汰", cap: 1 }
   ];
@@ -651,6 +676,18 @@ function autoRecordsBuckets(list) {
     { k: "1:2", label: "1:2 淘汰", cap: 2 }, { k: "0:2", label: "0:2 淘汰", cap: 2 }
   ];
   return null;
+}
+
+/** 自动收录的战绩桶入口（2026-11-19 重构）：先拆连通分量，逐分量匹配模板。
+ *  任一分量匹配成功即返回 [{matches, buckets}] 列表（调用方按分量出桶）；全部不匹配 → null。 */
+function autoRecordsStages(list) {
+  var comps = splitStageComponents(list);
+  var out = [];
+  for (var i = 0; i < comps.length; i++) {
+    var b = matchBucketTemplate(comps[i]);
+    if (b) out.push({ matches: comps[i], buckets: b });
+  }
+  return out.length ? out : null;
 }
 
 /** 战绩桶结果推导（与聚合器 recordsResults 同口径）：全部完赛（弃赛容忍）且实际 W:L 分布与
@@ -746,9 +783,16 @@ export function buildAutoEvents(matches, excludeTournaments, structures) {
       var rounds = autoStageRounds(list);
       // 官方结构数据（2026-11-10）：键与 matches 的 (game, tournament, stage) 对齐
       var structure = structures && structures[ev.game + "|" + tn + "|" + sk] ? structures[ev.game + "|" + tn + "|" + sk] : null;
-      // 淘汰赛阶段名先行排除（semifinals 等也是 4 队——绝不能套 GSL 桶），其余按形态推导战绩桶
-      var recBuckets = isPlayoffStageKey(sk) ? null : autoRecordsBuckets(list);
-      if (recBuckets) stages.push(buildAutoRecordsStage(sk, list, rounds, recBuckets, allA, structure));
+      // 淘汰赛阶段名先行排除（semifinals 等也是 4 队——绝不能套 GSL 桶），其余按形态推导战绩桶。
+      // 2026-11-19：连通分量拆分——同阶段名下的多个小组（实测 R6 Major Phase 1 = 双 GSL 10 场）
+      // 逐分量精确匹配模板，匹配的分量各自出桶（id 加序号隔离 recKey）；不匹配的分量保持 series 展示
+      if (!isPlayoffStageKey(sk)) {
+        var recStages = autoRecordsStages(list);
+        if (recStages) recStages.forEach(function (rc, ri) {
+          var rcRounds = autoStageRounds(rc.matches);
+          stages.push(buildAutoRecordsStage(sk + (recStages.length > 1 ? "#" + (ri + 1) : ""), rc.matches, rcRounds, rc.buckets, allA, structure));
+        });
+      }
       var teamsSeen = {};
       var ms = list.map(function (m, i) {
         var startT = new Date(m.startAt).getTime();

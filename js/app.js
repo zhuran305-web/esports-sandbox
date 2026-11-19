@@ -2032,10 +2032,10 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   var pickemAutoCacheKey = "";
   var pickemGame = "all";       // 作业页游戏筛选（1.3.6，仿主页）
   var pickemQuery = "";         // 作业页搜索词（与 chips/主体同源，假设 75/76）
-  // 公测直入口（1.3.10 建，1.3.14 起指向 BLAST Rivals 香港站——IEM 北京已结束）：
-  // 主页「BLAST 作业」=只显示该手工赛事、隐藏 tabs/游戏筛选——其他赛事不展示；
+  // 公测直入口（1.3.10 建，2026-11-19 起指向 PGL Major 新加坡——BLAST 香港已结束）：
+  // 主页「Major 作业」=只显示该手工赛事、隐藏 tabs/游戏筛选——其他赛事不展示；
   // 实验功能入口仍显示全部
-  var PICKEM_SCOPED_EVENT = "blast-rivals-fall-2026";
+  var PICKEM_SCOPED_EVENT = "pgl-major-singapore-2026";
   var pickemScoped = false;
   var pickemLogMode = false; // 作业记录模式（2026-11-14）：只展示「参与过且已结束」的赛事（竞猜记录+树状图），入口=我的页快捷四联
   var pickemSearchTimer = null;
@@ -2090,7 +2090,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   }
 
   /** 作业页统一口径（1.3.6，假设 75/76）：游戏筛选 + 搜索词过滤后的赛事列表——chips 与主体同源。
-   *  公测直入口（1.3.10）锁定 scoped 事件（1.3.14 起=BLAST 香港）：scoped 时其余赛事一律不出现。 */
+   *  公测直入口（1.3.10）锁定 scoped 事件（2026-11-19 起=PGL Major 新加坡）：scoped 时其余赛事一律不出现。 */
   function pickemFilteredEvents() {
     var q = pickemQuery.trim().toLowerCase();
     var base = pickemLogMode ? pickemLogEvents() : pickemVisibleEvents(); // 作业记录模式=参与过且已结束（2026-11-14）
@@ -2717,7 +2717,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     if (!body) return;
     var all = pickemLogMode ? pickemLogEvents() : pickemVisibleEvents(); // 1.3.14：已结束赛事不进列表/计数/空态（与 pickemFilteredEvents 同源）；作业记录模式=参与过且已结束
     if (pickemScoped) {
-      // 公测直入口：只显示 scoped 赛事（1.3.14 起=BLAST 香港）——选择器整行隐藏（其他赛事不展示）
+      // 公测直入口：只显示 scoped 赛事（2026-11-19 起=PGL Major 新加坡）——选择器整行隐藏（其他赛事不展示）
       all = all.filter(function (e) { return e.id === PICKEM_SCOPED_EVENT; });
       if (selRow) selRow.hidden = true;
       if (pickemEventId !== PICKEM_SCOPED_EVENT) pickemEventId = PICKEM_SCOPED_EVENT;
@@ -3042,7 +3042,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     $("#labsList").addEventListener("click", function (e) {
       var row = e.target.closest("[data-labs]");
       if (row && row.dataset.labs) {
-        if (row.dataset.labs === "pickem") { pickemScoped = false; pickemLogMode = false; } // 实验功能入口=完整列表（主页「BLAST 作业」才是公测直入口）
+        if (row.dataset.labs === "pickem") { pickemScoped = false; pickemLogMode = false; } // 实验功能入口=完整列表（主页「Major 作业」才是公测直入口）
         switchView(row.dataset.labs);
       }
     });
@@ -5435,7 +5435,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     });
     $("#duelEntry").addEventListener("click", function () { switchView("duels"); });
     $("#pickemEntry").addEventListener("click", function () {
-      pickemScoped = false; // 作业记录=完整赛事列表（主页「BLAST 作业」才是公测 scoped 直入口）
+      pickemScoped = false; // 作业记录=完整赛事列表（主页「Major 作业」才是公测 scoped 直入口）
       pickemLogMode = true; // 作业记录模式：只看参与过且已结束的赛事（含竞猜记录与树状图）
       switchView("pickem");
     });
@@ -5818,7 +5818,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     bindPickem();
     $("#homeScheduleBtn").addEventListener("click", function () { switchView("schedule"); });
     $("#homePickemBtn").addEventListener("click", function () {
-      pickemScoped = true; // 公测直入口：锁定 scoped 赛事（1.3.14 起=BLAST 香港），其他赛事不展示
+      pickemScoped = true; // 公测直入口：锁定 scoped 赛事（2026-11-19 起=PGL Major 新加坡），其他赛事不展示
       pickemLogMode = false; // 公测直入口=可竞猜口径，作业记录模式只从「我的」快捷行进入
       switchView("pickem");
     });

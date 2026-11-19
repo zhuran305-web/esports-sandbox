@@ -4187,12 +4187,16 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
 
     var board = { entries: [] };
     var my = null;
+    var boardFetchFailed = false;
     try {
       board = await Cloud.getBoard(currentBoard, 50);
       my = await Cloud.getMyEntry(currentBoard);
     } catch (e) {
-      // 未登录或网络异常时展示空榜
+      // 拉榜失败（未登录/网络抖动）：保留已有渲染不清空——切页瞬间的网络竞态曾把整榜闪成空态
+      //（用户实测「页面切换排行榜突然消失」）；仅在本来就没有内容时才渲染空态
+      boardFetchFailed = true;
     }
+    if (boardFetchFailed && listEl.children.length) return;
     var entries = board.entries;
     // realMy 取到隔离身份后回填 isMe（首次 getList 时身份可能尚未就绪，鸿蒙上依赖榜单通道）
     var uidNow = Cloud.getMyUid();

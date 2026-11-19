@@ -57,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "2.0.0";
+  var APP_VERSION = "2.0.1";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；

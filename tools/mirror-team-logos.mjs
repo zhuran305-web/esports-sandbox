@@ -187,7 +187,9 @@ async function uploadLogo(key, buf, contentType) {
   var headers = {
     "Content-Type": contentType,
     "Content-MD5": createHash("md5").update(buf).digest("base64"),
-    "Content-Length": String(buf.length)
+    "Content-Length": String(buf.length),
+    // 队标不可变（内容变化即换键名 hash）→ 长缓存，避免每次冷启动重拉 747 张（~2.9MB）
+    "Cache-Control": "public, max-age=2592000"
   };
   var date = new Date().toUTCString();
   headers.Date = date;

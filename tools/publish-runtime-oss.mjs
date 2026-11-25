@@ -15,6 +15,7 @@
  * 注意：域名要原样填进 network 权限申请，所以默认端点不要带自定义域名。
  */
 import { createHash, createHmac } from "node:crypto";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import net from "node:net";
@@ -306,11 +307,20 @@ async function guardAgainstRegression(runtime) {
   log("防回退检查通过：线上 " + remote.updatedAt + " ≤ 本地 " + runtime.meta.updatedAt);
 }
 
+/** deflateRaw + base64（纯文本）——客户端 platform.networkGetJsonCompressed 用 fflate.inflateSync 还原。
+ *  2026-11-25：OSS 下行流量包 2GB/月，整包 2.2MiB×每月数百次更新是唯一大头（实测 4.6x 压缩）。
+ *  纯文本形态避免原生层对 Content-Encoding 的处理差异（宿主 network.request 返回字符串）。 */
+function deflateBase64(text) {
+  return deflateRawSync(Buffer.from(text, "utf8"), { level: 9 }).toString("base64");
+}
+
 async function upload(runtime) {
   await guardAgainstRegression(runtime);
   var files = [
     { name: "meta.json", body: runtime.metaBody },
-    { name: "matches.json", body: runtime.matchesBody }
+    { name: "matches.json", body: runtime.matchesBody },
+    // 压缩版与原件并存：客户端优先取 .gz.b64，取不到自动回退原版（流量优化不影响可用性）
+    { name: "matches.json.gz.b64", body: deflateBase64(runtime.matchesBody), type: "text/plain; charset=utf-8" }
   ];
   for (var i = 0; i < files.length; i += 1) {
     var file = files[i];
@@ -318,7 +328,7 @@ async function upload(runtime) {
     log("上传 " + key + "（" + (file.body.length / 1048576).toFixed(2) + " MiB）");
     await ossRequest("PUT", key, {
       headers: {
-        "Content-Type": "application/json; charset=utf-8",
+        "Content-Type": file.type || "application/json; charset=utf-8",
         "Content-MD5": md5Base64(file.body),
         "Cache-Control": "public, max-age=60",
         "x-oss-object-acl": "public-read"
@@ -358,6 +368,27 @@ async function check(runtime) {
     log("matches.json OK · " + (totalBytes / 1048576).toFixed(2) + " MiB");
   } else {
     log("matches.json OK · 未读到对象大小（服务端未返回 Content-Range/Length）");
+  }
+
+  // 压缩版校验（2026-11-25）：回读 .gz.b64 并真实解压 → 与本地 hash 对齐，防「上传损坏/编码错」
+  // 导致线上全体客户端每轮先失败再回退（不影响可用性，但白花一次请求）
+  var gzRes = await fetch(publicBase + "matches.json.gz.b64?probe=" + Date.now(), {
+    headers: { "cache-control": "no-cache" }
+  });
+  if (!gzRes.ok) {
+    log("⚠ matches.json.gz.b64 未生效（HTTP " + gzRes.status + "）——客户端会自动回退原版，不影响可用性");
+  } else {
+    var gzText = (await gzRes.text()).trim();
+    try {
+      var decoded = JSON.parse(inflateRawSync(Buffer.from(gzText, "base64")).toString("utf8"));
+      var decodedHash = createHash("sha256")
+        .update(JSON.stringify({ teams: decoded.teams, teamColors: decoded.teamColors, rosters: decoded.rosters, pickem: decoded.pickem, structures: decoded.structures, matches: decoded.matches }))
+        .digest("hex");
+      if (decodedHash !== runtime.meta.hash) fail("压缩版解压后 hash 与 meta 不一致（上传内容错乱）");
+      log("matches.json.gz.b64 OK · " + (gzText.length / 1024).toFixed(0) + " KB（原 " + (runtime.matchesBody.length / 1024).toFixed(0) + " KB，压缩 " + (runtime.matchesBody.length / gzText.length).toFixed(1) + "x）· 解压校验通过");
+    } catch (e) {
+      fail("压缩版解压校验失败：" + ((e && e.message) || e));
+    }
   }
 
   var preflight = await fetch(publicBase + "meta.json", {

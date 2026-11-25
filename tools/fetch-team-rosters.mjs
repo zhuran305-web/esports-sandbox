@@ -78,7 +78,9 @@ async function ossGet(key) {
 async function ossPut(key, body) {
   if (!KEY_ID || !KEY_SECRET) fail("--oss 需要 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET");
   var date = new Date().toUTCString();
-  var headers = { Date: date, "Content-Type": "application/json" };
+  // Cache-Control（2026-11-25 流量优化）：640KB 全量阵容资产，客户端自带 12h 缓存；
+  // 再给 HTTP 缓存一层兜底，减少新设备/清缓存后的重复下行
+  var headers = { Date: date, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" };
   var res = await fetch("https://" + BUCKET + ".oss-" + REGION + ".aliyuncs.com/" + (PREFIX ? PREFIX + "/" : "") + key, {
     method: "PUT",
     headers: Object.assign({ Authorization: signRequest("PUT", key, headers, date) }, headers),

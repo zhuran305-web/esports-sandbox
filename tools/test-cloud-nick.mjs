@@ -961,6 +961,21 @@ check("已删函数零残留（夜间自查 1 轮：swiss 正文残留 pickemRou
   /function pickemStaticRoundFlowHTML/.test(appSrc) && // swiss 对阵展示的替代实现
   /pickemStaticRoundFlowHTML\(stage, rec\)/.test(appSrc));
 
+/* 运行时整包压缩（2026-11-25，OSS 下行流量包 2GB/月）：
+   客户端优先拉 .gz.b64 并用 fflate 解压，失败必须回退原版；发布端真实上传压缩版。 */
+var platformSrc = rf(path.join(root, "js", "platform.js"), "utf8");
+var dsSrc = rf(path.join(root, "js", "data-source.js"), "utf8");
+var pubSrc = rf(path.join(root, "tools", "publish-runtime-oss.mjs"), "utf8");
+check("整包压缩传输：客户端 decode+回退 · data-source 走压缩拉取 · 发布端生成/校验压缩版",
+  /export async function networkGetJsonCompressed/.test(platformSrc) &&
+  /inflateSync/.test(platformSrc) && /await import\("fflate"\)/.test(platformSrc) &&
+  /reportTransfer\("cmp"\)/.test(platformSrc) && /reportTransfer\("raw"\)/.test(platformSrc) && // 命中/回退可诊断
+  /networkGetJsonCompressed\(\s*baseUrl\(\) \+ "matches\.json/.test(dsSrc) &&
+  /networkGetJsonCompressed\(baseUrl\(\) \+ "team-rosters\.json/.test(dsSrc) &&
+  /deflateBase64/.test(pubSrc) && /"matches\.json\.gz\.b64"/.test(pubSrc) &&
+  /inflateRawSync/.test(pubSrc) && // --check 回读真实解压校验
+  /Cache-Control": "public, max-age=2592000"/.test(rf(path.join(root, "tools", "mirror-team-logos.mjs"), "utf8")));
+
 /* ---------- 场景 X（夜间自查 R2）：Sync.write 冲突恢复路径 ----------
    官方契约：写失败（含 VERSION_CONFLICT）清掉版本凭证缓存，必须先成功 get 一次才能再 set——
    盲目重试 set 永远失败（陷阱条目「cloud.storage 写入失败后重试 set 一直失败」）。

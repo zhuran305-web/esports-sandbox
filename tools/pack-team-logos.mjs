@@ -99,6 +99,8 @@ async function webpUpload(key, buf) {
   var headers = {
     "Content-Type": "image/webp",
     "Content-Length": String(buf.length),
+    // 队标不可变（键名含内容 hash）→ 30 天强缓存，压掉冷启动重复下载
+    "Cache-Control": "public, max-age=2592000",
     Date: date,
     Authorization: "OSS " + KEY_ID + ":" + createHmac("sha1", KEY_SECRET).update(sts, "utf8").digest("base64")
   };

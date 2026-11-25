@@ -10,7 +10,7 @@
     "dev:vite": "vite",
     "prebuild": "node tools/pull-data.mjs --force && node tools/trim-embedded.mjs && node tools/pack-team-logos.mjs",
     "build": "hb-sdk build",
-    "deploy": "hb-sdk remote deploy",
+    "deploy": "hb-sdk remote deploy --no-auto-publish",
     "data:pull": "node tools/pull-data.mjs --force && node tools/trim-embedded.mjs",
     "runtime:build": "node tools/build-runtime-data.mjs",
     "runtime:serve": "node tools/serve-runtime.mjs",
@@ -72,11 +72,9 @@
     },
     "miniProgramId": "01a15496-0e1f-7ee8-ba8d-f15266cb94f1"
   },
-  "dependencies": {
-    "@heybox/hb-sdk": "0.9.7"
-  },
   "devDependencies": {
     "@alicloud/fc-open20210406": "^2.0.13",
+    "@heybox/hb-sdk": "^0.9.9",
     "sharp": "^0.34.5",
     "vite": "^8.3.4"
   }

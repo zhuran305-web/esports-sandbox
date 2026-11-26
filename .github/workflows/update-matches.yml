@@ -152,7 +152,19 @@ jobs:
             || gh release create data --title "赛事数据" --notes "由 GitHub Actions 自动更新，请勿手动编辑。"
           cp runtime/matches.json "$RUNNER_TEMP/runtime-matches.json"
           cp runtime/meta.json "$RUNNER_TEMP/runtime-meta.json"
-          gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber
+          # 上传重试（2026-11-26）：gh release upload --clobber 偶发 GitHub API 500
+          #（11-26 00:05 北京时间实测一轮，告警邮件由 failure 步骤发出；下一小时轮自愈）。
+          # 3 次重试把瞬时 500 变成自动恢复；仍失败则保留 failure 让告警继续工作。
+          for i in 1 2 3; do
+            if gh release upload data data/matches.json "$RUNNER_TEMP/runtime-matches.json" "$RUNNER_TEMP/runtime-meta.json" --clobber; then
+              echo "上传成功（第 $i 次尝试）"
+              exit 0
+            fi
+            echo "上传第 $i 次失败"
+            sleep 30
+          done
+          echo "3 次重试均失败"
+          exit 1
 
       # 队伍 id 映射（1.3.2）：无条件上传（若挂在「数据变化」条件下，无变化的首轮会漏传）；
       # 文件不存在（首次运行前）跳过

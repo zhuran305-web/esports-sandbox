@@ -142,7 +142,7 @@
     {
       "id": "pgl-major-singapore-2026",
       "game": "cs2",
-      "name": "PGL Major Singapore · Stage 1",
+      "name": "PGL Major Singapore",
       "tournament": "PGL Major · Singapore 2026",
       "stages": [
         {
@@ -153,6 +153,14 @@
             "Stage 1"
           ],
           "pickOpenRounds": 2
+        },
+        {
+          "id": "stage2",
+          "type": "series",
+          "label": "第二阶段 · 瑞士轮",
+          "stageNames": [
+            "Stage 2"
+          ]
         }
       ]
     }

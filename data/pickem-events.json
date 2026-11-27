@@ -156,11 +156,12 @@
         },
         {
           "id": "stage2",
-          "type": "series",
+          "type": "swiss",
           "label": "第二阶段 · 瑞士轮",
           "stageNames": [
             "Stage 2"
-          ]
+          ],
+          "pickOpenRounds": 2
         }
       ]
     }

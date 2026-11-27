@@ -2293,11 +2293,14 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   function pickemBucketHTML(stage, bucket, rec, editable, results) {
     var picks = rec && rec.picks ? (rec.picks[bucket.k] || []) : [];
     var resNames = results ? (results[bucket.k] || []) : null;
-    var shown = Math.max(bucket.cap, picks.length, resNames ? resNames.length : 0);
+    // done 态槽位只显示「用户猜的队 + 对错」（2026-11-28 用户拍板）：真实落位一律看下方小组积分表——
+    // 旧渲染把没猜到的槽回填真实落位队（is-result），与用户选择混排，观感成了「桶里不是我猜的东西」
+    var showResultsInline = editable || !resNames; // open/locked 态无结果可言；done 且无 rec 时回退结果展示（未参与竞猜的兜底）
+    var shown = Math.max(bucket.cap, picks.length, showResultsInline && resNames ? resNames.length : 0);
     var slots = "";
     for (var i = 0; i < shown; i++) {
       var name = picks[i] || "";
-      var resName = resNames ? (resNames[i] || "") : "";
+      var resName = showResultsInline && resNames ? (resNames[i] || "") : "";
       var team = pickemTeamOf(stage, name || resName);
       var hit = !!(name && resNames && resNames.indexOf(name) >= 0);
       var miss = !!(name && resNames && !hit);
@@ -2310,7 +2313,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
         (name || resName
           ? avatarHTML(team) + '<span class="pickem-slot-name">' + esc(name || resName) +
               (hit ? '<i class="pickem-mark hit">✓</i>' : "") + (miss ? '<i class="pickem-mark miss">✗</i>' : "") + "</span>"
-          : '<span class="pickem-slot-empty">＋</span>') +
+          : '<span class="pickem-slot-empty">－</span>') +
         "</button>";
     }
     return '<div class="pickem-bucket' + (bucket.tone === "win" ? " is-win" : " is-lose") + '">' +
@@ -2335,6 +2338,10 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
         ? "按小组赛最终战绩逐桶比对：猜进「" + esc(buckets[0].label) + "」的队伍须真打出该战绩才算对"
         : "按终局比分逐桶比对：猜进「3:0 晋级」的队伍须真以 3-0 出线才算对") + "</div>";
     }
+    if (st === "done" && stage.results && (!rec || pickemSwissCount(stage, rec) === 0)) {
+      // 未参与竞猜（2026-11-28 桶区语义改造）：桶区只回放用户选择——没猜过就明说，真实战绩看积分表
+      html += '<div class="pickem-note">你未参与本阶段竞猜 · 各队最终战绩见下方小组积分</div>';
+    }
     // 奖励展示（与 settleRewards 同源：币级=stage.coinTier）——placement 体有币级文案、逐场行有，
     // 桶体此前缺失（BLAST Rivals 反馈「奖励还没显示出来」，2026-11-10）
     if (st === "open" || st === "locked") {
@@ -2345,12 +2352,8 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     html += buckets.map(function (b) {
       return pickemBucketHTML(stage, b, rec, editable, st === "done" ? stage.results : null);
     }).join("");
-    if (!isRecords && st === "done" && stage.results) {
-      // 自动落位桶（1:3 / 2:3 淘汰）：剩余队伍的终局展示，不参与选择与计分（仅 Major 瑞士轮）
-      html += PICKEM_AUTO_BUCKETS.map(function (b) {
-        return pickemBucketHTML(stage, b, null, false, stage.results);
-      }).join("");
-    }
+    // 自动落位桶（1:3 / 2:3 淘汰）展示已删（2026-11-28 用户拍板「多余」）：1.3.3 的终局展示形态
+    // 让不熟悉的用户误判为坏数据——被淘汰 6 队的去向看下方小组积分表（战绩信息不丢）
     if (editable) {
       var n = pickemSwissCount(stage, rec);
       html += '<div class="pickem-stage-acts">' +
@@ -2359,7 +2362,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       if (st === "open" && n === 0) {
         html += '<div class="pickem-note">' + (isRecords
           ? "点空位把队伍放进战绩桶：每桶容量见桶头（全部落位后才能提交，截止前可修改）"
-          : "点空位选队伍：3:0 晋级 2 支 · 3:1/3:2 晋级 6 支 · 0:3 淘汰 2 支（1:3/2:3 淘汰由剩余队自动落位）") + "</div>";
+          : "点空位选队伍：3:0 晋级 2 支 · 3:1/3:2 晋级 6 支 · 0:3 淘汰 2 支") + "</div>";
       }
     } else if (st === "locked") {
       html += '<div class="pickem-note">已截止：开赛前 1 小时锁定选择，赛果出来后自动结算</div>';

@@ -1,6 +1,6 @@
 {
   "name": "esports-sandbox",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "private": true,
   "type": "module",
   "description": "赛事沙盘 · 电竞赛事预测模拟盘（小黑盒小程序）+ 赛事数据采集器",
@@ -72,9 +72,11 @@
     },
     "miniProgramId": "01a15496-0e1f-7ee8-ba8d-f15266cb94f1"
   },
+  "dependencies": {
+    "@heybox/hb-sdk": "0.9.7"
+  },
   "devDependencies": {
     "@alicloud/fc-open20210406": "^2.0.13",
-    "@heybox/hb-sdk": "^0.9.9",
     "sharp": "^0.34.5",
     "vite": "^8.3.4"
   }

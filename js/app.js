@@ -4,9 +4,9 @@ import { normalizeCollection, onBet, onSettle, mergeCollection, collectionSummar
 import { ACHV_DEFS, normalizeAchv, mergeAchv, evalAchievements, achvById, achvTitle } from "./achv.js";
 import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK, RUNTIME_DATA_BASE } from "./config.js";
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, screenshotElement, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
-import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot, fetchAllRosters, getCacheDiag, getTransferDiag } from "./data-source.js";
+import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot, fetchAllRosters } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, netByPlayer, netHolders, VOTE_LEDGER_CAP, REFUND_LEDGER_CAP, VOTES_EXTRA_CAP } from "./like-rank.js";
 
 (function () {
@@ -33,11 +33,6 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   // public/logos/（~2.5MiB，724 张）——同源走 img-src 'self' 天然放行，加载更快且离线可渲染；
   // 文件名沿用 teams 映射路径（内容为 WebP 字节，浏览器按内容嗅探渲染）。
   // OSS 远程镜像（tools/mirror-team-logos.mjs）保留：作为打包源 + 未来恢复远程高清版的备胎。
-  // 队标基址：打包同源（img-src 'self' 天然放行，不依赖远程图片域）。
-  // ⚠ 2026-11-28 实测教训：曾尝试全量切 OSS logos-webp 砍 3.1MiB 打包集，但生产构建 CSP
-  // img-src 不含 OSS 域（1.3.11 同源机制：服务端 network_policy 为空，0.9.7 仅修官方 CDN 域）——
-  // dev/生产双确认被拦，真机从未证实过 OSS img 可加载（1.3.23 设计注释「CSP 拦走首字」即此）。
-  // 全量 OSS 方案会致生产全部队标变首字，已回退。体积改走「压参瘦身」（pack 72px 重压）。
   var LOGO_BASE = "logos/";
   // 选手位置徽章（PandaScore role 原文 → 中文；仅 LoL/Dota2/OW 有值）——阵容行与选手卡同源
   var ROLE_LABELS = { top: "上单", jungle: "打野", mid: "中单", adc: "ADC", support: "辅助", "midlaner": "中单", "adc/upport": "ADC", "upport": "辅助", "jungler": "打野", carry: "核心", "offlane": "三号位", solo: "中单" };
@@ -62,7 +57,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "2.0.8";
+  var APP_VERSION = "2.0.9";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -690,6 +685,12 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       // 剥出后缀走打包资源；外域原样返回（被 CSP 拦时走首字兜底）
       var legacy = path.match(/^https?:\/\/(?:cdn-api|cdn)\.pandascore\.co\/images\/(?:team|player)\/image\/(.+)$/i);
       return legacy ? LOGO_BASE + logoPackName(legacy[1]) : path;
+    }
+    // 打包集缺失（窗口外休赛队伍，TEAM_LOGOS 无键）但数据 logo 路径存在 → OSS 预压 webp 库
+    // 回退（1.3.23：logos-webp/<djb2 hash>.webp 96px ~5KB，pack-team-logos 构建时镜像；比原图
+    // 降 20~50 倍流量）。CSP 拦/404/断网都走首字兜底——不劣于现状。
+    if (!packed && RUNTIME_DATA_BASE) {
+      return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/logos-webp/" + logoPackName(String(path));
     }
     return LOGO_BASE + logoPackName(path);
   }
@@ -2292,14 +2293,11 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   function pickemBucketHTML(stage, bucket, rec, editable, results) {
     var picks = rec && rec.picks ? (rec.picks[bucket.k] || []) : [];
     var resNames = results ? (results[bucket.k] || []) : null;
-    // done 态槽位只显示「用户猜的队 + 对错」（2026-11-28 用户拍板）：真实落位一律看下方小组积分表——
-    // 旧渲染把没猜到的槽回填真实落位队（is-result），与用户选择混排，观感成了「桶里不是我猜的东西」
-    var showResultsInline = editable || !resNames; // open/locked 态无结果可言；done 且无 rec 时回退结果展示（未参与竞猜的兜底）
-    var shown = Math.max(bucket.cap, picks.length, showResultsInline && resNames ? resNames.length : 0);
+    var shown = Math.max(bucket.cap, picks.length, resNames ? resNames.length : 0);
     var slots = "";
     for (var i = 0; i < shown; i++) {
       var name = picks[i] || "";
-      var resName = showResultsInline && resNames ? (resNames[i] || "") : "";
+      var resName = resNames ? (resNames[i] || "") : "";
       var team = pickemTeamOf(stage, name || resName);
       var hit = !!(name && resNames && resNames.indexOf(name) >= 0);
       var miss = !!(name && resNames && !hit);
@@ -2312,7 +2310,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
         (name || resName
           ? avatarHTML(team) + '<span class="pickem-slot-name">' + esc(name || resName) +
               (hit ? '<i class="pickem-mark hit">✓</i>' : "") + (miss ? '<i class="pickem-mark miss">✗</i>' : "") + "</span>"
-          : '<span class="pickem-slot-empty">－</span>') +
+          : '<span class="pickem-slot-empty">＋</span>') +
         "</button>";
     }
     return '<div class="pickem-bucket' + (bucket.tone === "win" ? " is-win" : " is-lose") + '">' +
@@ -2337,10 +2335,6 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
         ? "按小组赛最终战绩逐桶比对：猜进「" + esc(buckets[0].label) + "」的队伍须真打出该战绩才算对"
         : "按终局比分逐桶比对：猜进「3:0 晋级」的队伍须真以 3-0 出线才算对") + "</div>";
     }
-    if (st === "done" && stage.results && (!rec || pickemSwissCount(stage, rec) === 0)) {
-      // 未参与竞猜（2026-11-28 桶区语义改造）：桶区只回放用户选择——没猜过就明说，真实战绩看积分表
-      html += '<div class="pickem-note">你未参与本阶段竞猜 · 各队最终战绩见下方小组积分</div>';
-    }
     // 奖励展示（与 settleRewards 同源：币级=stage.coinTier）——placement 体有币级文案、逐场行有，
     // 桶体此前缺失（BLAST Rivals 反馈「奖励还没显示出来」，2026-11-10）
     if (st === "open" || st === "locked") {
@@ -2351,8 +2345,12 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     html += buckets.map(function (b) {
       return pickemBucketHTML(stage, b, rec, editable, st === "done" ? stage.results : null);
     }).join("");
-    // 自动落位桶（1:3 / 2:3 淘汰）展示已删（2026-11-28 用户拍板「多余」）：1.3.3 的终局展示形态
-    // 让不熟悉的用户误判为坏数据——被淘汰 6 队的去向看下方小组积分表（战绩信息不丢）
+    if (!isRecords && st === "done" && stage.results) {
+      // 自动落位桶（1:3 / 2:3 淘汰）：剩余队伍的终局展示，不参与选择与计分（仅 Major 瑞士轮）
+      html += PICKEM_AUTO_BUCKETS.map(function (b) {
+        return pickemBucketHTML(stage, b, null, false, stage.results);
+      }).join("");
+    }
     if (editable) {
       var n = pickemSwissCount(stage, rec);
       html += '<div class="pickem-stage-acts">' +
@@ -2361,7 +2359,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       if (st === "open" && n === 0) {
         html += '<div class="pickem-note">' + (isRecords
           ? "点空位把队伍放进战绩桶：每桶容量见桶头（全部落位后才能提交，截止前可修改）"
-          : "点空位选队伍：3:0 晋级 2 支 · 3:1/3:2 晋级 6 支 · 0:3 淘汰 2 支") + "</div>";
+          : "点空位选队伍：3:0 晋级 2 支 · 3:1/3:2 晋级 6 支 · 0:3 淘汰 2 支（1:3/2:3 淘汰由剩余队自动落位）") + "</div>";
       }
     } else if (st === "locked") {
       html += '<div class="pickem-note">已截止：开赛前 1 小时锁定选择，赛果出来后自动结算</div>';
@@ -5009,13 +5007,6 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       // 「deploy 重建丢基址」类问题（1.3.20~23 离线态事故）曾无 UI 可查，一票否决式盲区）
       var dataDiag = " · 在线数据:" + (isRuntimeEnabled() ? "开" : "关") +
         (DATA_UPDATED_AT ? "(" + String(DATA_UPDATED_AT).slice(0, 10) + ")" : "");
-      // 流量诊断（2026-11-25）：2.0.3/2.0.4 把关在设置页显示「缓存/传输」被判不符合展示要求
-      // （用户可见的开发调试信息）——改为只写 html dataset，调试台主 world 可读，界面不可见
-      try {
-        var tr = getTransferDiag();
-        document.documentElement.dataset.cacheDiag = getCacheDiag();
-        document.documentElement.dataset.transferDiag = tr.cmp + "/" + tr.raw;
-      } catch (e) { /* 诊断写入失败不影响任何主流程 */ }
       $("#settingsDiag").textContent = getDiagnostics() + dataDiag +
         (hb ? " · 换票:" + (hb.nick ? "ok" : hb.err || "无昵称") +
           (hb.via ? "(" + hb.via + ")" : "(旧缓存，点同步刷新)") +

@@ -5,29 +5,12 @@
  * 1.1.16 起全平台统一轮询（无 ohos 特殊分支）；maxAgeMs 供轮询/回前台做节流。
  */
 import { RUNTIME_DATA_BASE } from "./config.js";
-import { networkGetJson, networkGetJsonCompressed, setTransferReporter, storageGet, storageSet, getRuntimeMode, whenPlatformReady } from "./platform.js";
+import { networkGetJson, networkGetJsonCompressed, storageGet, storageSet, getRuntimeMode, whenPlatformReady } from "./platform.js";
 import { normalizePickemData, normalizeStructures } from "./pickem.js";
 
 var CACHE_KEY = "esports_sandbox_remote_v1";
 var MAX_MATCHES = 10000;
 var MAX_TEAMS = 3000;
-
-/** 本地快照缓存健康状态（2026-11-25）：ok=可落盘 / fail=宿主拒写（每次冷启动都要重下整包）。
- *  设置页诊断行展示，用于确认「流量包为何烧得快」是否由此引起。 */
-var cacheDiag = "unknown";
-export function getCacheDiag() {
-  return cacheDiag;
-}
-
-/** 传输方式统计（2026-11-25）：cmp=压缩版命中 / raw=回退原版——诊断行可看出压缩是否真的生效。 */
-var transferDiag = { cmp: 0, raw: 0 };
-export function getTransferDiag() {
-  return transferDiag;
-}
-setTransferReporter(function (kind) {
-  if (kind === "cmp") transferDiag.cmp += 1;
-  else if (kind === "raw") transferDiag.raw += 1;
-});
 
 export function isRuntimeEnabled() {
   return !!RUNTIME_DATA_BASE;
@@ -328,7 +311,7 @@ export async function fetchRemoteSnapshot(options) {
     };
   }
 
-  // 整包 2.2 MiB（弱网 30s 超时）；2026-11-25 起优先拉 matches.json.gz.b64（约 486KB，4.6x），
+  // 整包 2.2 MiB（弱网 30s 超时）；2026-11-25 起优先拉 matches.json.gz.b64（约 469KB，4.6x），
   // 压缩版缺失/解压失败自动回退原版——OSS 下行流量包（2GB/月）几乎全部消耗在此文件
   var raw;
   try {
@@ -349,10 +332,8 @@ export async function fetchRemoteSnapshot(options) {
 
   var checkedAt = Date.now();
   var cachedOk = await saveCache(meta, matches, teams, teamColors, rosters, pickem, structures, checkedAt);
-  cacheDiag = cachedOk ? "ok" : "fail";
   if (!cachedOk) {
-    // 整包约 2.4 MiB，宿主可能对单值设 UTF-8 字节配额；失败意味着每次冷启动都要重下整包
-    // （OSS 下行流量包 2GB/月的主要消耗源之一）——2026-11-25 起在设置页诊断行可见
+    // 整包约 1.2 MiB，宿主可能对单值设 UTF-8 字节配额；失败只影响下次启动需重下
     console.warn("[data] 快照缓存写入失败，下次启动会重新下载整包");
   }
   return {

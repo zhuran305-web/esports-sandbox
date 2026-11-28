@@ -276,9 +276,9 @@ function tagNetworkError(e, fallback) {
   return err;
 }
 
-/* 运行时整包压缩拉取（2026-11-25，OSS 下行流量 2GB/月约束）：
+/* 运行时整包压缩拉取（2026-11-25，OSS 下行流量包 2GB/月）：
  * matches.json 原始 2.2MiB × 每月数百次更新 = 流量全部消耗在此。发布端额外上传
- * <name>.gz.b64（deflateRaw + base64 纯文本，实测 matches 486KB / rosters 151KB，约 4.6x）。
+ * <name>.gz.b64（deflateRaw + base64 纯文本，实测 matches 469KB / rosters 151KB，约 4.6x）。
  * 生产走宿主 sdk.network.request 返回字符串，直接给对象加 Content-Encoding:gzip 是否会被
  * 各端原生层解压未实测——故走应用层解压：取文本 → base64 解码 → fflate 解压 → JSON.parse。
  * 任何一步失败（无压缩版 404 / 解压异常 / 解码失败）都回退原版直取，绝不因压缩功能断数据。 */
@@ -316,20 +316,6 @@ async function getTextRaw(url, timeoutMs) {
   return await r2.text();
 }
 
-/** 传输方式回调（2026-11-25）：由 data-source 注册，用于诊断行统计压缩命中率。
- *  注入而非直接 import，避免 platform ↔ data-source 循环依赖。 */
-var transferReporter = null;
-export function setTransferReporter(fn) {
-  transferReporter = typeof fn === "function" ? fn : null;
-}
-function reportTransfer(kind) {
-  if (transferReporter) {
-    try { transferReporter(kind); } catch (e) { /* 诊断统计失败不影响主流程 */ }
-  }
-}
-
-/** 拉 JSON，优先压缩版（<url>.gz.b64），不可用时回退原版。
- *  options.compressed=false 可跳过压缩尝试（meta/live 这类小文件不走压缩）。 */
 export async function networkGetJsonCompressed(url, timeoutMs, options) {
   var tryCompressed = !(options && options.compressed === false);
   if (tryCompressed) {
@@ -339,17 +325,13 @@ export async function networkGetJsonCompressed(url, timeoutMs, options) {
         var fflate = await import("fflate");
         var bytes = fflate.inflateSync(fflate.strToU8(atob(b64), true));
         var parsed = JSON.parse(fflate.strFromU8(bytes));
-        if (parsed) {
-          reportTransfer("cmp");
-          return parsed;
-        }
+        if (parsed) return parsed;
       }
     } catch (e) {
       // 压缩版缺失/损坏：静默回退原版（流量优化不能变成可用性风险）
       console.warn("[data] 压缩拉取失败，回退原版：" + ((e && e.code) || (e && e.message) || e));
     }
   }
-  reportTransfer("raw");
   return await networkGetJson(url, timeoutMs);
 }
 

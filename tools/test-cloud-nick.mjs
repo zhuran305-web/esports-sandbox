@@ -954,6 +954,11 @@ check("作业页赛程自动更新（1.3.6）：refreshData 两个 applySnapshot
   /if \(!\$\("#view-coinboard"\)\.hidden\) renderCoinBoard\(\)/.test(appSrc) &&
   /Pick'Em 赛事只增不减/.test(appSrc));
 
+check("队标二级回退（2026-11-28：Major 直邀队 NAVI/THE ONE 打包集无文件致 404 首字——打包 URL 失败先试 OSS logos-webp 同键，再失败才降级）",
+  /function logoOssFallback/.test(appSrc) && /data-oss=/.test(appSrc) &&
+  /dataset\.ossTried = "1"/.test(appSrc) && /el\.src = el\.dataset\.oss/.test(appSrc) &&
+  !/1:3 淘汰.*PICKEM_AUTO_BUCKETS|PICKEM_AUTO_BUCKETS\.map/.test(appSrc)); // 自动落位桶渲染已删（用户拍板）
+
 check("已删函数零残留（夜间自查 1 轮：swiss 正文残留 pickemRoundFlowHTML 调用——Major 作业页运行时 ReferenceError，与 pickableBracketMatches 同类）",
   ["pickableBracketMatches", "pickemSeriesBody", "pickemRoundFlowHTML"].every(function (fn) {
     return appSrc.indexOf(fn + "(") < 0 && appSrc.indexOf("function " + fn) < 0;

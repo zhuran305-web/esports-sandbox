@@ -21,7 +21,10 @@ name: Update match data
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    # 2026-11-28 流量止血：OSS 下行流量包 2GB/月仅剩 30MB——客户端在 hash 变化时拉整包（2.0.5 起
+    # 压缩版 469KB），采集频率=hash 变化频率=整包下载次数。每小时→每 3 小时；比赛节点手动
+    # `gh workflow run update-matches.yml` 补采（赛果延迟最多 3h，竞猜结算容忍）
+    - cron: "0 */3 * * *"
   workflow_dispatch:
 
 permissions:

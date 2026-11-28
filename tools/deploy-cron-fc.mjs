@@ -92,10 +92,12 @@ async function main() {
     code: { zipFile: makeZip() },
     environmentVariables: {
       GITHUB_DISPATCH_TOKEN: env.GITHUB_DISPATCH_TOKEN,
-      STALE_MINUTES: env.STALE_MINUTES || "35",
+      // 2026-11-28 流量止血：与 update-matches cron 降频（每小时→每 3 小时）同步——
+      // 客户端在 hash 变化时拉整包，采集频率=整包下载次数。陈旧 150 分钟才 dispatch 兜底
+      STALE_MINUTES: env.STALE_MINUTES || "150",
       // 告警 webhook（2026-11-08 防复发）：可选项，.env 配置后 FC 兜底具备 dispatch 失败/持续陈旧告警
       ALERT_WEBHOOK_URL: env.ALERT_WEBHOOK_URL || "",
-      ALERT_STALE_MINUTES: env.ALERT_STALE_MINUTES || "100",
+      ALERT_STALE_MINUTES: env.ALERT_STALE_MINUTES || "300",
       // 邮件告警（11-09 加，QQ 邮箱直发）：可选项，与 webhook 通道并存
       ALERT_EMAIL_TO: env.ALERT_EMAIL_TO || "",
       ALERT_SMTP_PASS: env.ALERT_SMTP_PASS || "",

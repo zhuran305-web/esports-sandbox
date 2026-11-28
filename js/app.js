@@ -6,7 +6,7 @@ import { IDENTITY_EXCHANGE_URL, IDENTITY_EXCHANGE_FALLBACK, RUNTIME_DATA_BASE } 
 import { initPlatform, whenPlatformReady, setupViewport, setNavigationBarStyle, storageGet, storageSet, closeMiniProgram, getRuntimeMode, getDiagnostics, onHostEvent, vibrate, setClipboard, reloadPage, uiShowLoading, uiHideLoading, showShareMenu, copyShareLink, screenshotElement, getLaunchExtra, authLogin, getAccountState, networkGetJson, saveFileBytes, openAppPage, getFollowStatus, requestFollowAuthor } from "./platform.js";
 import { isRuntimeEnabled, loadCachedSnapshot, fetchRemoteSnapshot, fetchLiveSnapshot, fetchAllRosters, getCacheDiag, getTransferDiag } from "./data-source.js";
 import { fitDuelExtra } from "./duel-extra.mjs";
-import { PICKEM_BUCKETS, PICKEM_AUTO_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
+import { PICKEM_BUCKETS, PICKEM_SWISS_TEAMS, PICKEM_DEADLINE_MS, PICKEM_COINS, coinKeyForTier, PICKEM_PLACEMENT_TEAMS, normalizePickemData, normalizePickemState, normalizeStructures, stageAllDone, stageOpenForPicks, swissPickDeadline, pickableSeriesMatches, swissPicksComplete, recordsPicksComplete, recordBuckets, placementPicksComplete, scorePhase, settleRewards, mergePickem, mergePickemCoins, buildAutoEvents } from "./pickem.js";
 import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins, availableCoins, encodeVotesExtra, aggregateBoardVotes, makeVoteId, votesExtraEqual, netByPlayer, netHolders, VOTE_LEDGER_CAP, REFUND_LEDGER_CAP, VOTES_EXTRA_CAP } from "./like-rank.js";
 
 (function () {
@@ -33,6 +33,11 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
   // public/logos/（~2.5MiB，724 张）——同源走 img-src 'self' 天然放行，加载更快且离线可渲染；
   // 文件名沿用 teams 映射路径（内容为 WebP 字节，浏览器按内容嗅探渲染）。
   // OSS 远程镜像（tools/mirror-team-logos.mjs）保留：作为打包源 + 未来恢复远程高清版的备胎。
+  // 队标基址：打包同源（img-src 'self' 天然放行，不依赖远程图片域）。
+  // ⚠ 2026-11-28 实测教训：曾尝试全量切 OSS logos-webp 砍 3.1MiB 打包集，但生产构建 CSP
+  // img-src 不含 OSS 域（1.3.11 同源机制：服务端 network_policy 为空，0.9.7 仅修官方 CDN 域）——
+  // dev/生产双确认被拦，真机从未证实过 OSS img 可加载（1.3.23 设计注释「CSP 拦走首字」即此）。
+  // 全量 OSS 方案会致生产全部队标变首字，已回退。体积改走「压参瘦身」（pack 72px 重压）。
   var LOGO_BASE = "logos/";
   // 选手位置徽章（PandaScore role 原文 → 中文；仅 LoL/Dota2/OW 有值）——阵容行与选手卡同源
   var ROLE_LABELS = { top: "上单", jungle: "打野", mid: "中单", adc: "ADC", support: "辅助", "midlaner": "中单", "adc/upport": "ADC", "upport": "辅助", "jungler": "打野", carry: "核心", "offlane": "三号位", solo: "中单" };
@@ -57,7 +62,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     "esports_sandbox_duel_sent",
     "esports_sandbox_rosters_all_v1" // 全量阵容 12h 缓存（1.3.23 阀门 1）：清数据时一并清
   ];
-  var APP_VERSION = "2.0.7";
+  var APP_VERSION = "2.0.8";
   /* 「去围观」映射：游戏 → 小黑盒游戏库 appid。跳转走 navigation.openAppPage（免权限声明）。
    * 关键认知（1.2.12 修正）：appid 不必 ⊆ bindAppIds——绑定只收 9000 段，围观只要库里有详情页。
    * 此前「刀塔2/绝地求生/守望/火箭联盟无法跳转」的结论错在把绑定池当成了详情页存在性；
@@ -686,23 +691,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
       var legacy = path.match(/^https?:\/\/(?:cdn-api|cdn)\.pandascore\.co\/images\/(?:team|player)\/image\/(.+)$/i);
       return legacy ? LOGO_BASE + logoPackName(legacy[1]) : path;
     }
-    // 打包集缺失（窗口外休赛队伍，TEAM_LOGOS 无键）但数据 logo 路径存在 → OSS 预压 webp 库
-    // 回退（1.3.23：logos-webp/<djb2 hash>.webp 96px ~5KB，pack-team-logos 构建时镜像；比原图
-    // 降 20~50 倍流量）。CSP 拦/404/断网都走首字兜底——不劣于现状。
-    if (!packed && RUNTIME_DATA_BASE) {
-      return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/logos-webp/" + logoPackName(String(path));
-    }
     return LOGO_BASE + logoPackName(path);
-  }
-
-  // OSS logos-webp 回退 URL（2026-11-28）：打包集冻结在构建时点——窗口外新队（如 Major 直邀队
-  // NAVI/THE ONE 不打 Stage 1）在打包集里没有键对应的文件，打包 URL 404 后此前直接降级首字。
-  // 1.3.23 的 OSS 回退条件是「teams 表无此队」，运行时 teams 表合并后键恒有值——回退永不触发。
-  // 现改为 img error 二级回退：先试 OSS 同键 webp，再失败才降级首字。
-  function logoOssFallback(team) {
-    var path = TEAM_LOGOS[team.name] || team.logo || "";
-    if (!path || /^https?:\/\//i.test(path) || !RUNTIME_DATA_BASE) return "";
-    return RUNTIME_DATA_BASE.replace(/\/+$/, "") + "/logos-webp/" + logoPackName(String(path));
   }
 
   // 有队标就画图（失败自动降级成文字徽标，见全局 error 监听），没有就沿用首字母色块
@@ -711,22 +700,15 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     if (!url) {
       return '<span class="avatar" style="' + avatarStyle(team.name) + '">' + esc(avatarText(team)) + "</span>";
     }
-    var oss = logoOssFallback(team);
     return '<span class="avatar has-logo">' +
-      '<img class="avatar-img" src="' + esc(url) + '" alt="" loading="lazy" decoding="async"' +
-      (oss ? ' data-oss="' + esc(oss) + '"' : "") + '>' +
+      '<img class="avatar-img" src="' + esc(url) + '" alt="" loading="lazy" decoding="async">' +
       '<span class="avatar-fallback">' + esc(avatarText(team)) + "</span></span>";
   }
 
-  // 队标加载失败：先试 OSS 同键 webp（二级回退），再失败才去掉图片露出文字徽标
+  // 队标加载失败（403/断网/队名对不上）→ 去掉图片，露出文字徽标
   document.addEventListener("error", function (e) {
     var el = e.target;
     if (el && el.tagName === "IMG" && el.classList.contains("avatar-img") && el.parentNode) {
-      if (el.dataset.oss && el.dataset.ossTried !== "1") {
-        el.dataset.ossTried = "1";
-        el.src = el.dataset.oss;
-        return;
-      }
       el.parentNode.classList.add("no-logo");
     }
   }, true);
@@ -743,9 +725,7 @@ import { normalizeVotes, normalizeRefunds, mergeVotes, mergeRefunds, spentCoins,
     }
     el.classList.add("has-logo");
     el.removeAttribute("style");
-    var oss = logoOssFallback(team);
-    el.innerHTML = '<img class="avatar-img" src="' + esc(url) + '" alt="" loading="lazy" decoding="async"' +
-      (oss ? ' data-oss="' + esc(oss) + '"' : "") + '>' +
+    el.innerHTML = '<img class="avatar-img" src="' + esc(url) + '" alt="" loading="lazy" decoding="async">' +
       '<span class="avatar-fallback">' + esc(avatarText(team)) + "</span>";
   }
 

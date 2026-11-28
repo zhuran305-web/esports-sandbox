@@ -954,10 +954,11 @@ check("作业页赛程自动更新（1.3.6）：refreshData 两个 applySnapshot
   /if \(!\$\("#view-coinboard"\)\.hidden\) renderCoinBoard\(\)/.test(appSrc) &&
   /Pick'Em 赛事只增不减/.test(appSrc));
 
-check("队标二级回退（2026-11-28：Major 直邀队 NAVI/THE ONE 打包集无文件致 404 首字——打包 URL 失败先试 OSS logos-webp 同键，再失败才降级）",
-  /function logoOssFallback/.test(appSrc) && /data-oss=/.test(appSrc) &&
-  /dataset\.ossTried = "1"/.test(appSrc) && /el\.src = el\.dataset\.oss/.test(appSrc) &&
-  !/1:3 淘汰.*PICKEM_AUTO_BUCKETS|PICKEM_AUTO_BUCKETS\.map/.test(appSrc)); // 自动落位桶渲染已删（用户拍板）
+check("队标走 OSS logos-webp（2026-11-28 体积瘦身：砍 901 张打包集 4.9MiB → 全量走 OSS 回退库[同 hash 键同内容+30 天缓存头]，包体积 4.2→约 1.1MiB；离线/404 回退首字不劣化）",
+  /LOGO_BASE = RUNTIME_DATA_BASE\.replace/.test(appSrc) && / \+ "\/logos-webp\/"/.test(appSrc) && // LOGO_BASE 切 OSS logos-webp 基址
+  /LOGO_BASE \+ logoPackName/.test(appSrc) && !/logoOssFallback/.test(appSrc) && !/data-oss/.test(appSrc) && // 单一 OSS 出口（二级回退已并入主路径）
+  /pack-team-logos/.test(rf(path.join(root, "package.json"), "utf8")) === false && // prebuild 无 pack 调用
+  !/PICKEM_AUTO_BUCKETS/.test(appSrc)); // 自动落位桶渲染+import 已删（用户拍板）
 
 check("已删函数零残留（夜间自查 1 轮：swiss 正文残留 pickemRoundFlowHTML 调用——Major 作业页运行时 ReferenceError，与 pickableBracketMatches 同类）",
   ["pickableBracketMatches", "pickemSeriesBody", "pickemRoundFlowHTML"].every(function (fn) {
@@ -2415,9 +2416,9 @@ check("全量阵容补拉：fetchAllRosters（内存缓存+静默失败）+ ensu
   /export async function fetchAllRosters/.test(readIfDs()) && /allRostersCache/.test(readIfDs()) &&
   /function ensureAllRosters/.test(appSrc) && /allRostersMerged/.test(appSrc) &&
   /ROSTERS\[k\] = norm\[k\]/.test(appSrc) && /ensureAllRosters\(\);/.test(appSrc));
-check("队标回退：打包集缺失但数据有 logo 路径 → OSS 预压 webp 库（logos-webp/<djb2>，1.3.23 阀门 2）",
-  /!packed && RUNTIME_DATA_BASE/.test(appSrc) && /\/logos-webp\/" \+ logoPackName/.test(appSrc) &&
-  !/\/logos\/" \+\s*$/.test(appSrc.slice(appSrc.indexOf("!packed && RUNTIME_DATA_BASE"), appSrc.indexOf("!packed && RUNTIME_DATA_BASE") + 400)));
+check("队标回退（1.3.23 阀门 2 → 2026-11-28 升级为主路径）：logoUrl 全量走 OSS logos-webp（打包集已砍）",
+  /LOGO_BASE = RUNTIME_DATA_BASE\.replace/.test(appSrc) && /LOGO_BASE \+ logoPackName/.test(appSrc) &&
+  !/"logos\/"/.test(appSrc.slice(0, appSrc.indexOf("function logoUrl")))); // 不再存在同源打包路径
 check("阀门 1（1.3.23）：rosters 12h 本地缓存（storage 自适应降级）+ TTL + CLEAR_KEYS 同步",
   /ROSTERS_CACHE_KEY/.test(readIfDs()) && /ROSTERS_CACHE_TTL = 12 \* 3600000/.test(readIfDs()) &&
   /rostersStorageOk/.test(readIfDs()) && /rostersStorageOk = false/.test(readIfDs()) &&

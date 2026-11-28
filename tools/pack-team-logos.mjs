@@ -119,7 +119,9 @@ async function packOne(key) {
   if (!res.ok) throw new Error("HTTP " + res.status);
   var buf = Buffer.from(await res.arrayBuffer());
   if (buf.length < 100) throw new Error("体积异常 " + buf.length + "B");
-  var webp = await sharp(buf).resize(96, 96, { fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+  // 72px + q72（2026-11-28 体积瘦身）：显示尺寸上限 40px（资料页）→ 72px = 1.8x dpr2 足够；
+  // 901 张实测 3.12MiB → 约 2.1MiB（包体积 -1MiB）。--force 重压后生效
+  var webp = await sharp(buf).resize(72, 72, { fit: "inside", withoutEnlargement: true }).webp({ quality: 72 }).toBuffer();
   writeFileSync(target, webp);
   return "packed";
 }
